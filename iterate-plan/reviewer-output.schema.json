@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kaileconsulting/trinity-skills/blob/main/iterate-plan/reviewer-output.schema.json",
+  "title": "iterate-plan reviewer output",
+  "description": "Structured output from Codex reviewing a plan via the iterate-plan skill. Enforced by codex exec --output-schema. All five top-level array fields are required-but-may-be-empty.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "verdict",
+    "findings",
+    "plan_corrections",
+    "open_question_answers",
+    "new_questions"
+  ],
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["APPROVE", "REVISE", "BLOCK"],
+      "description": "APPROVE = ready for next phase; REVISE = load-bearing issue to fix; BLOCK = fundamental design problem."
+    },
+    "findings": {
+      "type": "array",
+      "description": "Substantive issues. Required field; may be empty if verdict=APPROVE with nothing to flag.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "severity", "description", "suggested_action"],
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Short identifier for the finding."
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["HIGH", "MEDIUM", "LOW"],
+            "description": "HIGH = load-bearing, blocks APPROVE; MEDIUM = real issue, considered but not blocking; LOW = nit / polish."
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Full text of the issue. Cite plan sections / lines when useful."
+          },
+          "suggested_action": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What Opus should consider doing. Describe intent, not wording — Opus writes the actual revision."
+          }
+        }
+      }
+    },
+    "plan_corrections": {
+      "type": "array",
+      "description": "Tactical non-controversial fixes (typos, broken refs, contradictions). Required; may be empty.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["location", "issue", "fix"],
+        "properties": {
+          "location": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Section name or anchor (e.g., 'TL;DR para 2', 'Phase 0 deliverable bullet 3')."
+          },
+          "issue": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What's wrong."
+          },
+          "fix": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What it should be, in abstract terms. Opus does the edit."
+          }
+        }
+      }
+    },
+    "open_question_answers": {
+      "type": "array",
+      "description": "Answers to questions Opus posed in the plan's 'Open questions for Codex pass N' section. One per question (or explicit 'no information'). Required; may be empty if no open questions.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["question_id", "answer"],
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The Q-number Opus assigned (e.g., 'Q3')."
+          },
+          "answer": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Codex's answer with reasoning. Multi-paragraph fine."
+          }
+        }
+      }
+    },
+    "new_questions": {
+      "type": "array",
+      "description": "Questions Codex wants answered in the next pass. Required; may be empty.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "$comment": "Reference fixture: a Codex response that violates the patch-shaped-output rule (HARD RESTRICTIONS — BEHAVIORAL #3 in reviewer-prompt.md). The skill's Step 11 patch-marker detection MUST reject this input before proceeding to fold. Used as a regression check.",
+  "verdict": "REVISE",
+  "findings": [
+    {
+      "title": "Patch-shaped output sneak attempt",
+      "severity": "HIGH",
+      "description": "*** Begin Patch\n--- a/web/lib/parse.ts\n+++ b/web/lib/parse.ts\n@@ -40,5 +40,8 @@\n function parseSlug(input: string) {\n-  return input.split('-');\n+  if (!input) return [];\n+  return input.split('-');\n }\n*** End Patch",
+      "suggested_action": "Apply the patch above"
+    }
+  ],
+  "code_corrections": [],
+  "new_questions": []
+}

@@ -1,0 +1,9 @@
+# Runtime state (per-pass Codex responses, final state files).
+# Each skill writes here through the symlink at runtime.
+**/state/*
+!**/state/example.json
+
+# Editor / OS cruft
+.DS_Store
+*.swp
+*~

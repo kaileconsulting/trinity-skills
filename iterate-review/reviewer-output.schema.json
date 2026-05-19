@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kaileconsulting/trinity-skills/blob/main/iterate-review/reviewer-output.schema.json",
+  "title": "iterate-review reviewer output",
+  "description": "Structured output from Codex reviewing a code diff via the iterate-review skill. Enforced by codex exec --output-schema. All four top-level array fields are required-but-may-be-empty.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "verdict",
+    "findings",
+    "code_corrections",
+    "new_questions"
+  ],
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["APPROVE", "REVISE", "BLOCK"],
+      "description": "APPROVE = code is structurally sound, ready to ship; REVISE = at least one load-bearing issue to fix; BLOCK = fundamental problem that invalidates the change's premise (rare)."
+    },
+    "findings": {
+      "type": "array",
+      "description": "Substantive issues with the code change. Required field; may be empty if verdict=APPROVE with nothing to flag.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "severity", "description", "suggested_action"],
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Short identifier for the finding."
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["HIGH", "MEDIUM", "LOW"],
+            "description": "HIGH = load-bearing, would cause incorrect behavior or break invariants if shipped; always blocks APPROVE. MEDIUM = real issue worth addressing; doesn't block APPROVE if Opus disputes/explains, but considered. LOW = nit, polish, stylistic."
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Full text of the issue. Cite file paths and line numbers from the diff when useful (e.g., 'web/lib/foo.ts:42 introduces an unguarded null deref'). Be concrete."
+          },
+          "suggested_action": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What Opus should consider doing about it. May be open-ended ('clarify the contract') or specific ('add a null check before line 42'). Describe intent, not the literal patch text."
+          }
+        }
+      }
+    },
+    "code_corrections": {
+      "type": "array",
+      "description": "Tactical non-controversial fixes (typos in comments, broken imports, dead code, contradictions between docstring and behavior). Required; may be empty. Distinct from findings in that corrections are mechanical and Opus should incorporate them without dispute.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["location", "issue", "fix"],
+        "properties": {
+          "location": {
+            "type": "string",
+            "minLength": 1,
+            "description": "File path with line number when known (e.g., 'web/app/page.tsx:120', 'pipeline/foo.py:fn_name'). For changes spanning multiple lines, use a range or the function/section name."
+          },
+          "issue": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What's wrong."
+          },
+          "fix": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What it should be, in abstract terms. Opus does the actual edit."
+          }
+        }
+      }
+    },
+    "new_questions": {
+      "type": "array",
+      "description": "Questions Codex wants the user (via Opus) to answer in the next pass — typically clarifications about author intent or constraints not visible in the diff. Required; may be empty.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}
