@@ -90,7 +90,7 @@ Selection *narrows* by change type; execution runs the survivors *in parallel*. 
 
 ### Matched context (honest v1 scope)
 
-"Persona without matched context is theater" (brief). For `iterate-plan` the context already exists as plan sections (architect → Approach/Architecture; PM → Who/Use-cases + Acceptance criteria), so v1 delivers *real* matched context by slicing those sections. For `iterate-review`, "trust boundaries" and "edge cases" are not cleanly extractable from a raw diff in v1 — so v1 delivers matched context as **prompt framing + the already-available inputs** (diff, intent, prior passes), and real extraction is deferred (Non-goal; decided Q2: framing-only is acceptable for v1). This is called out so the reviewer doesn't mistake framing for extraction.
+"Persona without matched context is theater" (brief). For `iterate-plan` the context already exists as plan sections (architect → **Approach + Phasing**; PM → **Who / Use cases + Goals (MVP) + Acceptance criteria** — matching each lens's `requires_sections` exactly), so v1 delivers *real* matched context by slicing those sections. (Phasing is load-bearing for the architect: sequencing / cross-phase-coupling review needs it.) For `iterate-review`, "trust boundaries" and "edge cases" are not cleanly extractable from a raw diff in v1 — so v1 delivers matched context as **prompt framing + the already-available inputs** (diff, intent, prior passes), and real extraction is deferred (Non-goal; decided Q2: framing-only is acceptable for v1). This is called out so the reviewer doesn't mistake framing for extraction.
 
 ### Merge, verdict aggregation, and the convergence guard
 
@@ -162,11 +162,11 @@ In loop mode Opus still folds HIGH/MEDIUM findings mechanically as usual; the gu
 
 **Acceptance:**
 - A plan pass runs both lenses in parallel and merges to one findings list.
-- PM lens receives Who/Use-cases + Acceptance criteria; architect receives Approach/Architecture.
+- PM lens receives Who / Use cases + Goals (MVP) + Acceptance criteria; architect receives Approach + Phasing (each matching the lens's `requires_sections`).
 - On a plan missing Who/Use-cases or Acceptance criteria, PM still runs and flags the absence rather than being skipped or fed empty context.
 
 **Iterate-review:** YES (rationale: changes a load-bearing reviewer-prompt/schema = protocol change per repo convention)
-**Status:** not started
+**Status:** reviewed (validated by a live multi-lens fan-out on a real plan, 2026-07-27 — architect + PM ran concurrently, differentiated correctly, and the architect lens caught + fixed a plan↔contract drift on Phasing)
 
 ### Phase 3 — iterate-review lenses (senior-dev + QA + security) (~1 day)
 **Deliverables:**
@@ -290,7 +290,7 @@ Axis 2 before Axis 1 (per the brief and Kyle's call): personas need no new vendo
 |-------|----------------|--------|-----------|----------|
 | Phase 0 | CONDITIONAL | reviewed | 2026-07-27 (6 passes → APPROVE) | `code-review-working.md` |
 | Phase 1 | YES | reviewed | 2026-07-27 (2 passes) | `code-review-phase1-machinery.md` |
-| Phase 2 | YES | not started | — | — |
+| Phase 2 | YES | reviewed | 2026-07-27 (live multi-lens test) | live run (architect+PM) |
 | Phase 3 | YES | not started | — | — |
 | Phase 4 | YES | not started | — | — |
 

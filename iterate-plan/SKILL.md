@@ -62,11 +62,26 @@ selection + matched-context composition (step 5) is skill-specific.
 
 5. **Select lenses + compose matched context.** Read the lens records in
    `~/.claude/skills/iterate-plan/lenses/*.md` and apply the selection table.
-   For iterate-plan both lenses always run. For each lens, slice the plan
-   sections named in its `requires_sections` (bare H2 titles, `## ` stripped)
-   as its matched context. **If a required section is absent, still run the
-   lens** and tell it the section is missing so it flags the gap — never skip,
-   never feed empty context.
+   For iterate-plan both lenses always run.
+
+   For each lens, build a matched-context file by **extracting the plan H2
+   sections named in its `requires_sections`** — match a line `## <title>`
+   (title compared with the `## ` marker stripped) and take everything from
+   that heading up to the next `## ` heading. Write the concatenated slices to
+   `$STATE_DIR/pass-$N.<lensid>.context.md` under a header
+   `=== MATCHED CONTEXT (sections for the <lensid> lens) ===`, and use it as
+   `$MATCHED_CONTEXT_FILE` in step 6. A shell helper for one section:
+
+   ```bash
+   extract_section() {  # $1 = bare H2 title, $2 = plan path
+     awk -v t="## $1" '$0==t{f=1;print;next} /^## /&&f{f=0} f{print}' "$2"
+   }
+   ```
+
+   **If a required section is absent** (the helper prints nothing), still build
+   the file but include a line `NOTE: required section "<title>" is absent —
+   flag this gap` so the lens reports the omission rather than inventing
+   content. Never skip a lens, never hand it an empty file.
 
 6. **Fan out — one Codex call per selected lens, concurrently.** For each lens,
    compose its input = the shared `reviewer-prompt.md` + the lens's ROLE/FOCUS
