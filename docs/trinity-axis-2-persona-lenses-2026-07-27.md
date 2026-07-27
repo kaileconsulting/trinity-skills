@@ -179,7 +179,7 @@ In loop mode Opus still folds HIGH/MEDIUM findings mechanically as usual; the gu
 - Merged output is a single list with worst-of verdict and one checkpoint.
 
 **Iterate-review:** YES (rationale: protocol change to reviewer-prompt/schema, plus the security/QA deterministic selection keys land here)
-**Status:** not started
+**Status:** reviewed (validated by a live selection-routing + 3-lens fan-out test on a synthetic vulnerable diff, 2026-07-27 — selection correctly routed senior-dev+security+qa; the three lenses differentiated cleanly, each surfacing a category the others missed)
 
 ### Phase 4 — Fixture/validation coverage (~0.5 day)
 **Deliverables:**
@@ -291,7 +291,7 @@ Axis 2 before Axis 1 (per the brief and Kyle's call): personas need no new vendo
 | Phase 0 | CONDITIONAL | reviewed | 2026-07-27 (6 passes → APPROVE) | `code-review-working.md` |
 | Phase 1 | YES | reviewed | 2026-07-27 (2 passes) | `code-review-phase1-machinery.md` |
 | Phase 2 | YES | reviewed | 2026-07-27 (live multi-lens test) | live run (architect+PM) |
-| Phase 3 | YES | not started | — | — |
+| Phase 3 | YES | reviewed | 2026-07-27 (live selection+fan-out test) | live run (3 lenses) |
 | Phase 4 | YES | not started | — | — |
 
 ## Pre-flight review pass (Opus, YYYY-MM-DD) [HISTORICAL]
