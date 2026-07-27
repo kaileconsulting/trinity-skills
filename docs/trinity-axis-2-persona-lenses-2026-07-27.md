@@ -8,6 +8,8 @@ Personas are the *breadth* knob (expand the set of questions asked); they are ex
 
 Outcome: more issue-*category* coverage per pass, with the loop's convergence property and single-checkpoint discipline preserved.
 
+This build also folds in an opt-in **loop mode** for both skills (`--loop` flag + an `(L)oop from here` checkpoint option): it auto-continues through REVISE passes and stops at the first APPROVE for the human's Converge call — automating the mechanical between-pass clicks **without ever auto-deciding convergence**. It rides along in Phase 1 because that phase already reworks the per-pass loop.
+
 ## Why / Context
 
 The trinity's editor↔reviewer loop currently gets one reviewer viewpoint per pass. That viewpoint is competent but singular: whatever the persona in `reviewer-prompt.md` is framed to look for is what gets scrutinized, and everything outside that framing is underweighted. For plan review that means architecture gets attention but product-fit/acceptance-criteria coverage is incidental; for code review it means correctness gets attention but QA edge-cases and security trust-boundaries depend on the model volunteering them.
@@ -31,6 +33,7 @@ Source brief: `/home/kyle/trinity-review-expansion-brief.md`. This plan implemen
 - **Matched context** delivered to each lens (see Approach — v1 scope is honest about framing-vs-extraction).
 - **Lens attribution**: every merged finding records which lens raised it, in the HISTORICAL block — makes the loop self-measuring (see Approach → Measurement).
 - **Fixtures** that exercise selection, merge/dedupe, and attribution so routing/convergence regressions are caught.
+- **Loop mode** (opt-in): a `--loop` flag + `(L)oop from here` checkpoint option that auto-continues REVISE passes and stops at APPROVE for the human's Converge call, bounded by guardrails (see Approach → Loop mode).
 
 ## Non-goals (MVP)
 
@@ -104,6 +107,21 @@ The ROI metric we care about: **the fraction of *incorporated* findings attribut
 
 Expected shape of the answer (prior, to be replaced by data): the lift is **categorical and tail-weighted, not a flat percentage** — ~0 on changes whose relevant category the default persona already covered, and occasionally decisive on changes with a blind-spot category the default persona underweights (e.g. an auth-touching diff whose author didn't think about auth). A seeded-bug catch-rate eval would give a cleaner signal and is a possible follow-up, but is out of scope here.
 
+### Loop mode (auto-continue through REVISE)
+
+Both skills gain an opt-in **loop mode** that automates the per-pass `Continue` decision. Selectable two ways: an invocation flag (`--loop`, alias `--until-approve`) that starts in loop mode from pass 1, and an **`(L)oop from here`** option added to every Continue/Converge/Abort checkpoint to switch into it mid-run.
+
+**Principle — automates `Continue`, never `Converge`.** In loop mode the skill runs pass → fold → pass → fold… without prompting between REVISE passes, and **stops at the first APPROVE**, presenting the normal Converge decision to the human. The "skill never decides convergence" hard rule is untouched — loop mode only removes the mechanical between-pass clicks. This is **not** "silent iteration": every pass still appends its HISTORICAL block, and the loop always returns to the human at a decision point with the full trail.
+
+**Guardrails — the loop pauses and hands back to the human when any fire:**
+- **APPROVE reached** — stop, present the Converge decision.
+- **Max-pass cap** (default **6**, `--max-passes=N`) — counts *auto-continued passes since loop activation*, as a **fresh budget each activation**: `--loop` counts from pass 1; `(L)oop from here` at pass K starts a new N-pass budget (the current pass K does not count), and manual/historical passes never deplete it (resolves Q9). On reaching the cap without APPROVE — stop, surface "hit cap without converging."
+- **BLOCK verdict** — stop; a fundamental problem needs the human.
+- **Non-convergence (stall)** — let *cₙ* = the count of **merged HIGH+MEDIUM findings** in pass *n* (post-dedupe; LOW findings, `FAILED` metadata, and open questions are **excluded**, so polish churn can't trigger a false stall — resolves Q10). Halt when the count fails to *strictly decrease* across two consecutive transitions (*cₙ ≥ cₙ₋₁* **and** *cₙ₋₁ ≥ cₙ₋₂*). A pass containing a `FAILED` selected lens is skipped in this comparison (its count is incomplete) but still counts toward the max-pass cap.
+- **Fold needs human judgment** — halt before the next pass if **(a)** any HIGH finding this pass was *not incorporated* (a skipped/disputed HIGH is always a human call; MEDIUM may still be incorporated or disputed-with-reasoning autonomously), or **(b)** an open question surfaced that Opus cannot answer from the plan + repo context alone (needs product-owner/human input; questions Opus *can* answer from available context are answered and the loop continues).
+
+In loop mode Opus still folds HIGH/MEDIUM findings mechanically as usual; the guardrails catch exactly the cases where autonomous folding would overstep. Loop mode composes with the per-pass fan-out/merge unchanged — it governs the *between-pass* decision, not the *within-pass* lens machinery.
+
 ## Phasing
 
 ### Phase 0 — Lens definitions + selection-rules design (~0.5 day)
@@ -125,12 +143,14 @@ Expected shape of the answer (prior, to be replaced by data): the lift is **cate
 - The per-pass loop change common to both skills: spawn N concurrent `codex exec` lens subprocesses, collect schema-valid responses, dedupe, aggregate verdict worst-of, emit one HISTORICAL block + one checkpoint.
 - Patch-marker rejection applied per-lens response (unchanged contract, N times).
 - Lens attribution: each merged finding tagged with its originating lens id(s), surfaced in the HISTORICAL block alongside the fold disposition.
+- Loop mode: `--loop`/`--until-approve` flag + `(L)oop from here` checkpoint option, wired into the shared between-pass control for both skills, with all five guardrails (APPROVE-stop, `--max-passes` cap default 6, BLOCK-stop, non-convergence stop, fold-needs-judgment stop).
 
 **Acceptance:**
 - With a single selected lens, the review is a **behavioral non-regression** vs pre-Axis-2 — same reviewer contract, persona, output schema, sandbox, and resulting findings — even though prompt *assembly* may change (the shared-contract + per-lens framing split). The only additive output change is the lens tag in the HISTORICAL block.
 - With multiple lenses, exactly one checkpoint and one HISTORICAL block are produced per pass.
 - Every merged finding in the HISTORICAL block names the lens that raised it (a co-reported finding names all contributing lenses).
 - A lens subprocess failure follows the lens-failure policy (Approach → Merge): retried once, else recorded `FAILED` — which blocks Converge and surfaces an (R)etry option. It does not abort the pass, but it does prevent silent convergence.
+- Loop mode auto-continues through consecutive REVISE passes without prompting, stops at the first APPROVE to present the Converge decision (never auto-converges), and each guardrail demonstrably halts the loop with the trail intact: the max-pass cap (fresh per-activation budget), BLOCK, the stall detector (no strict decrease in merged HIGH+MEDIUM count over 2 transitions; LOW/`FAILED`/open-questions excluded), and the human-judgment halt (an un-incorporated HIGH, or an open question Opus can't answer from plan+repo context).
 
 **Iterate-review:** YES (rationale: the per-pass loop change — parallel lens fan-out + dedupe/merge + verdict aggregation; the convergence property is at stake here)
 **Status:** not started
@@ -184,6 +204,8 @@ Expected shape of the answer (prior, to be replaced by data): the lift is **cate
 - [ ] Fixtures cover selection routing + merge/dedupe + single-checkpoint invariant + lens attribution.
 - [ ] Every folded finding records its originating lens, so incorporated-findings-by-lens can be tallied (the ROI metric).
 - [ ] Lens definitions are data-shaped and loaded from a fixed location (pack loader out of scope).
+- [ ] Loop mode (`--loop` + `(L)oop` checkpoint option) auto-continues through REVISE passes and stops at the first APPROVE to present Converge — never auto-converges.
+- [ ] Loop mode halts and returns control on any guardrail: max-pass cap (default 6), BLOCK, non-convergence (no finding-count decrease over 2 passes), or a fold requiring human judgment.
 
 ## Risks
 
@@ -207,6 +229,10 @@ Over-aggressive dedupe hides a real issue; under-aggressive dedupe spams the fol
 A diff that needed the security lens doesn't trigger it → the bug the lens existed to catch is missed.
 **Mitigation:** conservative predicates (over-include rather than under-include); senior-dev always runs as a floor; worked-example fixtures pin the routing.
 
+### R6 — Loop mode runs away or iterates on a non-converging plan/diff
+Auto-continue could spend unbounded Codex calls/tokens, or loop forever on a plan/diff that never converges.
+**Mitigation:** hard max-pass cap (default 6, `--max-passes` overridable, fresh budget per loop activation); non-convergence detector (halt if the merged HIGH+MEDIUM finding count doesn't strictly decrease over 2 consecutive transitions; LOW/`FAILED`/open-questions excluded); BLOCK and human-judgment folds (un-incorporated HIGH, or an open question needing human input) also halt. Loop mode **never auto-converges** — it always returns to the human at APPROVE or a guardrail, with the full HISTORICAL trail.
+
 ## Rollback plan
 
 All changes are to skill files (`SKILL.md`, `reviewer-prompt.md`, schemas, `lenses/`) in a git repo. Rollback = `git revert` the phase's commits; the single-lens-equivalence acceptance criterion means reverting restores exact prior behavior. No data or external-state migration is involved.
@@ -217,7 +243,7 @@ Axis 2 before Axis 1 (per the brief and Kyle's call): personas need no new vendo
 
 ## Open questions
 
-<!-- Q1–Q5 resolved during Kyle's review; Q6–Q7 raised by Codex pass 1, Q8 by pass 2 — all resolved on fold. Resolutions folded into Approach. -->
+<!-- Q1–Q5 resolved during Kyle's review; Q6–Q7 raised by Codex pass 1, Q8 by pass 2, Q9–Q10 by pass 4 (loop-mode delta) — all resolved on fold. Resolutions folded into Approach. -->
 
 - **Q1.** (resolved — lens-per-file `<skill>/lenses/<id>.md`; see Approach.)
 - **Q2.** (resolved — framing-only matched context for `iterate-review` v1; see Approach.)
@@ -227,6 +253,8 @@ Axis 2 before Axis 1 (per the brief and Kyle's call): personas need no new vendo
 - **Q6.** (resolved — selected-lens failure policy: retry once, else `FAILED` blocks Converge + an (R)etry checkpoint option; see Approach → Merge. Raised by Codex pass 1.)
 - **Q7.** (resolved — lens attribution lives in the HISTORICAL fold record for v1; no per-invocation schema field needed since each lens is a separate Codex call; machine-readable field is a future option; see Approach → Measurement. Raised by Codex pass 1.)
 - **Q8.** (resolved — aggregate verdict for a failed-after-retry selected lens is **REVISE**; `FAILED` is orchestration metadata, reviewer schema untouched; see Approach → Merge. Raised by Codex pass 2.)
+- **Q9.** (resolved — loop-mode max-pass cap is a **fresh per-activation budget** counting auto-continued passes; manual/historical passes don't deplete it; see Approach → Loop mode. Raised by Codex pass 4.)
+- **Q10.** (resolved — loop-mode non-convergence detector counts **merged HIGH+MEDIUM findings only** (LOW/`FAILED`/open-questions excluded); see Approach → Loop mode. Raised by Codex pass 4.)
 
 ## Out of scope
 
@@ -337,6 +365,53 @@ APPROVE
 
 ### Convergence reasoning
 Pass 3 returned APPROVE with a single LOW nit, which Opus incorporated (it corrected an internal inconsistency the shared-contract/per-lens split introduced). No HIGH/MEDIUM findings remain, no open questions outstanding, no further changes pending. The pass-1 HIGH (lens-failure policy) and pass-2 HIGH (`FAILED` ↔ schema mapping) are resolved and stable — pass 3 raised no regressions from those folds. Converged.
+
+## Codex review pass 4 — answers (2026-07-27) [HISTORICAL]
+
+_Delta review of the loop-mode addition folded into Phase 1 (plan had already converged at pass 3)._
+
+### Verdict
+REVISE
+
+### Findings
+1. **Loop-mode cap semantics ambiguous mid-run** — HIGH: `--max-passes` didn't say whether the cap counts absolute passes, auto-continued passes, or total session passes — different behavior for `--loop` vs `(L)oop from here`.
+   → Opus: incorporated — defined the cap as a **fresh per-activation budget** counting auto-continued passes (`--loop` from pass 1; `(L)oop` starts a new N-pass budget, current pass excluded; manual/historical passes don't deplete it). Resolves Q9.
+2. **Non-convergence detector under-specified** — MEDIUM: didn't define the counted population (per-lens vs merged, LOW included?, FAILED handling) or the exact stall sequence.
+   → Opus: incorporated — counts **merged HIGH+MEDIUM findings only** (LOW/`FAILED`/open-questions excluded); halt when the count fails to strictly decrease over 2 transitions; `FAILED`-lens passes skipped in the comparison. Resolves Q10.
+3. **Human-judgment fold boundary needs concrete detection** — MEDIUM: "dispute a HIGH" / "open question needing human" left too much to implicit judgment for an auto-loop.
+   → Opus: incorporated — halt before the next pass if (a) any HIGH finding was **not incorporated**, or (b) an open question surfaced that Opus **can't answer from plan+repo context**.
+
+### Plan corrections applied
+- (none)
+
+### Open-question answers
+- (none posed by Opus this pass)
+
+### New questions Codex raised
+- Cap shared across manual+auto, or fresh on `(L)oop`? → Resolved **Q9**: fresh per-activation budget.
+- Ignore LOW-only findings in non-convergence? → Resolved **Q10**: yes — only HIGH+MEDIUM count.
+
+## Codex review pass 5 — answers (2026-07-27) [HISTORICAL]
+
+_Confirming pass on the loop-mode delta._
+
+### Verdict
+APPROVE
+
+### Findings
+- (none)
+
+### Plan corrections applied
+- (none)
+
+### Open-question answers
+- (none)
+
+### New questions Codex raised
+- (none)
+
+### Convergence reasoning
+Pass 5 returned APPROVE with zero findings, confirming the pass-4 folds. The loop-mode guardrails (fresh per-activation cap, HIGH+MEDIUM stall detector, un-incorporated-HIGH / human-only-open-question escalation) are now mechanically specified and preserve the "never silently iterate" + "skill never decides convergence" invariants. Loop-mode delta converged.
 
 <!-- TOOLING-MAINTAINED by iterate-plan. Each subsequent pass appends a new
 "## Codex review pass N — answers (DATE) [HISTORICAL]" section below. -->
