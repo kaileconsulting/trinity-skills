@@ -153,7 +153,7 @@ In loop mode Opus still folds HIGH/MEDIUM findings mechanically as usual; the gu
 - Loop mode auto-continues through consecutive REVISE passes without prompting, stops at the first APPROVE to present the Converge decision (never auto-converges), and each guardrail demonstrably halts the loop with the trail intact: the max-pass cap (fresh per-activation budget), BLOCK, the stall detector (no strict decrease in merged HIGH+MEDIUM count over 2 transitions; LOW/`FAILED`/open-questions excluded), and the human-judgment halt (an un-incorporated HIGH, or an open question Opus can't answer from plan+repo context).
 
 **Iterate-review:** YES (rationale: the per-pass loop change — parallel lens fan-out + dedupe/merge + verdict aggregation; the convergence property is at stake here)
-**Status:** not started
+**Status:** reviewed (Phase 1 machinery + reviewer-prompt split; Codex review converged over 2 passes, 2026-07-27; see `code-review-phase1-machinery.md`)
 
 ### Phase 2 — iterate-plan lenses (architect + PM) (~0.5 day)
 **Deliverables:**
@@ -185,6 +185,7 @@ In loop mode Opus still folds HIGH/MEDIUM findings mechanically as usual; the gu
 **Deliverables:**
 - Fixtures (synthetic multi-lens Codex responses) exercising: dedupe of co-reported findings, worst-of verdict aggregation, single-checkpoint invariant, selection-table routing, and lens-attribution tagging.
 - Audit existing `examples/` fixtures for any invalidated by the shared-contract/per-lens split; update or deprecate.
+- Cross-skill **shared-machinery parity check**: a fixture/checklist asserting the shared *rules* (fan-out, semantic merge, worst-of + `FAILED` handling, one HISTORICAL block, one checkpoint, loop mode + its 5 guardrails) are present in both skills' per-pass loops — **semantic parity, not byte-identity**.
 
 **Acceptance:**
 - Fixtures demonstrate correct merge + selection on the worked examples.
@@ -288,7 +289,7 @@ Axis 2 before Axis 1 (per the brief and Kyle's call): personas need no new vendo
 | Phase | Iterate-review | Status | Last pass | Pass log |
 |-------|----------------|--------|-----------|----------|
 | Phase 0 | CONDITIONAL | reviewed | 2026-07-27 (6 passes → APPROVE) | `code-review-working.md` |
-| Phase 1 | YES | not started | — | — |
+| Phase 1 | YES | reviewed | 2026-07-27 (2 passes) | `code-review-phase1-machinery.md` |
 | Phase 2 | YES | not started | — | — |
 | Phase 3 | YES | not started | — | — |
 | Phase 4 | YES | not started | — | — |
