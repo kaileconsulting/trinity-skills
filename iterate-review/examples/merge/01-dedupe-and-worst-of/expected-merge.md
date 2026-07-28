@@ -24,10 +24,20 @@ Five findings filed across three lenses.
 Worst-of over `{REVISE, REVISE, APPROVE}` with `BLOCK > REVISE > APPROVE`.
 
 The load-bearing part: **`qa` returned APPROVE and that does not pull the
-aggregate up.** A lens is entitled to approve while still filing a MEDIUM — the
-schema says only HIGH always blocks APPROVE — so an approving lens coexisting
-with a REVISE aggregate is normal, not a contradiction. No lens is `FAILED`, so
-`FAILED` handling is not exercised here (see scenario 02).
+aggregate up.** No lens is `FAILED`, so `FAILED` handling is not exercised here
+(see scenario 02).
+
+> **`qa`'s APPROVE-with-a-MEDIUM is a deliberately atypical fixture, not a model
+> to imitate.** The schema permits it — only HIGH *always* blocks APPROVE — and
+> the combination is what makes worst-of visibly do work: if the aggregate were
+> best-of, or if an approving lens were allowed to short-circuit the others, this
+> pass would wrongly converge. But a reviewer filing an actionable missing-tests
+> finding would more commonly return REVISE, and nothing here should be read as
+> encouraging lenses to approve while filing real issues. The verdict is chosen to
+> exercise the aggregation rule, not to demonstrate typical reviewer behaviour.
+> *(Raised as a `code_correction` in the Phase 4 review; kept as APPROVE because
+> changing it to REVISE would remove the only case in the fixture set where
+> worst-of has to discriminate.)*
 
 ## Expected merge: 5 filed → 4 merged
 

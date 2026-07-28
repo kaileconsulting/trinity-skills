@@ -77,8 +77,155 @@ def test_selection() -> None:
 
     record("selection: baseline passes", quiet(cs.run_goldens) == 0)
 
+    # --- diff parsing: each side classified by its OWN path ----------------
+    # Regression guard for the Phase 4 review's HIGH finding: attributing a
+    # rename's `-` lines to the new path undercounts a source file renamed to a
+    # non-source extension.
+    rename = (
+        "diff --git a/lib/calc.py b/notes/calc.txt\n"
+        "rename from lib/calc.py\n"
+        "rename to notes/calc.txt\n"
+        "--- a/lib/calc.py\n"
+        "+++ b/notes/calc.txt\n"
+        "@@ -1,2 +1,1 @@\n"
+        "-def f():\n"
+        "-    return 1\n"
+        "+a note\n"
+    )
+    _paths, added, removed = cs.parse_diff(rename)
+    record("selection: rename attributes each side to its own path",
+           list(removed) == ["lib/calc.py"] and list(added) == ["notes/calc.txt"],
+           f"removed={list(removed)} added={list(added)}")
+
+    # A deleted source file is `diff --git a/x b/x` + `+++ /dev/null`, so its
+    # removed lines must still land on the source path.
+    deletion = (
+        "diff --git a/lib/gone.py b/lib/gone.py\n"
+        "deleted file mode 100644\n"
+        "--- a/lib/gone.py\n"
+        "+++ /dev/null\n"
+        "@@ -1,2 +0,0 @@\n"
+        "-def f():\n"
+        "-    return 1\n"
+    )
+    _paths, added, removed = cs.parse_diff(deletion)
+    record("selection: deletion keeps removed lines on the source path",
+           list(removed) == ["lib/gone.py"] and added == {},
+           f"removed={list(removed)}")
+
+    # `--- ` inside a hunk is a removed content line, not a file header.
+    ambiguous = (
+        "diff --git a/x.py b/x.py\n"
+        "--- a/x.py\n"
+        "+++ b/x.py\n"
+        "@@ -1,2 +1,2 @@\n"
+        "--- not a header, this is removed content\n"
+        "+++ not a header, this is added content\n"
+    )
+    paths, added, removed = cs.parse_diff(ambiguous)
+    record("selection: in-hunk ---/+++ lines are content, not headers",
+           paths == {"x.py"} and list(removed) == ["x.py"] and list(added) == ["x.py"],
+           f"paths={sorted(paths)}")
+
+    # --- accepted diff formats ---------------------------------------------
+    # Regression guards for the Phase 4 review pass 2, which found quoted paths
+    # and tab-separated timestamps each silently yielding zero source lines.
+    record("selection: git C-quoting decoded (escapes)",
+           cs._unquote_c(r'a/lib/my \"odd\" \\name.py')
+           == 'a/lib/my "odd" \\name.py')
+    record("selection: git C-quoting decoded (octal UTF-8)",
+           cs._unquote_c(r"a/lib/caf\303\251.py") == "a/lib/café.py",
+           cs._unquote_c(r"a/lib/caf\303\251.py"))
+
+    record("selection: quoted diff --git line parsed",
+           cs._parse_diff_git('diff --git "a/lib/my calc.py" "b/notes/my calc.txt"')
+           == ("lib/my calc.py", "notes/my calc.txt"))
+    record("selection: bare diff --git line still parsed",
+           cs._parse_diff_git("diff --git a/lib/x.py b/lib/x.py")
+           == ("lib/x.py", "lib/x.py"))
+
+    record("selection: quoted header path normalised",
+           cs._normalise_header_path('"a/lib/my calc.py"', "a") == "lib/my calc.py")
+    record("selection: tab timestamp stripped from header path",
+           cs._normalise_header_path(
+               "lib/report.py\t2026-07-28 09:00:00.000000000 +0000", "a")
+           == "lib/report.py")
+    record("selection: /dev/null header yields no path",
+           cs._normalise_header_path("/dev/null", "b") is None)
+
+    # Pass 3's MEDIUM: `--- a/lib/foo.py` is genuinely ambiguous. In git format the
+    # `a/` is a side prefix; in a plain diff it is a real directory named `a`.
+    # Format context decides, so a plain diff must preserve the leading component.
+    plain_a = (
+        "--- a/lib/foo.py\t2026-07-28 09:00:00 +0000\n"
+        "+++ a/lib/foo.py\t2026-07-28 09:05:00 +0000\n"
+        "@@ -1,1 +1,1 @@\n-x = 1\n+x = 2\n"
+    )
+    paths, _added, _removed = cs.parse_diff(plain_a)
+    record("selection: plain diff keeps a literal top-level a/ component",
+           paths == {"a/lib/foo.py"}, f"paths={sorted(paths)}")
+
+    git_a = (
+        "diff --git a/lib/foo.py b/lib/foo.py\n"
+        "--- a/lib/foo.py\n+++ b/lib/foo.py\n"
+        "@@ -1,1 +1,1 @@\n-x = 1\n+x = 2\n"
+    )
+    paths, _added, _removed = cs.parse_diff(git_a)
+    record("selection: git diff still strips the a//b/ side prefix",
+           paths == {"lib/foo.py"}, f"paths={sorted(paths)}")
+
+    # A pure addition has `--- /dev/null`; its added lines must still be counted.
+    addition = (
+        "diff --git a/lib/new.py b/lib/new.py\n"
+        "new file mode 100644\n"
+        "--- /dev/null\n"
+        "+++ b/lib/new.py\n"
+        "@@ -0,0 +1,2 @@\n"
+        "+def f():\n"
+        "+    return 1\n"
+    )
+    _p, added, removed = cs.parse_diff(addition)
+    record("selection: addition counts added lines, no phantom old path",
+           list(added) == ["lib/new.py"] and removed == {},
+           f"added={list(added)} removed={list(removed)}")
+
+    # Multi-file: hunk state must reset per file, not leak across the boundary.
+    multi = (
+        "diff --git a/one.py b/one.py\n--- a/one.py\n+++ b/one.py\n"
+        "@@ -1,1 +1,1 @@\n-a = 1\n+a = 2\n"
+        "diff --git a/two.py b/two.py\n--- a/two.py\n+++ b/two.py\n"
+        "@@ -1,1 +1,1 @@\n-b = 1\n+b = 2\n"
+    )
+    paths, added, removed = cs.parse_diff(multi)
+    record("selection: multi-file diff attributes each file separately",
+           paths == {"one.py", "two.py"}
+           and sorted(added) == ["one.py", "two.py"]
+           and sorted(removed) == ["one.py", "two.py"],
+           f"paths={sorted(paths)}")
+
     # Rule data that cannot be parsed must raise, never default to empty.
     real_readme, real_lensdir, real_expected = cs.README, cs.LENS_DIR, cs.EXPECTED
+
+    # --- threshold is read from its DEFINING bullet ------------------------
+    # Guard for the Phase 4 review's MEDIUM finding: an unanchored search would
+    # let unrelated earlier prose become the threshold.
+    p = os.path.join(tmp, "decoy_threshold.md")
+    open(p, "w").write(
+        "Historically we used >= 99 changed non-blank lines as a smoke test.\n\n"
+        "`source_exts`: `.py .ts`\n"
+        "`test_globs`: `**/*test*`, `**/tests/**`\n"
+        "  - *non-trivial source change* = **>= 8 changed non-blank content "
+        "lines across source files**\n"
+    )
+    cs.README = p
+    try:
+        parsed = quiet(cs.load_readme_config)
+        got = parsed["threshold"]
+    except Exception as exc:  # noqa: BLE001 - surfaced as a failed record
+        got = f"raised {type(exc).__name__}"
+    cs.README = real_readme
+    record("selection: threshold anchored to its defining bullet",
+           got == 8, f"parsed {got}, decoy was 99")
 
     p = os.path.join(tmp, "no_exts.md")
     open(p, "w").write("# lenses\nnothing parseable\n")
@@ -181,6 +328,32 @@ def test_parity() -> None:
     rc = quiet(cp.main, [])
     cp.SKILLS = real_skills
     record("parity: absent SKILL.md -> exit 2, not a pass", rc == 2, f"exit {rc}")
+
+    # --- per-skill patterns ------------------------------------------------
+    # Guard for the Phase 4 review's MEDIUM finding: a shared pattern let one
+    # skill satisfy a rule via text referencing the sibling's behaviour.
+    cp.RULES = [("per-skill", "d", {
+        "iterate-plan": [r"dedupe plan_corrections"],
+        "iterate-review": [r"dedupe code_corrections"],
+    })]
+    rc, out = loud(cp.main, [])
+    record("parity: per-skill patterns accepted and satisfied", rc == 0, f"exit {rc}")
+
+    # Give iterate-plan a pattern that only exists in iterate-review: the rule
+    # must fail rather than being satisfied by the sibling's text.
+    cp.RULES = [("per-skill-crossed", "d", {
+        "iterate-plan": [r"dedupe code_corrections"],
+        "iterate-review": [r"dedupe code_corrections"],
+    })]
+    rc, out = loud(cp.main, [])
+    record("parity: per-skill patterns are not satisfied by the sibling's text",
+           rc == 1 and "PARITY GAP" in out and "absent from iterate-plan" in out)
+
+    # A per-skill rule that forgets a skill is a config error, not a silent pass.
+    cp.RULES = [("incomplete", "d", {"iterate-plan": [r"worst-of"]})]
+    rc = quiet(cp.main, [])
+    cp.RULES = real_rules
+    record("parity: per-skill rule missing a skill -> exit 2", rc == 2, f"exit {rc}")
 
 
 # ---------------------------------------------------------------------------

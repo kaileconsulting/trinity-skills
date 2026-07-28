@@ -192,7 +192,7 @@ In loop mode Opus still folds HIGH/MEDIUM findings mechanically as usual; the gu
 - No existing fixture asserts behavior the new split removed without being updated.
 
 **Iterate-review:** YES (rationale: the E2E-analog here — fixtures exercising selection + merge/dedupe so convergence and lens-routing regressions don't slip)
-**Status:** shipped, pending review
+**Status:** reviewed
 
 **Shipped (2026-07-28).** Selection routing got a **runnable reference implementation** rather than documentation-only fixtures (Kyle's call): `iterate-review/examples/selection/` holds 10 diff fixtures + `expected.tsv` + `check-selection.py`, which parses the rule data out of the lens frontmatter and `lenses/README.md` so only the *evaluation algorithm* is duplicated. Rows 01–07 mirror the README's worked-examples table; 08–10 pin the "Glob/extension semantics" bullet (zero-segment `**/`, case-insensitive globs, case-insensitive `test_globs`). Merge goldens: `iterate-review/examples/merge/` (01 dedupe/worst-of with an approving lens; 02 `FAILED` preserving `BLOCK`) and `iterate-plan/examples/merge/` (co-report, degraded context, conflicting `open_question_answers`). Parity: `tools/check-parity.py` asserts **32 shared rules** in both skills' loops against markdown-normalised text; `tools/check-examples.py` validates every fixture against its schema; `tools/test-checkers.py` verifies all three checkers actually fail when they should (18 self-tests). `tools/check-all.sh` runs everything — currently all green.
 
@@ -306,7 +306,7 @@ Axis 2 before Axis 1 (per the brief and Kyle's call): personas need no new vendo
 | Phase 1 | YES | reviewed | 2026-07-27 (2 passes) | `code-review-phase1-machinery.md` |
 | Phase 2 | YES | reviewed | 2026-07-27 (live multi-lens test) | live run (architect+PM) |
 | Phase 3 | YES | reviewed | 2026-07-27 (live selection+fan-out test) | live run (3 lenses) |
-| Phase 4 | YES | shipped, pending review | — | — |
+| Phase 4 | YES | reviewed | 2026-07-28 (4 direct passes → APPROVE) | `code-review-phase4-fixtures.md` |
 
 ## Pre-flight review pass (Opus, YYYY-MM-DD) [HISTORICAL]
 

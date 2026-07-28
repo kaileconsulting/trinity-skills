@@ -1,0 +1,13 @@
+--- lib/report.py	2026-07-28 09:00:00.000000000 +0000
++++ lib/report.py	2026-07-28 09:05:00.000000000 +0000
+@@ -1,2 +1,11 @@
+ import math
++
++def summarise(rows):
++    if not rows:
++        return {}
++    values = [r.amount for r in rows]
++    average = sum(values) / len(values)
++    spread = max(values) - min(values)
++    band = math.sqrt(spread) if spread > 0 else 0
++    return {"average": average, "spread": spread, "band": band}

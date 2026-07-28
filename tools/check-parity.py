@@ -32,10 +32,17 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKILLS = ("iterate-plan", "iterate-review")
 
-# (rule id, human description, [patterns that must ALL appear])
+# (rule id, human description, patterns that must ALL appear)
+#
 # Patterns are matched against NORMALISED text: no emphasis markers, no
 # backticks, dashes unified, whitespace collapsed, lowercased.
-RULES: list[tuple[str, str, list[str]]] = [
+#
+# The third element is either a list applied to both skills, or a dict of
+# {skill: [patterns]} when a rule is legitimately worded per-skill -- e.g. one
+# names `plan_corrections` and the other `code_corrections`. Prefer the dict form
+# whenever a shared pattern would let one skill satisfy the rule using text that
+# merely *references* the other's behaviour.
+RULES: list[tuple[str, str, list[str] | dict[str, list[str]]]] = [
     # --- fan-out -----------------------------------------------------------
     ("fan-out-per-lens", "one Codex call per selected lens",
      [r"one codex call per selected lens"]),
@@ -69,8 +76,17 @@ RULES: list[tuple[str, str, list[str]]] = [
      [r"distinct concerns"]),
     ("merge-attribution", "a co-report retains ALL contributing lens ids",
      [r"all contributing lens ids"]),
+    # Per-skill: each must state the rule for ITS OWN correction field, with the
+    # substance (mechanical application + the collapse key). A shared
+    # `dedupe (plan|code)_corrections` pattern would let a cross-reference to the
+    # sibling skill satisfy the rule without the loop instructing anything.
     ("merge-dedupe-corrections", "corrections are deduped (they apply mechanically)",
-     [r"dedupe (plan|code)_corrections"]),
+     {"iterate-plan": [r"dedupe plan_corrections",
+                       r"corrections are applied mechanically",
+                       r"collapse by location \+ intended fix"],
+      "iterate-review": [r"dedupe code_corrections",
+                         r"corrections are applied mechanically",
+                         r"collapse by location \+ intended fix"]}),
 
     # --- verdict aggregation ---------------------------------------------
     ("verdict-worst-of", "aggregate verdict is worst-of",
@@ -160,11 +176,22 @@ def main(argv: list[str]) -> int:
     print("shared-machinery parity: iterate-plan <-> iterate-review")
     print(f"{len(RULES)} rules, matched against markdown-normalised text\n")
 
+    def pats_for(patterns, skill: str) -> list[str]:
+        return patterns[skill] if isinstance(patterns, dict) else patterns
+
     for rule_id, desc, patterns in RULES:
+        if isinstance(patterns, dict):
+            missing_skills = [s for s in SKILLS if s not in patterns]
+            if missing_skills:
+                print(f"error: rule {rule_id} has per-skill patterns but none "
+                      f"for {', '.join(missing_skills)}", file=sys.stderr)
+                return 2
+
         present = {}
         for skill in SKILLS:
             norm, _lines = docs[skill]
-            present[skill] = all(re.search(p, norm) for p in patterns)
+            present[skill] = all(
+                re.search(p, norm) for p in pats_for(patterns, skill))
 
         have = [s for s in SKILLS if present[s]]
         if len(have) == len(SKILLS):
@@ -182,17 +209,23 @@ def main(argv: list[str]) -> int:
             absent = [s for s in SKILLS if not present[s]]
             for skill in absent:
                 norm, _ = docs[skill]
-                unmatched = [p for p in patterns if not re.search(p, norm)]
+                unmatched = [p for p in pats_for(patterns, skill)
+                             if not re.search(p, norm)]
                 print(f"              -> absent from {skill}: "
                       f"no match for {', '.join(repr(u) for u in unmatched)}")
         elif status == "MISSING":
+            for skill in SKILLS:
+                norm, _ = docs[skill]
+                unmatched = [p for p in pats_for(patterns, skill)
+                             if not re.search(p, norm)]
+                print(f"              -> absent from {skill}: no match for "
+                      f"{', '.join(repr(u) for u in unmatched)}")
             print(f"              -> absent from both. Either the rule was "
-                  f"dropped, or this pattern is wrong: "
-                  f"{', '.join(repr(p) for p in patterns)}")
+                  f"dropped, or these patterns are wrong.")
         elif verbose:
             for skill in SKILLS:
                 _, lines = docs[skill]
-                where = first_line_matching(patterns[0], lines)
+                where = first_line_matching(pats_for(patterns, skill)[0], lines)
                 print(f"              {skill}/SKILL.md:{where}")
 
     print()

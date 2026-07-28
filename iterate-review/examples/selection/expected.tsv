@@ -18,3 +18,10 @@
 08-root-auth-file.diff	security,senior-dev	leading **/ must match ZERO segments — **/*auth* has to select a repo-root auth.py, not just src/lib/auth.py
 09-uppercase-paths.diff	qa,senior-dev	path_globs are case-insensitive — SRC/Routes/Admin.JS must match **/routes/**
 10-mixed-case-test-file.diff	senior-dev	test_globs and source_exts are case-insensitive — src/Foo.TEST.TS counts as a test change (README's own example), so qa is NOT selected despite a non-trivial 10-line source change in src/Foo.TS
+11-source-to-nonsource-rename.diff	qa,senior-dev	each diff side is classified by ITS OWN path — the 8 removed lines belong to lib/calc.py (a source file) even though the file is renamed to notes/calc.txt, so they count toward non-trivial. Added by Codex review pass 1; before the fix this returned senior-dev only
+#
+# Rows 12-13 pin the accepted diff *formats* (see README "Accepted diff formats").
+# Both were added by Codex review pass 2, which found each silently yielding zero
+# source lines — the worst failure mode for a checker meant to be a second opinion.
+12-quoted-path-rename.diff	qa,senior-dev	git C-quotes a path containing a space; the quotes and the a//b/ prefix must be stripped, or the path stops matching source_exts and the rename's removed source lines vanish
+13-plain-unified-with-timestamps.diff	qa,senior-dev	a non-git unified diff has no `diff --git` line and appends a TAB-separated timestamp to each ---/+++ header; the timestamp must not become part of the path

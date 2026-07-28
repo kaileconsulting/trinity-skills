@@ -26,6 +26,50 @@ It also closes plan risk **R5 (selection rules misroute)**, whose stated
 mitigation is "worked-example fixtures pin the routing." Pinning implies
 something enforces it.
 
+## Accepted diff formats
+
+The checker parses three forms. This list is the contract — Codex asked in review
+pass 2 whether the accepted format was narrower than the tooling implied, and it
+was, silently. Each form now has a fixture or a self-test.
+
+| Form | Example header | Notes |
+|---|---|---|
+| git | `--- a/lib/foo.py` | the `a/` / `b/` prefix is stripped per side |
+| git, C-quoted | `--- "a/lib/my foo.py"` | git quotes when a path holds a space, quote, backslash or non-printable byte; escapes and octal UTF-8 are decoded |
+| plain unified | `--- lib/foo.py<TAB>2026-07-28 …` | no `diff --git` line; the tab-separated timestamp is dropped |
+
+**Side-prefix stripping is keyed on format, not on the header.** `--- a/lib/foo.py`
+is genuinely ambiguous: in a git diff the `a/` is a side prefix, while in a plain
+diff it is a real directory named `a`. The header cannot settle it, so the parser
+strips the prefix only when the input contains a `diff --git` line. A consequence:
+`git diff --no-prefix` output is **not** supported — it is git format without the
+prefixes the format implies.
+
+Two further behaviours worth knowing:
+
+- **`---`/`+++` headers are authoritative for line attribution**; `diff --git` is a
+  best-effort supplement. An unparseable `diff --git` line costs nothing for any
+  diff carrying content — it matters only for a pure rename with no hunks, which
+  contributes no changed lines but can still match a `path_glob`.
+- **Each diff side is classified by its own path.** A `-` line belongs to the *old*
+  path and a `+` line to the *new* one, so a source file renamed out of
+  `source_exts` still counts the side that genuinely was source. Attributing both
+  sides to the new path was a real bug (fixture 11).
+
+Anything outside these three forms is not supported. Two residual limitations, both
+accepted deliberately:
+
+- A removed line whose content begins `--- ` is disambiguated from a file header by
+  tracking whether the parser is inside a hunk. Correct for well-formed diffs, but a
+  heuristic rather than a full diff grammar.
+- Format detection is **per input, not per file section**. A single file
+  concatenating a git diff *and* a plain diff would be classified as git format
+  throughout, so a plain header later in the bundle would have a real `a/` component
+  stripped. Curated single-format fixtures are the supported workflow; if mixed
+  bundles ever become one, compute the format per section instead. (Note this is not
+  triggered by a *content* line reading `diff --git …` — hunk content always carries
+  a `+`, `-` or space prefix, so it never matches at position 0.)
+
 ## This is test-only
 
 The skill does **not** call `check-selection.py` during a real review. Selection
@@ -55,6 +99,12 @@ Consequences worth knowing:
 - **Unparseable rule data is a hard error (exit 2), never a silent default.** If
   someone reformats the README's `source_exts` line beyond recognition, the
   script fails loudly rather than quietly matching nothing.
+- **The threshold is read from the bullet that *defines* it**, anchored on
+  "non-trivial source change" rather than the first phrase in the file matching
+  `≥ N changed non-blank`. An unanchored search would let a future worked example
+  or caveat mentioning a different count silently become the threshold — which
+  would break the source-of-truth claim in the exact way that is hardest to
+  notice. Pinned by a self-test in `tools/test-checkers.py` using a decoy phrase.
 - The README and lens frontmatter are **always the source of truth**. If the
   algorithm here disagrees with them, the algorithm is wrong.
 
@@ -77,6 +127,16 @@ implementation gets wrong:
 | `08-root-auth-file` | leading `**/` matches **zero** segments |
 | `09-uppercase-paths` | `path_globs` are case-insensitive |
 | `10-mixed-case-test-file` | `test_globs`/`source_exts` are case-insensitive (`src/Foo.TEST.TS`) |
+| `11-source-to-nonsource-rename` | each diff side is classified by **its own** path — a rename out of `source_exts` still counts its removed source lines |
+| `12-quoted-path-rename` | git C-quoted paths (a space in the filename) |
+| `13-plain-unified-with-timestamps` | a non-git unified diff with tab-separated timestamps and no `diff --git` line |
+
+Rows 11–13 all came out of the Phase 4 code review, and all three shared one
+failure mode: the checker returned a **wrong answer silently**, reporting zero
+changed source lines and quietly not selecting `qa`. For a tool whose only value
+is being a trustworthy second opinion, silently wrong is the worst possible
+behaviour — worse than crashing. Row 11 was the parser attributing a rename's `-`
+lines to the new path; rows 12–13 were unhandled header formats.
 
 Each fixture is a real unified diff, so the same file can be fed to `git apply`
 or to a live `iterate-review` run if you want to compare the script's answer

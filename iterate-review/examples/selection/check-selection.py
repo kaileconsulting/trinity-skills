@@ -170,11 +170,22 @@ def load_readme_config() -> dict:
         raise RuleDataError(f"{README}: could not find the `test_globs` list")
     test_globs = re.findall(r"`([^`]+)`", m.group(1))
 
-    m = re.search(r"[>≥]=?\s*(\d+)\s+changed non-blank", text)
+    # Anchored to the bullet that DEFINES the rule, not just any nearby phrase
+    # mentioning a changed-line count. An unanchored search would let a future
+    # worked example or caveat that mentions a different number silently become
+    # the threshold -- which would quietly break the claim that the README is the
+    # source of truth.
+    m = re.search(
+        r"non-trivial source change.{0,40}?[>≥]=?\s*(\d+)\s+changed non-blank",
+        text,
+        re.DOTALL,
+    )
     if not m:
         raise RuleDataError(
-            f"{README}: could not find the non-trivial line threshold "
-            '(expected a phrase like "≥ 8 changed non-blank")'
+            f"{README}: could not find the non-trivial line threshold. Expected a "
+            'bullet defining "non-trivial source change" followed by a phrase like '
+            '"≥ 8 changed non-blank" -- the threshold is read from that bullet '
+            "specifically, so rewording it requires updating this pattern."
         )
     threshold = int(m.group(1))
 
@@ -222,63 +233,184 @@ def path_matches_any(path: str, globs: list[str]) -> str | None:
     return None
 
 
-def parse_diff(text: str) -> tuple[set[str], dict[str, list[str]]]:
-    """Return (changed paths, changed content lines per path).
+_C_ESCAPES = {"\\": "\\", '"': '"', "t": "\t", "n": "\n", "r": "\r",
+              "a": "\a", "b": "\b", "f": "\f", "v": "\v"}
 
-    Changed content lines are added (`+`) and removed (`-`) lines only --
-    never the `+++`/`---`/`@@` headers and never context lines."""
+
+def _unquote_c(body: str) -> str:
+    """Decode git's C-style path quoting (the text inside the double quotes).
+
+    Git quotes a diff path when it contains a space, a quote, a backslash or a
+    non-printable byte. Octal escapes carry raw UTF-8 bytes, so consecutive ones
+    are buffered and decoded together rather than one byte at a time."""
+    out: list[str] = []
+    raw = bytearray()
+
+    def flush() -> None:
+        if raw:
+            out.append(raw.decode("utf-8", "replace"))
+            raw.clear()
+
+    i = 0
+    while i < len(body):
+        ch = body[i]
+        if ch == "\\" and i + 1 < len(body):
+            nxt = body[i + 1]
+            if nxt in _C_ESCAPES:
+                flush()
+                out.append(_C_ESCAPES[nxt])
+                i += 2
+                continue
+            m = re.match(r"\\([0-7]{1,3})", body[i:])
+            if m:
+                raw.append(int(m.group(1), 8) & 0xFF)
+                i += len(m.group(0))
+                continue
+        flush()
+        out.append(ch)
+        i += 1
+    flush()
+    return "".join(out)
+
+
+def _normalise_header_path(
+    payload: str, side: str, strip_prefix: bool = True
+) -> str | None:
+    """Normalise a `---`/`+++` header payload to a repo-relative path.
+
+    Handles the three diff forms this checker accepts (see README.md, "Accepted
+    diff formats"):
+
+        git             a/lib/foo.py                -> lib/foo.py
+        git, quoted     "a/lib/my foo.py"           -> lib/my foo.py
+        plain unified   lib/foo.py<TAB>2026-07-28.. -> lib/foo.py
+
+    Returns None for /dev/null. The tab split happens before unquoting, which is
+    safe because a quoted path's closing quote precedes any timestamp, and a tab
+    *inside* a quoted path is escaped as `\\t` rather than appearing raw.
+
+    `strip_prefix` resolves a genuine ambiguity: `--- a/lib/foo.py` could be a git
+    side prefix, or a plain diff of a real path under a top-level directory named
+    `a`. The header alone cannot say. The caller decides from format context --
+    `parse_diff` strips only when the diff carries a `diff --git` line."""
+    payload = payload.split("\t", 1)[0].strip()
+    if len(payload) >= 2 and payload.startswith('"') and payload.endswith('"'):
+        payload = _unquote_c(payload[1:-1])
+    if payload == "/dev/null":
+        return None
+    return re.sub(rf"^{side}/", "", payload) if strip_prefix else payload
+
+
+def _parse_diff_git(line: str) -> tuple[str | None, str | None]:
+    """Return (old, new) from a `diff --git` line, or (None, None) if unparseable.
+
+    Best-effort by design: for any diff carrying content the `---`/`+++` headers
+    are authoritative, so an unparseable `diff --git` costs nothing. It matters
+    only for a pure rename with no hunks, which contributes no changed lines but
+    can still match a path_glob."""
+    rest = line[len("diff --git "):].strip()
+    m = re.match(r'^("(?:[^"\\]|\\.)*"|\S+)\s+("(?:[^"\\]|\\.)*"|\S+)$', rest)
+    if not m:
+        return None, None
+    paths: list[str | None] = []
+    for tok, side in zip(m.groups(), ("a", "b")):
+        if tok.startswith('"') and tok.endswith('"'):
+            tok = _unquote_c(tok[1:-1])
+        paths.append(None if tok == "/dev/null" else re.sub(rf"^{side}/", "", tok))
+    return paths[0], paths[1]
+
+
+def parse_diff(text: str) -> tuple[set[str], dict[str, list[str]], dict[str, list[str]]]:
+    """Return (changed paths, added lines by NEW path, removed lines by OLD path).
+
+    The two sides are tracked separately because a rename can move content across
+    the `source_exts` boundary: the `-` lines belong to the *old* path and the `+`
+    lines to the *new* one. Attributing both to the new path undercounts a source
+    file renamed to a non-source extension, since the README counts changed lines
+    "across source files" and a modified line counts as both its `-` and its `+`.
+
+    Changed content lines are added (`+`) and removed (`-`) lines only -- never the
+    `+++`/`---`/`@@` headers and never context lines. `in_hunk` tracking keeps a
+    removed line that happens to read `--- foo` from being mistaken for a file
+    header, which is a real ambiguity in the unified-diff format."""
     changed_paths: set[str] = set()
-    per_file: dict[str, list[str]] = {}
-    current: str | None = None
+    added: dict[str, list[str]] = {}
+    removed: dict[str, list[str]] = {}
+    old_path: str | None = None
+    new_path: str | None = None
+    in_hunk = False
+    # A `diff --git` line anywhere marks the whole input as git format, which is
+    # what licenses stripping the `a/` / `b/` side prefixes. Without one, a leading
+    # `a/` is a real path component and must be preserved.
+    git_format = "\ndiff --git " in "\n" + text
 
     for line in text.splitlines():
         if line.startswith("diff --git "):
-            m = re.match(r"diff --git a/(.+?) b/(.+)$", line)
-            if m:
-                old, new = m.group(1), m.group(2)
-                for p in (old, new):
-                    if p != "/dev/null":
-                        changed_paths.add(p)
-                current = new if new != "/dev/null" else old
+            in_hunk = False
+            old_path, new_path = _parse_diff_git(line)
+            for p in (old_path, new_path):
+                if p:
+                    changed_paths.add(p)
             continue
-        if line.startswith("--- ") or line.startswith("+++ "):
-            path = line[4:].strip()
-            path = re.sub(r"^[ab]/", "", path)
-            if path != "/dev/null":
-                changed_paths.add(path)
-                if line.startswith("+++ "):
-                    current = path
-            continue
-        if line.startswith("@@"):
-            continue
-        if line.startswith("+") or line.startswith("-"):
-            if current is None:
-                continue
-            per_file.setdefault(current, []).append(line[1:])
 
-    return changed_paths, per_file
+        if line.startswith("@@"):
+            in_hunk = True
+            continue
+
+        if not in_hunk and line.startswith("--- "):
+            old_path = _normalise_header_path(line[4:], "a", git_format)
+            if old_path:
+                changed_paths.add(old_path)
+            continue
+
+        if not in_hunk and line.startswith("+++ "):
+            new_path = _normalise_header_path(line[4:], "b", git_format)
+            if new_path:
+                changed_paths.add(new_path)
+            continue
+
+        if line.startswith("+"):
+            if new_path:
+                added.setdefault(new_path, []).append(line[1:])
+        elif line.startswith("-"):
+            if old_path:
+                removed.setdefault(old_path, []).append(line[1:])
+
+    return changed_paths, added, removed
 
 
 def is_test_path(path: str, cfg: dict) -> bool:
     return path_matches_any(path, cfg["test_globs"]) is not None
 
 
-def nontrivial_source_line_count(per_file: dict[str, list[str]], cfg: dict) -> int:
+def is_source_path(path: str, cfg: dict) -> bool:
+    ext = os.path.splitext(path)[1].lower()
+    return ext in cfg["source_exts"] and not is_test_path(path, cfg)
+
+
+def nontrivial_source_line_count(
+    added: dict[str, list[str]], removed: dict[str, list[str]], cfg: dict
+) -> int:
     """Changed non-blank lines in source files. A source file has an extension in
     source_exts AND a path that does not match test_globs. A modified line counts
-    twice (once as `-`, once as `+`) -- deliberately mechanical, per the README."""
+    twice (once as `-`, once as `+`) -- deliberately mechanical, per the README.
+
+    Each side is classified by its own path, so a rename across the source_exts
+    boundary counts the side that really was a source file."""
     total = 0
-    for path, lines in per_file.items():
-        ext = os.path.splitext(path)[1].lower()
-        if ext not in cfg["source_exts"] or is_test_path(path, cfg):
-            continue
-        total += sum(1 for ln in lines if ln.strip())
+    for path, lines in added.items():
+        if is_source_path(path, cfg):
+            total += sum(1 for ln in lines if ln.strip())
+    for path, lines in removed.items():
+        if is_source_path(path, cfg):
+            total += sum(1 for ln in lines if ln.strip())
     return total
 
 
 def select(diff_text: str, lenses: list[dict], cfg: dict) -> tuple[list[str], dict]:
-    changed_paths, per_file = parse_diff(diff_text)
-    changed_lines = [ln for lines in per_file.values() for ln in lines]
+    changed_paths, added, removed = parse_diff(diff_text)
+    changed_lines = [ln for side in (added, removed) for lines in side.values()
+                     for ln in lines]
 
     selected: list[str] = []
     reasons: dict[str, list[str]] = {}
@@ -312,7 +444,7 @@ def select(diff_text: str, lenses: list[dict], cfg: dict) -> tuple[list[str], di
                 break
 
         if lens["non_trivial_without_tests"]:
-            count = nontrivial_source_line_count(per_file, cfg)
+            count = nontrivial_source_line_count(added, removed, cfg)
             tests_changed = any(is_test_path(p, cfg) for p in changed_paths)
             if count >= cfg["threshold"] and not tests_changed:
                 why.append(
@@ -397,10 +529,11 @@ def explain(paths: list[str]) -> int:
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
         selected, reasons = select(text, lenses, cfg)
-        changed_paths, per_file = parse_diff(text)
+        changed_paths, added, removed = parse_diff(text)
         print(f"{path}")
         print(f"  changed paths: {', '.join(sorted(changed_paths)) or '(none)'}")
-        print(f"  source lines:  {nontrivial_source_line_count(per_file, cfg)} "
+        print(f"  source lines:  "
+              f"{nontrivial_source_line_count(added, removed, cfg)} "
               f"(threshold {cfg['threshold']})")
         print(f"  lenses:        {', '.join(selected)}")
         for lid in selected:

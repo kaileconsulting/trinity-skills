@@ -1,0 +1,18 @@
+diff --git a/lib/calc.py b/notes/calc.txt
+similarity index 32%
+rename from lib/calc.py
+rename to notes/calc.txt
+index 4b5c6d7..8e9f0a1 100644
+--- a/lib/calc.py
++++ b/notes/calc.txt
+@@ -1,9 +1,2 @@
+-def compute(a, b):
+-    total = a + b
+-    scaled = total * 2
+-    if scaled > 100:
+-        scaled = 100
+-    offset = scaled - a
+-    result = offset / 2
+-    return result
++Notes on the old compute helper.
++It was folded into the shared math utility.
