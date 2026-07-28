@@ -61,10 +61,22 @@ Array of objects (required, may be empty). Concrete tactical fixes — typos in 
 
 ### `new_questions`
 
-Array of strings (required, may be empty). Questions you want Opus (or the user) to answer in the next pass — typically clarifications about author intent or constraints not visible in the diff. Examples:
+Array of objects (required, may be empty). Questions you want answered in the next pass — typically clarifications about author intent or constraints not visible in the diff. Each carries `question`, `settled_by`, and `why`.
 
-- "Is the new `foo()` function intended to be public API or internal? It's exported but undocumented."
-- "The migration drops column X but the codebase still references it in 3 places — is the deletion intentional and are those references being removed in a follow-up?"
+**Before filing, check that it is actually a question.** If the diff and intent you were given already answer it, say so in a finding instead. `new_questions` is for what you *cannot* settle.
+
+**Classify each by WHO CAN SETTLE IT** — the label routes the question, so it changes what happens next:
+
+- **`resolvable_in_fold`** — answerable from **the repository the diff came from**. You see only the diff; the editor can read the surrounding code, the callers, and the tests. In `why`, name the file or symbol that would settle it.
+  - *"Does anything outside this module import the new `foo()`? It's exported but undocumented."* → `resolvable_in_fold` — the editor can grep the callers. Note the phrasing: this asks about **current usage**, which files settle. *"Is `foo()` **intended** as public API?"* is a different question and is `needs_human` — imports show what is, not what was meant.
+- **`needs_lookup`** — a fact settles it, but reaching that fact needs something you cannot do: a network call, an API query, running the test suite or a benchmark. In `why`, name the lookup.
+  - *"Does the bumped dependency version carry a known advisory?"* → `needs_lookup` — an advisory database answers it; you cannot query one.
+- **`needs_human`** — no fact and no derivation settles it. It needs the author's intent, risk tolerance, cost appetite, or product judgment.
+  - *"The migration drops column X but 3 places still reference it — is the deletion intentional, with those references removed in a follow-up?"* → `needs_human` — the *references* are checkable, but whether the deletion is intended is the author's call.
+
+**When unsure, choose `needs_human`.** Labelling an author's decision as machine-resolvable invites a fabricated answer; an unnecessary escalation costs only a question. The asymmetry is deliberate — err toward escalating.
+
+`why` is one line and is **not** optional padding: it is what makes the label auditable instead of trusted. A bare enum is easy to rubber-stamp.
 
 ## CONVERGENCE GUIDANCE
 

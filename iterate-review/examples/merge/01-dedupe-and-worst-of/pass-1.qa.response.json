@@ -10,6 +10,10 @@
   ],
   "code_corrections": [],
   "new_questions": [
-    "Should q containing % or _ be treated as a literal search string, or is metacharacter matching intended?"
+    {
+      "question": "Should q containing % or _ be treated as a literal search string, or is metacharacter matching intended?",
+      "settled_by": "needs_human",
+      "why": "Both behaviours are defensible; which is intended is a product decision with no derivation from the diff."
+    }
   ]
 }

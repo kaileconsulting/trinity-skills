@@ -23,6 +23,10 @@ current runtime writes `pass-N.<lensid>.response.json`. It has not been renamed,
 because relabelling it as a lens response would be a small fiction: no lens
 produced it.
 
+**Reshaped for question classification (2.1):** its one `new_questions` entry is
+now a `{question, settled_by, why}` object. Question text verbatim; container only.
+The frozen copy under `../../v1/` keeps the original shape.
+
 Its content is nonetheless squarely in the `senior-dev` lane (null deref, a test
 assertion contradicting a function name, a missing JSDoc correction), so it doubles
 as a realistic example of the **single-lens path** — which is still live whenever

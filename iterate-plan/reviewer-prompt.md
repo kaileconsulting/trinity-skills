@@ -122,9 +122,37 @@ where you genuinely can't answer).
 
 ### `new_questions`
 
-Array of strings (required, may be empty). Questions you want Opus to
-answer in the next pass — typically things you noticed while reviewing
-that aren't directly findings but need clarification.
+Array of objects (required, may be empty). Questions you want answered in
+the next pass — things you noticed that aren't findings but need
+clarification. Each carries `question`, `settled_by`, and `why`.
+
+**Before filing, check that it is actually a question.** If the context you
+were given already answers it, put your answer in a finding or an
+`open_question_answer` instead. `new_questions` is for what you *cannot*
+settle.
+
+**Classify each by WHO CAN SETTLE IT** — this routes the question, so the
+label changes what happens next:
+
+- **`resolvable_in_fold`** — answerable from the **full plan plus the
+  repository**. You may have been given only the sections your lens
+  requires, so the editor likely already holds what you're missing. In `why`,
+  name the section or file that would settle it.
+- **`needs_lookup`** — a fact settles it, but reaching that fact needs
+  something you cannot do: a network call, an API query, running a benchmark
+  or a command. In `why`, name the lookup. *Example: "which model versions
+  are currently GA" is a fact, but not one you can reach.*
+- **`needs_human`** — no fact and no derivation settles it. It needs the
+  author's preference, risk tolerance, cost appetite, or product judgment.
+  *Example: "what timeout is acceptable" — there is no correct answer, only
+  the author's tolerance.*
+
+**When unsure, choose `needs_human`.** Labelling an author's decision as
+machine-resolvable invites a fabricated answer; an unnecessary escalation
+costs only a question. The asymmetry is deliberate — err toward escalating.
+
+`why` is one line and is **not** optional padding: it is what makes the
+label auditable instead of trusted. A bare enum is easy to rubber-stamp.
 
 ## CONVERGENCE GUIDANCE
 

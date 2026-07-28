@@ -76,10 +76,28 @@
     },
     "new_questions": {
       "type": "array",
-      "description": "Questions Codex wants the user (via Opus) to answer in the next pass — typically clarifications about author intent or constraints not visible in the diff. Required; may be empty.",
+      "description": "Questions you want answered in the next pass — typically clarifications about author intent or constraints not visible in the diff — each classified by WHO CAN SETTLE IT. Required; may be empty. If you can answer a question yourself from the diff and intent you were given, say so in a finding instead of filing it here.",
       "items": {
-        "type": "string",
-        "minLength": 1
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["question", "settled_by", "why"],
+        "properties": {
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The question itself."
+          },
+          "settled_by": {
+            "type": "string",
+            "enum": ["resolvable_in_fold", "needs_lookup", "needs_human"],
+            "description": "Who can settle this. 'resolvable_in_fold' = answerable from the repository the diff came from — you see only the diff, so the editor can read the surrounding code, callers, and tests you cannot. 'needs_lookup' = a fact exists that settles it, but reaching that fact requires something you cannot do (a network call, an API query, running the test suite or a benchmark). 'needs_human' = no fact and no derivation settles it; it needs the author's intent, risk tolerance, cost appetite, or product judgment. WHEN UNSURE, CHOOSE 'needs_human' — wrongly labelling an author's decision as machine-resolvable invites a fabricated answer, which is far worse than an unnecessary escalation."
+          },
+          "why": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One line justifying the classification — e.g. which file you'd need to read, what lookup would settle it, or which judgment only the author can make. This exists so the label can be audited rather than trusted; a bare enum is easy to rubber-stamp."
+          }
+        }
       }
     }
   }

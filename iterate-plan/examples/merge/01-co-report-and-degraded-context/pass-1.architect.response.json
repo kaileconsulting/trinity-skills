@@ -34,6 +34,15 @@
     }
   ],
   "new_questions": [
-    "What is the gateway timeout in the target environment? The synchronous-path threshold in Approach has to be derived from it."
+    {
+      "question": "What is the gateway timeout in the target environment? The synchronous-path threshold in Approach has to be derived from it.",
+      "settled_by": "resolvable_in_fold",
+      "why": "The ingress/deployment config is in this repository; the editor can read it even though it is not in the plan sections this lens was given."
+    },
+    {
+      "question": "What is the p95 row count of the monthly finance export in production today? The 10k cap is only defensible if real exports sit below it.",
+      "settled_by": "needs_lookup",
+      "why": "The figure lives in production data, not in the repository — it needs a query no reviewer or editor can answer from files on disk."
+    }
   ]
 }

@@ -28,6 +28,10 @@
     }
   ],
   "new_questions": [
-    "Is there a secondary use case the 10k cap would fully serve? If so the MVP could target that and defer the finance export, but the plan does not name one."
+    {
+      "question": "Is there a secondary use case the 10k cap would fully serve? If so the MVP could target that and defer the finance export, but the plan does not name one.",
+      "settled_by": "needs_human",
+      "why": "No artefact names a secondary use case; whether one exists and is worth targeting is the author's product knowledge."
+    }
   ]
 }

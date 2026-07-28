@@ -1,5 +1,80 @@
 # Changelog
 
+## 2.1.0 — 2026-07-28 — classified open questions
+
+A reviewer raising a question now says **who can settle it**, and that label decides
+whether an unattended loop stops. Found by dogfooding: during the first multi-lens
+`iterate-plan` run, neither lens could resolve a question that needed an external
+lookup — the lenses run sandboxed with no network — while two other questions were
+genuinely the author's call. The loop guardrail treated all three identically.
+
+### Changed — **breaking** (reviewer output schema)
+
+- **`new_questions` is now an array of objects**, not strings:
+  `{question, settled_by, why}`. `settled_by` ∈
+  `resolvable_in_fold | needs_lookup | needs_human`. Both skills.
+  - Taken as a break rather than a `oneOf string|object` on purpose: an optional
+    label is one that quietly stops being filled in.
+  - `why` is **required** — a one-line justification, so the label can be audited
+    instead of trusted. A bare enum is easy to rubber-stamp.
+  - The contract states that **`needs_human` is the correct choice when unsure.**
+    An unnecessary escalation costs one question; mislabeling the author's decision
+    as machine-resolvable invites a fabricated answer.
+- **The loop-mode human-judgment guardrail now halts only on `needs_human`.**
+  `resolvable_in_fold` and `needs_lookup` are resolved by Opus and the loop
+  continues; a *failed* lookup reclassifies to `needs_human` and then halts.
+  Previously the guardrail read "a question Opus can't answer from the plan + repo
+  context," which stopped unattended loops for questions a single file read would
+  have answered.
+- Both fold paths route by class, dedupe questions across lenses, take the **most
+  escalating** label on a class conflict, and **sanity-check the label rather than
+  trusting it** — a `resolvable_in_fold` that plainly needs the author's preference
+  is treated as `needs_human`.
+- Pass-log templates record each question's class, resolution, and any override.
+
+### Migration
+
+Seven tracked fixtures reshaped; question text preserved **verbatim**, container
+only. Two notes:
+
+- `iterate-plan/examples/pass-4-response.json` is the repo's only *real* Codex
+  capture and is now lightly reshaped rather than byte-exact. The frozen copy at
+  `v1/iterate-plan-v1/examples/pass-4-response.json` keeps the original shape.
+- `v1/` is untouched — it carries its own schema copy and `tools/` does not scan it.
+
+Runtime state files under `*/state/` are gitignored and were not migrated; they are
+historical artifacts, and nothing reads them back against the schema.
+
+### Added
+
+- 4 parity rules (32 → 36) covering class routing, most-escalating conflict
+  resolution, lookup-failure reclassification, and label auditing. The existing
+  `guard-human-judgment` rule was tightened to require naming *which* class halts.
+- 8 checker self-tests (36 → 44) asserting both schemas reject unclassified
+  `new_questions`, reject an unknown `settled_by`, and require `why`.
+- Merge goldens now demonstrate all three classes, including the case that
+  **changed behavior**: in `iterate-review/examples/merge/01`, the "is the router
+  behind auth middleware" question is `resolvable_in_fold` and no longer halts the
+  loop, while the product-intent question still does. Scenario 02's single question
+  is `needs_human`, so its halt is unchanged — both cases are pinned so the label
+  isn't mistaken for a way to suppress halts.
+
+### Known gaps
+
+- **A lens can mislabel.** The mitigations are the unsure-default, the required
+  `why`, and Opus's override — none of which is a guarantee. A `needs_human`
+  question mislabeled `resolvable_in_fold` and not caught on review would get a
+  fabricated answer. This is plan risk R2 surfacing in a new place.
+- The value concentrates in loop mode. Attended, Opus already made this distinction
+  by hand; the label makes it explicit and machine-actionable.
+- **Routing behaviour is not mechanically tested — only schema shape is.** The 8 new
+  self-tests assert the schemas reject unclassified questions, unknown classes, and a
+  missing `why`. Nothing asserts that `needs_human` halts the loop and the other two
+  continue, because there is no executable fold path to call: routing is prose Opus
+  follows at runtime. The goldens state the expected continue-vs-halt outcome per
+  class, which is the same coverage model merge correctness uses. Raised as a MEDIUM
+  in review and recorded rather than resolved.
+
 ## 2.0.0 — 2026-07-28 — Axis 2: persona lenses
 
 Each review pass now runs **several reviewer personas concurrently** and merges their

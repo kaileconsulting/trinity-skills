@@ -97,7 +97,7 @@ though the reviewer had finished making its case.
 
 ### New questions Codex raised
 
-- What measured latency problem motivated caching this lookup? The answer determines whether a shared-store cache is needed at all.
+- What measured latency problem motivated caching this lookup? The answer determines whether a shared-store cache is needed at all. — needs_human (lens: senior-dev): the motivation is not recorded anywhere in the repository; only the author knows what was measured. Escalated to the user.
 
 ### Lens run summary
 
@@ -132,11 +132,17 @@ BLOCK contradicts the guardrail.
 Under `--loop` this pass halts twice over:
 
 1. **BLOCK verdict** → stop.
-2. **Fold needs human judgment** → the open question (what latency problem
-   motivated this) cannot be answered from the diff plus repo context.
+2. **Fold needs human judgment** → the open question is classified
+   **`needs_human`**: the repository does not record what latency problem
+   motivated the cache, so no amount of reading settles it.
 
 Both must be reported. Surfacing only the first would let a reader think a
 non-BLOCK rerun would resume cleanly, when the open question stops it anyway.
+
+Contrast with scenario 01, where one question is `resolvable_in_fold` and does
+**not** halt. Here the single question is `needs_human`, so classification
+changes nothing about the outcome — which is the correct result, and worth having
+both cases pinned so the label isn't mistaken for a way to suppress halts.
 
 ## What a wrong result looks like
 

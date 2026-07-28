@@ -132,6 +132,28 @@ selection + matched-context composition (step 5) is skill-specific.
      cross-lane disagreement is usually the plan's own unresolved tension
      surfacing, which is what fanning out is for; it is a human-judgment fold
      under step 10's guardrail, not a merge to resolve silently.
+   - **Route `new_questions` by `settled_by`.** Each carries a class saying
+     who can settle it. Dedupe across lenses first (two lenses often ask the
+     same thing); on a class conflict for the same question, take the **most
+     escalating** label (`needs_human` > `needs_lookup` >
+     `resolvable_in_fold`) — the cautious label is the safe one. Then:
+     - **`resolvable_in_fold`** — answer it now by **reading the plan and the
+       repository**. The lens saw only its required sections; you have
+       everything on disk. *Reading any file in the repo is this class, not
+       `needs_lookup`.* Record the answer in the HISTORICAL block.
+     - **`needs_lookup`** — the fact is **outside the repository**: it needs a
+       network or API call, or executing something (a benchmark, a test run, a
+       command whose output isn't already on disk). Perform it and answer. If
+       it fails or isn't available, **reclassify to `needs_human`** and
+       escalate rather than guessing.
+     - **`needs_human`** — carry it into the plan's `## Open questions` as a
+       numbered Q for Kyle, with the lens's `why` and, where you can, a
+       concrete proposal to accept or change. Never answer it yourself.
+     - **Sanity-check the label, don't trust it.** The `why` exists to be
+       audited. If a question labelled `resolvable_in_fold` plainly needs the
+       author's preference, treat it as `needs_human`; a mislabel that
+       licenses a fabricated answer is the failure mode this routing exists to
+       prevent.
    - **Aggregate verdict = worst-of** the lens verdicts (BLOCK > REVISE >
      APPROVE). A `FAILED` selected lens raises the aggregate to **at least
      REVISE** — BLOCK is preserved if any *completed* lens returned BLOCK —
@@ -161,7 +183,9 @@ selection + matched-context composition (step 5) is skill-specific.
    1. <answer>
 
    ### New questions Codex raised
-   - <question>
+   - <question> — <settled_by> (lens: <lensid>): <resolution — the answer if
+     `resolvable_in_fold`/`needs_lookup`, or "carried to Open questions as Qn"
+     if `needs_human`. Note any label you overrode, and why.>
 
    ### Lens run summary
    - architect: <APPROVE|REVISE|BLOCK|FAILED> · product-manager: <APPROVE|REVISE|BLOCK|FAILED>
@@ -193,8 +217,13 @@ selection + matched-context composition (step 5) is skill-specific.
       open-questions excluded; a `FAILED`-lens pass is skipped in the
       comparison but still counts toward the cap) → stop, surface the stall.
     - **Fold needs human judgment** — any HIGH finding was *not incorporated*,
-      or an open question surfaced that Opus can't answer from the plan + repo
-      context → stop, escalate.
+      or a `new_question` classified **`needs_human`** survived the fold (after
+      the label sanity-check and any override in step 7) → stop, escalate.
+      `resolvable_in_fold` and `needs_lookup` questions do **not** halt the
+      loop: Opus resolves them and continues. If a `needs_lookup` resolution
+      *fails*, it becomes `needs_human` and then halts. This is the whole point
+      of the classification — an unattended loop shouldn't stop for a question
+      it could have answered, and must never continue past one only Kyle can.
 
     On **Continue** (manual or loop-auto): increment pass count, loop to step 5.
     On **Converge**: enter the Sonnet-handoff sub-flow (Phase 3, below).
