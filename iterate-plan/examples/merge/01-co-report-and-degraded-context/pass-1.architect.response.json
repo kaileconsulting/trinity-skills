@@ -1,0 +1,39 @@
+{
+  "verdict": "REVISE",
+  "findings": [
+    {
+      "title": "Phase 2 depends on the job queue that Phase 3 delivers",
+      "severity": "HIGH",
+      "description": "Phasing, Phase 2 deliverable: \"exports run in the background and email a download link.\" The queue those background jobs run on is not introduced until Phase 3 (\"stand up the worker + queue\"). Phase 2 as written cannot ship without reaching forward into Phase 3, so the phase boundary is not a real seam and the stated critical path is wrong.",
+      "suggested_action": "Either move the queue into Phase 2, or make Phase 2's deliverable synchronous-only and defer backgrounding to Phase 3."
+    },
+    {
+      "title": "Phase 1's 10k-row cap contradicts the no-row-limit goal",
+      "severity": "HIGH",
+      "description": "Approach specifies streaming writes so export size is bounded by time rather than memory, and Goals (MVP) commits to \"exports complete regardless of row count.\" Phase 1's deliverable then caps exports at 10,000 rows. The cap is a design decision the Approach section explicitly rules out, so one of the two is wrong and the phase cannot be built from both.",
+      "suggested_action": "Decide whether the MVP is capped or unbounded, then make Approach, Goals, and the Phase 1 deliverable agree."
+    },
+    {
+      "title": "\"Exports are fast\" is unachievable on the request path Approach specifies",
+      "severity": "HIGH",
+      "description": "Goals (MVP) bullet 2 asks for fast exports; Approach routes export generation through the synchronous HTTP request path. At the volume named in Who / Use cases (a ~50k-row monthly finance export), generation exceeds the gateway's 30s timeout regardless of how the goal is worded — the request is terminated before the response is written. This is a mechanism failure, not a tuning problem.",
+      "suggested_action": "Move generation off the request path for anything above a small threshold, and state that threshold in Approach."
+    }
+  ],
+  "plan_corrections": [
+    {
+      "location": "Phasing, Phase 3 heading",
+      "issue": "Phase 3 is titled \"Phase 2 — worker + queue\", duplicating Phase 2's number.",
+      "fix": "Renumber the heading to Phase 3."
+    }
+  ],
+  "open_question_answers": [
+    {
+      "question_id": "Q1",
+      "answer": "Cap at 10k for the MVP. Unbounded export requires streaming writes plus a background worker and queue, and the queue is Phase 3 work — so committing to unbounded in Phase 1 forces the Phase 3 infrastructure forward into Phase 1 and collapses the phasing. A capped MVP is the only version of this plan that is internally sequenceable as written."
+    }
+  ],
+  "new_questions": [
+    "What is the gateway timeout in the target environment? The synchronous-path threshold in Approach has to be derived from it."
+  ]
+}

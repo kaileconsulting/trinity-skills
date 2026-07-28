@@ -1,0 +1,7 @@
+{
+  "verdict": "REVISE",
+  "findings": [
+    {
+      "title": "Permission cache retains stale allow decisions after revocation",
+      "severity": "HIGH",
+      "description": "api/permissions.py:8 returns a cached allow for up to _TTL_SECONDS after the underlying grant has been removed, so revocation is not effective until the entry expi

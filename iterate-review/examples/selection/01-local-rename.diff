@@ -1,0 +1,16 @@
+diff --git a/billing/totals.py b/billing/totals.py
+index 1a2b3c4..5d6e7f8 100644
+--- a/billing/totals.py
++++ b/billing/totals.py
+@@ -1,8 +1,8 @@
+ from decimal import Decimal
+
+
+ def total_items(items):
+-    n = 0
++    count = 0
+     for item in items:
+-        n += item.quantity
+-    return n
++        count += item.quantity
++    return count

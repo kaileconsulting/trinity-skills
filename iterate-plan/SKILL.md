@@ -24,6 +24,14 @@ start (slash command + Skill tool both work). User typically triggers
 with a phrase like "iterate this plan with Codex" or
 `/iterate-plan <plan-path>`.
 
+Optional flags:
+- `--loop` (alias `--until-approve`) — start in **loop mode**: auto-continue
+  through REVISE passes without prompting, stopping at the first APPROVE for
+  the human's Converge call (see per-pass step 10). Loop mode can also be
+  entered mid-run via the `(L)oop from here` checkpoint option.
+- `--max-passes=N` — loop-mode safety cap (default 6), a fresh budget per loop
+  activation.
+
 ## Setup (once per skill invocation)
 
 1. Read the plan file at the user's specified path.
@@ -39,57 +47,110 @@ with a phrase like "iterate this plan with Codex" or
 
 ## Per-pass loop
 
-5. **Invoke Codex** with the reviewer prompt + plan content piped through
-   stdin:
+Each pass fans out across the **persona lenses** for design review (see
+`lenses/` — `architect` + `product-manager`, both always selected per
+`lenses/README.md`), then Opus merges their findings into one list. Steps
+6–10 (fan-out, per-response validation, merge + worst-of verdict + `FAILED`
+handling, one HISTORICAL block, and the loop-mode checkpoint) are the
+**SHARED MACHINERY** — the same *rules* (fan-out, semantic merge, worst-of
+verdict, `FAILED` handling, one HISTORICAL block, one checkpoint, loop mode +
+guardrails) hold in the sibling `iterate-review` skill's steps 10–14. Keep
+them in **semantic parity** — the prose legitimately differs where each
+skill's folding / pass-log / `--once` details differ; a Phase 4 fixture checks
+the shared *rules* are present in both, **not** byte-identity. Only lens
+selection + matched-context composition (step 5) is skill-specific.
 
-```bash
-cat ~/.claude/skills/iterate-plan/reviewer-prompt.md "$PLAN_PATH" \
-  | codex -a never exec \
-      -C "$(dirname "$PLAN_PATH")" \
-      -s read-only \
-      --skip-git-repo-check \
-      --output-schema ~/.claude/skills/iterate-plan/reviewer-output.schema.json \
-      --json \
-      --output-last-message "$STATE_DIR/pass-$N.response.json" \
-      -
-```
+5. **Select lenses + compose matched context.** Read the lens records in
+   `~/.claude/skills/iterate-plan/lenses/*.md` and apply the selection table.
+   For iterate-plan both lenses always run.
 
-   Notes:
-   - `-a never` precedes the `exec` subcommand because it's a
-     root-level flag in codex-cli 0.125.0+.
-   - `--skip-git-repo-check` is required when `$PLAN_PATH` is in a
-     directory that isn't a git repo.
-   - Reviewer prompt is concatenated with plan content and piped
-     through stdin via the `cat ... | codex ... -` pattern (the
-     trailing `-` argument tells `codex exec` to read from stdin).
-   - If a manual-edit was detected at the top of this pass (current
-     plan hash ≠ post-fold hash from previous pass), prepend a
-     `Note: human-edits since last pass — diff:` block + diff to the
-     `cat` pipeline so Codex sees the divergence.
+   For each lens, build a matched-context file by **extracting the plan H2
+   sections named in its `requires_sections`** — match a line `## <title>`
+   (title compared with the `## ` marker stripped) and take everything from
+   that heading up to the next `## ` heading. Write the concatenated slices to
+   `$STATE_DIR/pass-$N.<lensid>.context.md` under a header
+   `=== MATCHED CONTEXT (sections for the <lensid> lens) ===`, and use it as
+   `$MATCHED_CONTEXT_FILE` in step 6. A shell helper for one section:
 
-6. **Read + validate response.** Read `pass-$N.response.json` — already
-   schema-structured. Reject the pass if response contains patch markers
-   (`*** Begin Patch`, unified diff `--- a/`, `+++ b/`, `@@`,
-   merge-conflict `<<<<<<<`). Belt-and-suspenders against schema bypass.
+   ```bash
+   extract_section() {  # $1 = bare H2 title, $2 = plan path
+     awk -v t="## $1" '$0==t{f=1;print;next} /^## /&&f{f=0} f{print}' "$2"
+   }
+   ```
 
-7. **Auto-fold findings into the plan via Edit tool.** Opus is the sole
-   writer. For each item:
-   - **`plan_corrections`** — apply mechanically inline. These are
-     non-controversial typo / broken-ref / contradiction fixes.
-   - **`findings`** — apply revisions inline for HIGH and MEDIUM
-     severity (skip / dispute only with explicit reasoning, captured in
-     the audit trail). LOW is informational; address if cheap, document
-     either way.
-   - **Append HISTORICAL section** to the plan using this exact template:
+   **If a required section is absent** (the helper prints nothing), still build
+   the file but include a line `NOTE: required section "<title>" is absent —
+   flag this gap` so the lens reports the omission rather than inventing
+   content. Never skip a lens, never hand it an empty file.
+
+6. **Fan out — one Codex call per selected lens, concurrently.** For each lens,
+   compose its input = the shared `reviewer-prompt.md` + the lens's ROLE/FOCUS
+   fragment + its matched-context slice + the plan. Run the calls in parallel
+   (background subprocesses), each writing
+   `$STATE_DIR/pass-$N.<lensid>.response.json`:
+
+   ```bash
+   cat ~/.claude/skills/iterate-plan/reviewer-prompt.md \
+       ~/.claude/skills/iterate-plan/lenses/<lensid>.md \
+       "$MATCHED_CONTEXT_FILE" "$PLAN_PATH" \
+     | codex -a never exec \
+         -C "$(dirname "$PLAN_PATH")" \
+         -s read-only --skip-git-repo-check \
+         --output-schema ~/.claude/skills/iterate-plan/reviewer-output.schema.json \
+         --json --output-last-message "$STATE_DIR/pass-$N.<lensid>.response.json" \
+         -
+   ```
+
+   Notes (unchanged from single-lens): `-a never` precedes `exec`;
+   `--skip-git-repo-check` when the plan dir isn't a git repo; the trailing `-`
+   reads stdin. If a manual edit was detected at the top of this pass (current
+   plan hash ≠ post-fold hash from the previous pass), prepend a
+   `Note: human edits since last pass — diff:` block to every lens's input.
+
+7. **Read, validate, and merge the lens responses.**
+   - **Per response:** read each `pass-$N.<lensid>.response.json` (already
+     schema-validated by `--output-schema`). Apply belt-and-suspenders
+     patch-marker rejection (`*** Begin Patch`, `--- a/`, `+++ b/`, `@@`,
+     `<<<<<<<`).
+   - **Lens failure:** a lens that crashes or returns malformed/off-schema
+     output is **retried once**; if it still fails, record it as `FAILED`
+     orchestration metadata — **not** a verdict (the reviewer schema is
+     untouched).
+   - **Merge (Opus, semantic judgment — not a mechanical key):** collapse
+     findings that target the same location and assert the same defect; keep
+     distinct concerns separate; a co-reported finding retains **all**
+     contributing lens ids. Produce one merged findings list.
+   - **Dedupe `plan_corrections` too.** Two lenses can file the same tactical
+     correction. Corrections are applied *mechanically*, so a surviving
+     duplicate can double-apply the same edit. Collapse by location +
+     intended fix.
+   - **Conflicting open-question answers.** When two lenses answer the same
+     `question_id`, record **both** with lens attribution. If they agree,
+     merge into one answer. If they **disagree**, state the disagreement
+     explicitly and escalate — never average them, pick the more
+     authoritative-sounding lens, or let the last-read answer win. A
+     cross-lane disagreement is usually the plan's own unresolved tension
+     surfacing, which is what fanning out is for; it is a human-judgment fold
+     under step 10's guardrail, not a merge to resolve silently.
+   - **Aggregate verdict = worst-of** the lens verdicts (BLOCK > REVISE >
+     APPROVE). A `FAILED` selected lens raises the aggregate to **at least
+     REVISE** — BLOCK is preserved if any *completed* lens returned BLOCK —
+     and blocks Converge (step 10).
+
+8. **Fold merged findings + append ONE HISTORICAL block.** Opus is the sole
+   writer. Fold `plan_corrections` mechanically; incorporate HIGH/MEDIUM
+   findings (skip/dispute only with explicit reasoning); LOW is informational.
+   Append a single HISTORICAL section for the whole pass, each finding tagged
+   with its originating **lens id(s)** and fold disposition:
 
    ```markdown
    ## Codex review pass N — answers (YYYY-MM-DD) [HISTORICAL]
 
    ### Verdict
-   APPROVE / REVISE / BLOCK
+   APPROVE / REVISE / BLOCK   (worst-of; note any FAILED lenses)
 
    ### Findings
-   1. **<title>** — <severity>: <description>
+   1. **<title>** — <severity> · lens: <architect|product-manager|both>: <description>
       → Opus: <incorporated|skipped|disputed> — <reasoning>
    ...
 
@@ -101,25 +162,45 @@ cat ~/.claude/skills/iterate-plan/reviewer-prompt.md "$PLAN_PATH" \
 
    ### New questions Codex raised
    - <question>
+
+   ### Lens run summary
+   - architect: <APPROVE|REVISE|BLOCK|FAILED> · product-manager: <APPROVE|REVISE|BLOCK|FAILED>
    ```
 
-8. **Recompute `plan_content_hash` post-fold.** Stash this for the next
-   pass's manual-edit detection.
+9. **Recompute `plan_content_hash` post-fold.** Stash for the next pass's
+   manual-edit detection.
 
-9. **Present Continue / Converge / Abort to the user**, with a
-   recommendation:
-   - Recommend **Converge** when `verdict == APPROVE` AND Opus has no
-     further changes pending. One APPROVE + no-further-changes is enough
-     — don't require two consecutive APPROVEs.
-   - Recommend **Continue** otherwise.
-   - Never auto-decide. Human always confirms.
+10. **Checkpoint — Continue / Converge / Abort / (L)oop.** Present the
+    aggregate verdict + a recommendation:
+    - Recommend **Converge** when aggregate `verdict == APPROVE`, no lens is
+      `FAILED`, and Opus has no further changes pending. One APPROVE +
+      no-further-changes is enough.
+    - Recommend **Continue** otherwise. Never auto-decide convergence.
 
-10. On **Continue**: increment pass count, loop to step 5.
+    **Loop mode (opt-in).** If invoked with `--loop` / `--until-approve`, or if
+    the user picks **(L)oop from here** at this checkpoint, auto-continue
+    without prompting between passes — but **automate `Continue` only, never
+    `Converge`.** The loop halts and hands back to the human when any guardrail
+    fires:
+    - **APPROVE reached** → stop, present the Converge decision.
+    - **Max-pass cap** (default 6, `--max-passes=N`) — a *fresh per-activation
+      budget* counting auto-continued passes (the activating pass doesn't
+      count; manual/historical passes don't deplete it) → stop, "hit cap
+      without converging."
+    - **BLOCK verdict** → stop.
+    - **Non-convergence** — the merged **HIGH+MEDIUM** finding count fails to
+      strictly decrease across two consecutive transitions (LOW / `FAILED` /
+      open-questions excluded; a `FAILED`-lens pass is skipped in the
+      comparison but still counts toward the cap) → stop, surface the stall.
+    - **Fold needs human judgment** — any HIGH finding was *not incorporated*,
+      or an open question surfaced that Opus can't answer from the plan + repo
+      context → stop, escalate.
+
+    On **Continue** (manual or loop-auto): increment pass count, loop to step 5.
     On **Converge**: enter the Sonnet-handoff sub-flow (Phase 3, below).
-    On **Abort**: skip Phase 3, write state file with final values
-    (`pass_count`, `last_verdict`, `plan_abs_path`, `plan_content_hash`,
-    `started_at`, `last_pass_at`, `convergence.handoff_decision="aborted"`),
-    exit.
+    On **Abort**: write the state file with final values (`pass_count`,
+    `last_verdict`, `plan_abs_path`, `plan_content_hash`, `started_at`,
+    `last_pass_at`, `convergence.handoff_decision="aborted"`), exit.
 
 ## On Converge — Sonnet-handoff sub-flow (Phase 3)
 
@@ -195,16 +276,27 @@ during the loop and stay on disk for inspection / debugging.
 - `state/<plan-path-hash>.json` — per-plan iteration state (written at
   convergence/abort only).
 - `state/example.json` — illustrative state file showing the schema.
-- `examples/pass-4-response.json` — a real Codex response, fixture for testing.
+- `examples/` — fixtures (see `examples/README.md`). `pass-4-response.json` is a
+  real pre-Axis-2 Codex response; `examples/merge/` holds multi-lens merge
+  goldens. Validate with `tools/check-examples.py`.
 
 ## Hard rules
 
 - Codex never edits the plan file. Enforced by `-s read-only -a never`
   sandbox + reviewer prompt + skill-side patch-marker rejection.
 - Skill never silently iterates. After every pass, prompt user:
-  Continue / Converge / Abort.
+  Continue / Converge / Abort. **Loop mode is the one opt-in exception**
+  (via `--loop` or the `(L)oop from here` choice): it auto-continues REVISE
+  passes without prompting, but it is *not silent* — every pass appends its
+  HISTORICAL block, and the loop always halts and returns to the human at
+  APPROVE or any guardrail (step 10). Loop mode automates `Continue` only.
 - Skill never decides convergence. Suggests when verdict=APPROVE +
-  Opus reports no further changes; human always confirms.
+  Opus reports no further changes; human always confirms. **Loop mode never
+  auto-converges** — it stops at APPROVE and presents the Converge decision.
+- Fan-out is one Codex call per selected lens; Opus merges (semantic dedupe,
+  worst-of verdict, lens attribution). A selected lens that fails after one
+  retry is `FAILED` metadata that forces at-least-REVISE (BLOCK preserved) and blocks Converge. Exactly
+  one HISTORICAL block and one checkpoint per pass, regardless of lens count.
 - Sonnet-handoff at convergence is fully user-driven: skill writes
   the handoff prompt to disk, user copies into a fresh session and
   performs the `/clear` + model swap themselves.

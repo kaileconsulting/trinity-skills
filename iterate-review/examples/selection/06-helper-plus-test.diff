@@ -1,0 +1,32 @@
+diff --git a/lib/slugify.py b/lib/slugify.py
+index 6f7a8b9..0c1d2e3 100644
+--- a/lib/slugify.py
++++ b/lib/slugify.py
+@@ -1,2 +1,13 @@
+ import re
+
++
++def slugify(value, max_length=80):
++    value = value.strip().lower()
++    value = re.sub(r"[^a-z0-9]+", "-", value)
++    value = value.strip("-")
++    if max_length and len(value) > max_length:
++        value = value[:max_length].rstrip("-")
++    if not value:
++        value = "untitled"
++    return value
+diff --git a/tests/test_slugify.py b/tests/test_slugify.py
+index 7a8b9c0..1d2e3f4 100644
+--- a/tests/test_slugify.py
++++ b/tests/test_slugify.py
+@@ -1,2 +1,10 @@
+ from lib.slugify import slugify
+
++
++def test_slugify_basic():
++    assert slugify("Hello World") == "hello-world"
++
++
++def test_slugify_collapses_separators():
++    assert slugify("a  --  b") == "a-b"
++    assert slugify("") == "untitled"

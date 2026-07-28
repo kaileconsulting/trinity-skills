@@ -1,0 +1,21 @@
+{
+  "verdict": "REVISE",
+  "findings": [
+    {
+      "title": "SQL injection via the q query parameter",
+      "severity": "HIGH",
+      "description": "src/routes/admin.js:17 — the source is req.query.q (untrusted, caller-controlled) and the sink is db.query with a concatenated string. A value of %' OR '1'='1 returns every row regardless of the intended filter, and a stacked statement is reachable if the driver permits multiple statements. Nothing sanitises the value between source and sink.",
+      "suggested_action": "Use a parameterised query so q cannot alter statement structure. Do not hand-escape the value."
+    },
+    {
+      "title": "Admin user listing enforces no authorization",
+      "severity": "HIGH",
+      "description": "src/routes/admin.js:15 registers GET /admin/users with no authentication or authorization middleware. The handler returns id, email and name for every row in users, so any unauthenticated caller can enumerate the full user table.",
+      "suggested_action": "Require authentication plus an admin-role authorization check before the handler body runs."
+    }
+  ],
+  "code_corrections": [],
+  "new_questions": [
+    "Is this router mounted behind app-level authentication middleware, or is each route expected to guard itself?"
+  ]
+}

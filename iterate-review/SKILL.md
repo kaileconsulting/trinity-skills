@@ -24,12 +24,14 @@ The skill surfaces in-session via the available-skills list at session start (sl
 - `iterate-review --scope=pr:<n>` — review a merged or open PR by number (uses `gh pr diff`)
 - `iterate-review --scope=<...> --once` — single-pass review, no Continue/Converge/Abort loop
 - `iterate-review --scope=<...> --log-path=<path>` — custom pass log location
+- `iterate-review --scope=<...> --loop` (alias `--until-approve`) — loop mode: auto-continue REVISE passes, stopping at the first APPROVE for the human's Converge call
+- `iterate-review --scope=<...> --max-passes=N` — loop-mode safety cap (default 6, fresh budget per loop activation)
 
 If the user invokes without a `--scope` flag, ask them which scope they want before proceeding. Default suggestion: `--scope=working` if there are uncommitted changes (`git status --porcelain` non-empty), `--scope=branch` if the current branch is ahead of main, otherwise prompt for `pr:<n>`.
 
 ## Setup (once per skill invocation)
 
-1. **Parse args.** Extract `--scope=<value>`, `--once` (flag), `--log-path=<path>`. Reject `--plan` / `--phase` flags with a clear "v1 is standalone-only; plan-bound deferred to v2" message and exit.
+1. **Parse args.** Extract `--scope=<value>`, `--once` (flag), `--log-path=<path>`, `--loop`/`--until-approve` (flag), `--max-passes=N`. Reject `--plan` / `--phase` flags with a clear "v1 is standalone-only; plan-bound deferred to v2" message and exit. Reject `--once` together with `--loop` (mutually exclusive — one opts out of the loop, the other automates it).
 
 2. **Verify Codex CLI is available.** Run `codex --version` via Bash. If the command fails, surface a clear error: "Codex CLI not found — install it before invoking iterate-review." Exit. (Pin: tested against codex-cli 0.125.0+.)
 
@@ -69,97 +71,103 @@ If the user invokes without a `--scope` flag, ask them which scope they want bef
 
 ## Per-pass loop
 
-9. **Compose Codex input.** Concatenate (in order):
+Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-dev` always; `security` / `qa` by the deterministic selection rules in `lenses/README.md`), fans out one Codex call per selected lens, and Opus merges their findings into one list. Steps 10–14 (fan-out, per-response validation, merge + worst-of verdict + `FAILED` handling, one HISTORICAL block, and the loop-mode checkpoint) are the **SHARED MACHINERY** — the same *rules* (fan-out, semantic merge, worst-of verdict, `FAILED` handling, one HISTORICAL block, one checkpoint, loop mode + guardrails) hold in the sibling `iterate-plan` skill's steps 6–10. Keep them in **semantic parity** — the prose legitimately differs where each skill's folding / pass-log / `--once` details differ; a Phase 4 fixture checks the shared *rules* are present in both, **not** byte-identity. Only lens selection + input composition (step 9) is skill-specific.
+
+9. **Select lenses + compose per-lens input.** Apply the selection rules in `~/.claude/skills/iterate-review/lenses/README.md` (Matching semantics) to the captured diff: `senior-dev` always runs; `security` / `qa` run when their `path_globs` / `content_regexes` / `non_trivial_without_tests` match. Ambiguity biases toward inclusion.
+
+   **Selection mechanic (deterministic).** Derive from the diff: (a) the **changed paths** — `git diff --name-only` for `working`/`branch`, `gh pr diff --name-only <n>` for `pr:<n>`; and (b) the **changed content lines** — diff lines matching `^[+-]` minus the `+++`/`---` headers. A candidate lens (`security`, `qa`) is selected if **any** of its `path_globs` matches a changed path **or any** `content_regex` matches a changed content line (case-insensitive; `**` = any depth). For `qa` also apply `non_trivial_without_tests` (README Matching semantics: ≥ 8 changed non-blank lines in `source_exts` files with no `test_globs` change). `senior-dev` is always selected. A borderline match → include the lens.
+
+   Then, for each selected lens, compose its input by concatenating (in order):
 
    - Contents of `~/.claude/skills/iterate-review/reviewer-prompt.md`
+   - The lens's ROLE/FOCUS fragment (`lenses/<lensid>.md`)
    - A `---` delimiter line
-   - `=== INTENT ===` header followed by intent context. For v1 standalone, intent is best-effort:
-     - `--scope=working` → "Standalone code review of working-tree changes; no commit message yet. The diff below should be reviewed for correctness/clarity on its own merits."
+   - `=== INTENT ===` header + intent context (best-effort, per scope), with the lens's `matched_context` framing prepended so the lens reads the diff through its lane:
+     - `--scope=working` → "Standalone code review of working-tree changes; no commit message yet."
      - `--scope=branch` → output of `git log $(git merge-base HEAD main)..HEAD --pretty=format:"%h %s%n%b%n---"` (commit messages on the branch)
      - `--scope=pr:<n>` → output of `gh pr view <n> --json title,body --jq '"\(.title)\n\n\(.body)"'` (PR title + description)
-   - `=== DIFF ===` header followed by the captured diff content
-   - `=== PRIOR PASSES ===` header followed by the prior pass log content (empty if pass 1)
+   - `=== DIFF ===` header + the captured diff content
+   - `=== PRIOR PASSES ===` header + prior pass log content (empty if pass 1)
 
-10. **Invoke Codex via subprocess.** Use the same pattern as iterate-plan:
+   In practice write each lens's composed input to `/tmp/iterate-review-input-pass-<N>-<lensid>.txt`.
+
+10. **Fan out — one Codex call per selected lens, concurrently.** Run the selected lenses in parallel (background subprocesses), each writing `$STATE_DIR/pass-$PASS_N.<lensid>.response.json`:
 
     ```bash
     PASS_N=<current pass number>
     STATE_DIR=~/.claude/skills/iterate-review/state/<scope-hash>
     mkdir -p "$STATE_DIR"
 
-    cat <(echo "<composed input from step 9>") \
+    cat "/tmp/iterate-review-input-pass-$PASS_N-<lensid>.txt" \
       | codex -a never exec \
           -s read-only \
           --skip-git-repo-check \
           --output-schema ~/.claude/skills/iterate-review/reviewer-output.schema.json \
           --json \
-          --output-last-message "$STATE_DIR/pass-$PASS_N.response.json" \
+          --output-last-message "$STATE_DIR/pass-$PASS_N.<lensid>.response.json" \
           -
     ```
 
-    Notes (carried from iterate-plan's hard-won lessons):
-    - `-a never` precedes the `exec` subcommand because it's a root-level flag in codex-cli 0.125.0+.
-    - `--skip-git-repo-check` is required if the cwd isn't a git repo.
-    - The trailing `-` argument tells `codex exec` to read from stdin.
-    - In practice, write the composed input to a temp file (`/tmp/iterate-review-input-pass-<N>.txt`) and `cat` it, rather than building the heredoc inline — easier to debug if Codex misbehaves.
+    Notes: `-a never` precedes the `exec` subcommand (root-level flag in codex-cli 0.125.0+); `--skip-git-repo-check` if cwd isn't a git repo; the trailing `-` reads stdin.
 
-11. **Read + validate response.** Read `$STATE_DIR/pass-$PASS_N.response.json`. The response is already JSON-schema-validated by `codex exec --output-schema`, but apply belt-and-suspenders rejection: scan the entire response for any of these patch-shaped markers:
+11. **Read, validate, and merge the lens responses.**
+    - **Per response:** read each `$STATE_DIR/pass-$PASS_N.<lensid>.response.json` (schema-validated by `--output-schema`). Apply belt-and-suspenders patch-marker rejection — scan for `*** Begin Patch`, `--- a/` or `+++ b/`, `@@ -` followed by digits, `<<<<<<<` or `=======` or `>>>>>>>`. If any are present in a lens response, abort with: "Codex response contains patch-shaped output, which violates the reviewer contract. Aborting. Inspect the offending `pass-$PASS_N.<lensid>.response.json`." Do not proceed.
+    - **Lens failure:** a lens that crashes or returns malformed/off-schema output is **retried once**; if it still fails, record it as `FAILED` orchestration metadata — not a verdict (the reviewer schema is untouched).
+    - **Merge (Opus, semantic judgment — not a mechanical key):** collapse findings that target the same location and assert the same defect; keep distinct concerns separate; a co-reported finding retains **all** contributing lens ids. Produce one merged findings list.
+    - **Dedupe `code_corrections` too.** Two lenses can file the same tactical correction. Corrections are applied *mechanically*, so a surviving duplicate can double-apply the same edit. Collapse by location + intended fix. (iterate-plan carries an additional rule for conflicting `open_question_answers`; the reviewer schema here has `new_questions` but no answer field, so that collision cannot arise.)
+    - **Aggregate verdict = worst-of** the lens verdicts (BLOCK > REVISE > APPROVE). A `FAILED` selected lens raises the aggregate to **at least REVISE** — BLOCK is preserved if any *completed* lens returned BLOCK — and blocks Converge (step 14).
 
-    - `*** Begin Patch`
-    - `--- a/` or `+++ b/`
-    - `@@ -` followed by digits
-    - `<<<<<<<` or `=======` or `>>>>>>>` (merge conflict markers)
-
-    If any are present, abort the loop with: "Codex response contains patch-shaped output, which violates the reviewer contract. Aborting. Inspect `$STATE_DIR/pass-$PASS_N.response.json` to debug." Do not proceed.
-
-12. **Append HISTORICAL block to pass log.** Use the Edit or Write tool to append a new section to the pass log file. If the file doesn't exist yet, create it with a `# Code Review — <scope-tag>` H1 header at the top, then append the pass section. Format the pass section like this:
+12. **Fold merged findings + append ONE HISTORICAL block to the pass log.** Opus is the sole writer: fold findings into the working code and `code_corrections` mechanically. If the pass log doesn't exist, create it with a `# Code Review — <scope-tag>` H1 header, then append a single pass section (each finding tagged with its originating lens id):
 
     ```markdown
     ## Pass <N> — <YYYY-MM-DD HH:MM> [HISTORICAL]
 
-    **Scope:** <scope value> · **Diff size:** <N lines> · **Verdict:** <APPROVE/REVISE/BLOCK>
+    **Scope:** <scope value> · **Diff size:** <N lines> · **Verdict:** <APPROVE/REVISE/BLOCK> (worst-of; note any FAILED lenses) · **Lenses:** <senior-dev[, security][, qa]>
 
     ### Findings
 
-    1. **<title>** — <severity>: <description>
+    1. **<title>** — <severity> · lens: <lensid(s)>: <description>
        → Opus: <incorporated|skipped|disputed> — <reasoning, written by Opus when folding>
     2. ...
 
     ### Code corrections applied
 
     - <location> — <issue> → <fix description>
-    - ...
 
     ### New questions Codex raised
 
     - <question>
-    - ...
+
+    ### Lens run summary
+
+    - senior-dev: <APPROVE|REVISE|BLOCK|FAILED>[ · security: <...>][ · qa: <...>]
 
     ### Diff snapshot reference
 
     Diff captured at <YYYY-MM-DD HH:MM>; head SHA `<git rev-parse HEAD>` (or PR head SHA for `--scope=pr:<n>`).
     ```
 
-    For each finding, Opus (you) decides the disposition:
-    - **`incorporated`** — apply changes to the working code via Edit/Write. Required for HIGH severity unless explicitly disputed with reasoning. Recommended for MEDIUM. Optional for LOW.
-    - **`skipped`** — acknowledge the finding but don't act on it (typically LOW polish items the user explicitly waves away).
-    - **`disputed`** — reject the finding with reasoning (e.g., "this is intentional because <reason>"). Reserved for cases where Codex misunderstood intent or constraints not visible in the diff.
+    Dispositions: **`incorporated`** — apply the code edit (required for HIGH unless explicitly disputed with reasoning; recommended for MEDIUM; optional for LOW). **`skipped`** — acknowledge, don't act (typically LOW). **`disputed`** — reject with reasoning (Codex misread intent or a constraint not visible in the diff). `code_corrections` are applied mechanically.
 
-    For `code_corrections`, apply mechanically — they're non-controversial by definition.
+13. **Recompute pass log content.** The pass log now reflects the latest pass for subsequent passes' `=== PRIOR PASSES ===` context.
 
-13. **Recompute pass log content.** After appending, the pass log now reflects the latest pass for use in subsequent passes' `=== PRIOR PASSES ===` context.
+14. **Checkpoint — Continue / Converge / Abort / (L)oop**, with a recommendation:
 
-14. **Present Continue / Converge / Abort to the user**, with a recommendation:
+    - Recommend **Converge** when aggregate `verdict == APPROVE`, no lens is `FAILED`, and no further folds are pending.
+    - Recommend **Continue** otherwise. Never auto-decide convergence.
 
-    - Recommend **Converge** when `verdict == APPROVE` AND no further folds are pending.
-    - Recommend **Continue** otherwise.
-    - Never auto-decide. Human always confirms.
+    Surface a brief summary: "Pass <N>: <verdict> across <lenses>, <X> findings, <Y> corrections. Recommendation: <Continue|Converge>. Choose: (C)ontinue / (V)Converge / (A)bort[ / (L)oop]."
 
-    Surface a brief summary: "Pass <N> verdict: <V>. <X> findings, <Y> corrections applied. Recommendation: <Continue|Converge>. Choose: (C)ontinue / (V)Converge / (A)bort."
+    **Loop mode (opt-in).** If invoked with `--loop` / `--until-approve`, or if the user picks **(L)oop from here**, auto-continue without prompting between passes — but **automate `Continue` only, never `Converge`.** The loop halts and hands back to the human when any guardrail fires:
+    - **APPROVE reached** → stop, present the Converge decision.
+    - **Max-pass cap** (default 6, `--max-passes=N`) — a *fresh per-activation budget* counting auto-continued passes (the activating pass doesn't count; manual/historical passes don't deplete it) → stop, "hit cap without converging."
+    - **BLOCK verdict** → stop.
+    - **Non-convergence** — the merged **HIGH+MEDIUM** finding count fails to strictly decrease across two consecutive transitions (LOW / `FAILED` / open-questions excluded; a `FAILED`-lens pass is skipped in the comparison but still counts toward the cap) → stop, surface the stall.
+    - **Fold needs human judgment** — any HIGH finding was *not incorporated*, or an open question surfaced that Opus can't answer from the diff + repo context → stop, escalate.
 
-15. **If `--once` flag was set**, skip the prompt entirely — write the state file (Step 16) with `final_action: "once-mode-exit"` and exit immediately after Step 12, regardless of verdict.
+15. **If `--once` was set**, skip the checkpoint entirely — write the state file (step 16) with `final_action: "once-mode-exit"` and exit immediately after step 13, regardless of verdict. (`--once` and `--loop` are mutually exclusive — reject both together.)
 
-16. **On Continue:** increment pass count, loop to step 9. The next pass's `=== PRIOR PASSES ===` block now includes this pass's HISTORICAL section.
+16. **On Continue** (manual or loop-auto): increment pass count, loop to step 9. The next pass's `=== PRIOR PASSES ===` block now includes this pass's HISTORICAL section.
 
     **On Converge or Abort:** write the state file at `~/.claude/skills/iterate-review/state/<scope-hash>.json` with these fields:
 
@@ -176,13 +184,14 @@ If the user invokes without a `--scope` flag, ask them which scope they want bef
     }
     ```
 
-    Then exit. Pass log file remains in place; per-pass response files (`pass-N.response.json`) under `state/<scope-hash>/` stay on disk for inspection.
+    Then exit. Pass log file remains in place; per-lens response files (`pass-N.<lensid>.response.json`) under `state/<scope-hash>/` stay on disk for inspection.
 
 ## Hard rules
 
 - **Codex never edits any files.** Enforced by `-s read-only -a never` Codex sandbox + reviewer prompt + skill-side patch-marker rejection on the response.
-- **Skill never silently iterates.** After every pass, prompt user: Continue / Converge / Abort. Exception: `--once` mode exits after pass 1 without prompting (the user opted out of the loop explicitly).
-- **Skill never decides convergence.** Suggests when verdict=APPROVE + Opus reports no further folds; human always confirms.
+- **Skill never silently iterates.** After every pass, prompt user: Continue / Converge / Abort. Two opt-in exceptions: `--once` exits after pass 1 (user opted out of the loop), and **loop mode** (`--loop` / `(L)oop from here`) auto-continues REVISE passes — but loop mode is *not silent*: every pass appends its HISTORICAL block, and it always halts and returns to the human at APPROVE or any guardrail (step 14). Loop mode automates `Continue` only.
+- **Skill never decides convergence.** Suggests when verdict=APPROVE + Opus reports no further folds; human always confirms. **Loop mode never auto-converges** — it stops at APPROVE and presents the Converge decision.
+- **Fan-out is one Codex call per selected lens.** Opus merges (semantic dedupe, worst-of verdict, lens attribution). A selected lens that fails after one retry is `FAILED` metadata that forces at-least-REVISE (BLOCK preserved) and blocks Converge. Exactly one HISTORICAL block and one checkpoint per pass, regardless of lens count.
 - **v1 is standalone-only.** Refuse `--plan` / `--phase` flags with a clear "deferred to v2" message and exit. Don't half-implement plan-bound features.
 - **Opus folds findings.** Codex provides findings; Opus (you) reads them and applies code edits via Edit/Write tools to the working code, then writes the disposition (`incorporated|skipped|disputed`) into the pass log's HISTORICAL block. This is the same Opus-as-sole-writer discipline as iterate-plan.
 - **Pass log lives next to where you invoked from**, not inside the skill directory. The skill directory holds machinery (prompt, schema, state); the pass log is a project artifact the user owns.
@@ -206,6 +215,10 @@ In v2, steps 2 and 4 collapse to a single `iterate-review --plan=<path> --phase=
 
 - `reviewer-prompt.md` — canonical reviewer prompt sent to Codex on every pass.
 - `reviewer-output.schema.json` — JSON Schema enforced by `codex exec --output-schema`.
+- `lenses/` — persona lens records + the deterministic selection rules (`lenses/README.md`).
+- `examples/` — fixtures (see `examples/README.md`). `examples/selection/` pins lens
+  routing and ships a runnable reference implementation (`check-selection.py`);
+  `examples/merge/` holds merge/verdict goldens. Validate with `tools/check-examples.py`.
 - `state/<scope-hash>/pass-N.response.json` — per-pass raw Codex responses, kept for inspection.
 - `state/<scope-hash>.json` — per-invocation final state, written at convergence/abort.
 

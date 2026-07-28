@@ -1,0 +1,19 @@
+{
+  "verdict": "REVISE",
+  "findings": [
+    {
+      "title": "TTL boundary and revocation behaviour are untested",
+      "severity": "MEDIUM",
+      "description": "api/permissions.py adds 10 lines of new branching logic with no test change. Untested observable paths: a first call (cache miss) vs. an immediate second call (hit), behaviour exactly at the TTL boundary, and the sequence allow -> revoke -> call-again, which currently still returns allow. The last of these is observable to a caller and is the behaviour most likely to be assumed correct.",
+      "suggested_action": "Add tests for cache miss, cache hit, the TTL boundary, and allow-then-revoke, with time injected rather than relying on wall-clock sleeps."
+    },
+    {
+      "title": "Cached decision makes tests order-dependent",
+      "severity": "MEDIUM",
+      "description": "Module-level cache state persists between tests in the same process, so a test that grants access will leak a cached allow into any later test using the same (user_id, resource_id). Suites will pass or fail depending on execution order.",
+      "suggested_action": "Expose a reset hook or make the cache injectable so each test starts from a known state."
+    }
+  ],
+  "code_corrections": [],
+  "new_questions": []
+}
