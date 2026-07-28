@@ -1,0 +1,29 @@
+diff --git a/src/Foo.TS b/src/Foo.TS
+index 1e2f3a4..5b6c7d8 100644
+--- a/src/Foo.TS
++++ b/src/Foo.TS
+@@ -1,2 +1,12 @@
+ export const SCALE = 100;
+
++
++export function normalize(values: number[]): number[] {
++  if (values.length === 0) {
++    return [];
++  }
++  const largest = Math.max(...values);
++  if (largest === 0) {
++    return values.map(() => 0);
++  }
++  return values.map((v) => (v / largest) * SCALE);
++}
+diff --git a/src/Foo.TEST.TS b/src/Foo.TEST.TS
+index 2f3a4b5..6c7d8e9 100644
+--- a/src/Foo.TEST.TS
++++ b/src/Foo.TEST.TS
+@@ -1,2 +1,7 @@
+ import { normalize } from './Foo';
+
++
++it('normalizes against the largest value', () => {
++  expect(normalize([1, 2, 4])).toEqual([25, 50, 100]);
++});

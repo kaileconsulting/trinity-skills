@@ -120,6 +120,18 @@ selection + matched-context composition (step 5) is skill-specific.
      findings that target the same location and assert the same defect; keep
      distinct concerns separate; a co-reported finding retains **all**
      contributing lens ids. Produce one merged findings list.
+   - **Dedupe `plan_corrections` too.** Two lenses can file the same tactical
+     correction. Corrections are applied *mechanically*, so a surviving
+     duplicate can double-apply the same edit. Collapse by location +
+     intended fix.
+   - **Conflicting open-question answers.** When two lenses answer the same
+     `question_id`, record **both** with lens attribution. If they agree,
+     merge into one answer. If they **disagree**, state the disagreement
+     explicitly and escalate — never average them, pick the more
+     authoritative-sounding lens, or let the last-read answer win. A
+     cross-lane disagreement is usually the plan's own unresolved tension
+     surfacing, which is what fanning out is for; it is a human-judgment fold
+     under step 10's guardrail, not a merge to resolve silently.
    - **Aggregate verdict = worst-of** the lens verdicts (BLOCK > REVISE >
      APPROVE). A `FAILED` selected lens raises the aggregate to **at least
      REVISE** — BLOCK is preserved if any *completed* lens returned BLOCK —
@@ -264,7 +276,9 @@ during the loop and stay on disk for inspection / debugging.
 - `state/<plan-path-hash>.json` — per-plan iteration state (written at
   convergence/abort only).
 - `state/example.json` — illustrative state file showing the schema.
-- `examples/pass-4-response.json` — a real Codex response, fixture for testing.
+- `examples/` — fixtures (see `examples/README.md`). `pass-4-response.json` is a
+  real pre-Axis-2 Codex response; `examples/merge/` holds multi-lens merge
+  goldens. Validate with `tools/check-examples.py`.
 
 ## Hard rules
 

@@ -1,0 +1,21 @@
+diff --git a/api/permissions.py b/api/permissions.py
+index 3a4b5c6..7d8e9f0 100644
+--- a/api/permissions.py
++++ b/api/permissions.py
+@@ -1,4 +1,16 @@
++import time
++
+ from api.db import _db_permission_lookup
+
++_PERM_CACHE = {}
++_TTL_SECONDS = 300
++
++
++def can_access(user_id, resource_id):
++    key = (user_id, resource_id)
++    hit = _PERM_CACHE.get(key)
++    if hit and time.time() - hit[1] < _TTL_SECONDS:
++        return hit[0]
++    allowed = _db_permission_lookup(user_id, resource_id)
++    _PERM_CACHE[key] = (allowed, time.time())
++    return allowed

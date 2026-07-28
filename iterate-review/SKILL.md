@@ -114,6 +114,7 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     - **Per response:** read each `$STATE_DIR/pass-$PASS_N.<lensid>.response.json` (schema-validated by `--output-schema`). Apply belt-and-suspenders patch-marker rejection — scan for `*** Begin Patch`, `--- a/` or `+++ b/`, `@@ -` followed by digits, `<<<<<<<` or `=======` or `>>>>>>>`. If any are present in a lens response, abort with: "Codex response contains patch-shaped output, which violates the reviewer contract. Aborting. Inspect the offending `pass-$PASS_N.<lensid>.response.json`." Do not proceed.
     - **Lens failure:** a lens that crashes or returns malformed/off-schema output is **retried once**; if it still fails, record it as `FAILED` orchestration metadata — not a verdict (the reviewer schema is untouched).
     - **Merge (Opus, semantic judgment — not a mechanical key):** collapse findings that target the same location and assert the same defect; keep distinct concerns separate; a co-reported finding retains **all** contributing lens ids. Produce one merged findings list.
+    - **Dedupe `code_corrections` too.** Two lenses can file the same tactical correction. Corrections are applied *mechanically*, so a surviving duplicate can double-apply the same edit. Collapse by location + intended fix. (iterate-plan carries an additional rule for conflicting `open_question_answers`; the reviewer schema here has `new_questions` but no answer field, so that collision cannot arise.)
     - **Aggregate verdict = worst-of** the lens verdicts (BLOCK > REVISE > APPROVE). A `FAILED` selected lens raises the aggregate to **at least REVISE** — BLOCK is preserved if any *completed* lens returned BLOCK — and blocks Converge (step 14).
 
 12. **Fold merged findings + append ONE HISTORICAL block to the pass log.** Opus is the sole writer: fold findings into the working code and `code_corrections` mechanically. If the pass log doesn't exist, create it with a `# Code Review — <scope-tag>` H1 header, then append a single pass section (each finding tagged with its originating lens id):
@@ -214,6 +215,10 @@ In v2, steps 2 and 4 collapse to a single `iterate-review --plan=<path> --phase=
 
 - `reviewer-prompt.md` — canonical reviewer prompt sent to Codex on every pass.
 - `reviewer-output.schema.json` — JSON Schema enforced by `codex exec --output-schema`.
+- `lenses/` — persona lens records + the deterministic selection rules (`lenses/README.md`).
+- `examples/` — fixtures (see `examples/README.md`). `examples/selection/` pins lens
+  routing and ships a runnable reference implementation (`check-selection.py`);
+  `examples/merge/` holds merge/verdict goldens. Validate with `tools/check-examples.py`.
 - `state/<scope-hash>/pass-N.response.json` — per-pass raw Codex responses, kept for inspection.
 - `state/<scope-hash>.json` — per-invocation final state, written at convergence/abort.
 

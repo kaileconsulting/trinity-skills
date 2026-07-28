@@ -1,0 +1,8 @@
+diff --git a/SRC/Routes/Admin.JS b/SRC/Routes/Admin.JS
+index 0d1e2f3..4a5b6c7 100644
+--- a/SRC/Routes/Admin.JS
++++ b/SRC/Routes/Admin.JS
+@@ -7,3 +7,3 @@ const router = require('express').Router();
+
+-  const label = 'admin';
++  const label = 'Administration';

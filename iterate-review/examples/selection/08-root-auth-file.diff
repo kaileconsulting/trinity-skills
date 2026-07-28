@@ -1,0 +1,8 @@
+diff --git a/auth.py b/auth.py
+index 9c0d1e2..3f4a5b6 100644
+--- a/auth.py
++++ b/auth.py
+@@ -4,3 +4,3 @@ from datetime import timedelta
+
+-DEFAULT_TTL = 3600
++DEFAULT_TTL = 900

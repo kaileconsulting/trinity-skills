@@ -1,0 +1,15 @@
+{
+  "verdict": "APPROVE",
+  "findings": [
+    {
+      "title": "New endpoint ships with no tests covering its observable behaviour",
+      "severity": "MEDIUM",
+      "description": "src/routes/admin.js:15 adds a new response surface with no accompanying test change. Uncovered observable paths: empty q (returns the entire table rather than an empty result), q containing % or _ (LIKE metacharacters silently change matching semantics), and db.query rejecting (currently surfaces as an unhandled rejection rather than a 5xx response).",
+      "suggested_action": "Add tests for empty q, q containing LIKE metacharacters, and the db-failure path asserting the intended status code."
+    }
+  ],
+  "code_corrections": [],
+  "new_questions": [
+    "Should q containing % or _ be treated as a literal search string, or is metacharacter matching intended?"
+  ]
+}

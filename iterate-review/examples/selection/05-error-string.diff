@@ -1,0 +1,9 @@
+diff --git a/checkout/validate.py b/checkout/validate.py
+index 5e6f7a8..9b0c1d2 100644
+--- a/checkout/validate.py
++++ b/checkout/validate.py
+@@ -18,7 +18,7 @@ def validate_line(quantity):
+     if quantity <= 0:
+-        raise ValueError("Invalid quantity")
++        raise ValueError("Quantity must be a positive whole number")
+     return quantity

@@ -1,5 +1,4 @@
 {
-  "$comment": "Reference fixture: a well-formed Codex response matching reviewer-output.schema.json. Useful for testing the auto-fold logic (Step 12 in SKILL.md) without needing to invoke real Codex. Verdict, all four required arrays, all required fields per item.",
   "verdict": "REVISE",
   "findings": [
     {

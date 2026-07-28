@@ -1,0 +1,17 @@
+diff --git a/src/routes/admin.js b/src/routes/admin.js
+index 2b3c4d5..6e7f8a9 100644
+--- a/src/routes/admin.js
++++ b/src/routes/admin.js
+@@ -12,6 +12,14 @@ const db = require('../db');
+
+ router.get('/health', (req, res) => res.send('ok'));
+
++router.get('/admin/users', async (req, res) => {
++  const q = req.query.q || '';
++  const rows = await db.query(
++    "SELECT id, email, name FROM users WHERE name LIKE '%" + q + "%'"
++  );
++  res.json({ users: rows });
++});
++
+ module.exports = router;

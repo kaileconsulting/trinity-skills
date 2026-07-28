@@ -1,0 +1,17 @@
+diff --git a/api/handlers/search.py b/api/handlers/search.py
+index 8b9c0d1..2e3f4a5 100644
+--- a/api/handlers/search.py
++++ b/api/handlers/search.py
+@@ -1,10 +1,10 @@
+ import re
+ from urllib.parse import parse_qs
+
+-TERM_RE = re.compile(r"^[\w\s]{1,64}$")
++TERM_RE = re.compile(r"^([\w\s]+)+$")
+
+
+ def search(environ):
+-    term = parse_qs(environ["QUERY_STRING"]).get("q", [""])[0]
++    term = parse_qs(environ.get("QUERY_STRING", "")).get("q", [""])[0]
+     if not TERM_RE.match(term):
+         return []

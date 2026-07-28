@@ -3,6 +3,10 @@
 **/state/*
 !**/state/example.json
 
+# Python bytecode from the dev checkers in tools/
+__pycache__/
+*.py[cod]
+
 # Editor / OS cruft
 .DS_Store
 *.swp

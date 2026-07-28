@@ -192,21 +192,35 @@ In loop mode Opus still folds HIGH/MEDIUM findings mechanically as usual; the gu
 - No existing fixture asserts behavior the new split removed without being updated.
 
 **Iterate-review:** YES (rationale: the E2E-analog here — fixtures exercising selection + merge/dedupe so convergence and lens-routing regressions don't slip)
-**Status:** not started
+**Status:** shipped, pending review
+
+**Shipped (2026-07-28).** Selection routing got a **runnable reference implementation** rather than documentation-only fixtures (Kyle's call): `iterate-review/examples/selection/` holds 10 diff fixtures + `expected.tsv` + `check-selection.py`, which parses the rule data out of the lens frontmatter and `lenses/README.md` so only the *evaluation algorithm* is duplicated. Rows 01–07 mirror the README's worked-examples table; 08–10 pin the "Glob/extension semantics" bullet (zero-segment `**/`, case-insensitive globs, case-insensitive `test_globs`). Merge goldens: `iterate-review/examples/merge/` (01 dedupe/worst-of with an approving lens; 02 `FAILED` preserving `BLOCK`) and `iterate-plan/examples/merge/` (co-report, degraded context, conflicting `open_question_answers`). Parity: `tools/check-parity.py` asserts **32 shared rules** in both skills' loops against markdown-normalised text; `tools/check-examples.py` validates every fixture against its schema; `tools/test-checkers.py` verifies all three checkers actually fail when they should (18 self-tests). `tools/check-all.sh` runs everything — currently all green.
+
+**Two machinery deltas discovered while building the fixtures** (both folded into Phase 1's shared machinery, kept in semantic parity):
+1. Step 7/11 merge rules covered `findings` only — nothing said two lenses answering the same `question_id` must be recorded **with the disagreement surfaced** rather than silently reconciled. Added to `iterate-plan` (iterate-review's schema has no answer field, so the collision can't arise).
+2. Nothing said `plan_corrections` / `code_corrections` need deduping. Corrections apply **mechanically**, so a surviving duplicate can double-apply an edit. Added to both.
+
+**Audit result:** three pre-existing fixtures. `iterate-plan/examples/pass-4-response.json` validates cleanly — the split changed prompt *assembly*, not the output schema, so it asserts nothing the split removed. The two `iterate-review` fixtures were both schema-**invalid** via a `$comment` key (`additionalProperties: false`), and one of them was the patch-marker-rejection regression fixture — meaning it would have been rejected by schema validation a step before reaching the behavioral scan it existed to test. `$comment` removed from both; `pass-malformed.response.json` renamed to `pass-1-patch-marker-violation.response.json` (it was neither malformed JSON nor schema-invalid, and the name invited exactly the wrong reading).
 
 ## Acceptance criteria
 
-- [ ] `iterate-plan` runs architect + PM in parallel and folds a single merged findings list per pass.
-- [ ] `iterate-review` deterministically selects senior-dev (+ security / QA per diff shape) and folds a single merged list per pass.
-- [ ] Exactly one human checkpoint and one HISTORICAL block per pass, regardless of lens count.
-- [ ] Single-lens path is a **behavioral non-regression**: same reviewer contract, persona, schema, sandbox, and findings vs pre-Axis-2 (prompt *assembly* may differ due to the shared-contract/per-lens split); the only additive output delta is the lens tag in the HISTORICAL block.
-- [ ] A selected lens that fails (after one retry) blocks Converge and offers (R)etry — the loop never silently converges having skipped a selected lens. `FAILED` is orchestration metadata (reviewer schema unchanged); a failed-selected-lens pass aggregates to REVISE.
-- [ ] Verdict aggregation is worst-of; convergence requires all selected lenses to APPROVE.
-- [ ] Fixtures cover selection routing + merge/dedupe + single-checkpoint invariant + lens attribution.
-- [ ] Every folded finding records its originating lens, so incorporated-findings-by-lens can be tallied (the ROI metric).
-- [ ] Lens definitions are data-shaped and loaded from a fixed location (pack loader out of scope).
-- [ ] Loop mode (`--loop` + `(L)oop` checkpoint option) auto-continues through REVISE passes and stops at the first APPROVE to present Converge — never auto-converges.
-- [ ] Loop mode halts and returns control on any guardrail: max-pass cap (default 6), BLOCK, non-convergence (no finding-count decrease over 2 passes), or a fold requiring human judgment.
+- [x] `iterate-plan` runs architect + PM in parallel and folds a single merged findings list per pass. *(Phase 2; validated live)*
+- [x] `iterate-review` deterministically selects senior-dev (+ security / QA per diff shape) and folds a single merged list per pass. *(Phase 3 live run; routing now pinned by 10 fixtures + `check-selection.py`)*
+- [x] Exactly one human checkpoint and one HISTORICAL block per pass, regardless of lens count. *(parity rules `one-historical-block`, `one-checkpoint`; both merge goldens)*
+- [ ] **OPEN — the one unmet criterion.** Single-lens path is a **behavioral non-regression**: same reviewer contract, persona, schema, sandbox, and findings vs pre-Axis-2 (prompt *assembly* may differ due to the shared-contract/per-lens split); the only additive output delta is the lens tag in the HISTORICAL block.
+- [x] A selected lens that fails (after one retry) blocks Converge and offers (R)etry — the loop never silently converges having skipped a selected lens. `FAILED` is orchestration metadata (reviewer schema unchanged); a failed-selected-lens pass aggregates to REVISE. *(parity rules `lens-retry-once`, `failed-not-a-verdict`, `failed-floor-revise`, `failed-blocks-converge`; merge golden 02)*
+- [x] Verdict aggregation is worst-of; convergence requires all selected lenses to APPROVE. *(parity rules `verdict-worst-of`, `failed-preserves-block`; merge golden 02 pins that `FAILED` is a floor, not an assignment that would downgrade BLOCK)*
+- [x] Fixtures cover selection routing + merge/dedupe + single-checkpoint invariant + lens attribution. *(Phase 4)*
+- [x] Every folded finding records its originating lens, so incorporated-findings-by-lens can be tallied (the ROI metric). *(parity rule `lens-attribution-in-log`; both merge goldens show co-reports retaining all contributing lens ids)*
+- [x] Lens definitions are data-shaped and loaded from a fixed location (pack loader out of scope). *(Phase 0; `check-selection.py` parses the frontmatter directly, which is itself evidence the records are data-shaped)*
+- [x] Loop mode (`--loop` + `(L)oop` checkpoint option) auto-continues through REVISE passes and stops at the first APPROVE to present Converge — never auto-converges. *(parity rules `loop-flags`, `loop-checkpoint-option`, `loop-continue-only`, `loop-never-converges`)*
+- [x] Loop mode halts and returns control on any guardrail: max-pass cap (default 6), BLOCK, non-convergence (no finding-count decrease over 2 passes), or a fold requiring human judgment. *(parity rules `guard-approve`, `guard-max-passes`, `guard-fresh-budget`, `guard-block`, `guard-nonconvergence`, `guard-human-judgment` — all five guardrails; each merge golden also names which guardrails its pass would trip)*
+
+> **Caveat on the ticks above.** `check-parity.py` verifies a rule is *stated in
+> both skills*, not that it is stated *correctly* — a rule wrong in both passes.
+> The merge goldens are comparison targets, not assertions. What is now
+> mechanically enforced is selection routing, schema validity, and cross-skill
+> rule presence; correctness of the merge itself still rests on review.
 
 ## Risks
 
@@ -292,7 +306,7 @@ Axis 2 before Axis 1 (per the brief and Kyle's call): personas need no new vendo
 | Phase 1 | YES | reviewed | 2026-07-27 (2 passes) | `code-review-phase1-machinery.md` |
 | Phase 2 | YES | reviewed | 2026-07-27 (live multi-lens test) | live run (architect+PM) |
 | Phase 3 | YES | reviewed | 2026-07-27 (live selection+fan-out test) | live run (3 lenses) |
-| Phase 4 | YES | not started | — | — |
+| Phase 4 | YES | shipped, pending review | — | — |
 
 ## Pre-flight review pass (Opus, YYYY-MM-DD) [HISTORICAL]
 

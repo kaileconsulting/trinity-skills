@@ -1,5 +1,4 @@
 {
-  "$comment": "Reference fixture: a Codex response that violates the patch-shaped-output rule (HARD RESTRICTIONS — BEHAVIORAL #3 in reviewer-prompt.md). The skill's Step 11 patch-marker detection MUST reject this input before proceeding to fold. Used as a regression check.",
   "verdict": "REVISE",
   "findings": [
     {
