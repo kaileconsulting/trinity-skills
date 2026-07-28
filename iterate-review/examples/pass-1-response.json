@@ -22,6 +22,10 @@
     }
   ],
   "new_questions": [
-    "Is web/lib/parse.ts intended to be public API (it's exported and the path is in /lib) or internal helper? The lack of unit tests for the edge cases suggests internal, but the export suggests public."
+    {
+      "question": "Is web/lib/parse.ts intended to be public API (it's exported and the path is in /lib) or internal helper? The lack of unit tests for the edge cases suggests internal, but the export suggests public.",
+      "settled_by": "needs_human",
+      "why": "Import evidence shows current usage but not intended API status, and the question explicitly asks what is *intended* — the safe default applies."
+    }
   ]
 }

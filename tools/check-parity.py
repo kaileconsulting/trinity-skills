@@ -88,6 +88,17 @@ RULES: list[tuple[str, str, list[str] | dict[str, list[str]]]] = [
                          r"corrections are applied mechanically",
                          r"collapse by location \+ intended fix"]}),
 
+    # --- new_questions classification + routing ---------------------------
+    ("question-class-routing", "new_questions are routed by settled_by",
+     [r"route new_questions by settled_by",
+      r"resolvable_in_fold", r"needs_lookup", r"needs_human"]),
+    ("question-class-conflict", "a class conflict takes the most escalating label",
+     [r"most escalating"]),
+    ("question-lookup-failure", "a failed lookup reclassifies to needs_human",
+     [r"reclassify to needs_human"]),
+    ("question-label-audited", "the settled_by label is sanity-checked, not trusted",
+     [r"sanity-check the label"]),
+
     # --- verdict aggregation ---------------------------------------------
     ("verdict-worst-of", "aggregate verdict is worst-of",
      [r"worst-of", r"block > revise > approve"]),
@@ -124,7 +135,11 @@ RULES: list[tuple[str, str, list[str] | dict[str, list[str]]]] = [
     ("guard-nonconvergence", "guardrail: HIGH+MEDIUM count must strictly decrease",
      [r"non-convergence", r"high\+medium", r"strictly decrease"]),
     ("guard-human-judgment", "guardrail: a fold needing human judgment halts",
-     [r"needs human judgment"]),
+     [r"needs human judgment",
+      # Tightened with question classification: the guardrail must name which
+      # class halts, not just say "a question Opus can't answer".
+      r"new_question classified needs_human",
+      r"do not halt the loop|does not halt the loop"]),
 
     # --- standing invariants ---------------------------------------------
     ("never-decides-convergence", "the skill never decides convergence",

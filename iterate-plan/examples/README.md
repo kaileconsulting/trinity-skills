@@ -30,10 +30,18 @@ segment in the filename; the current runtime writes
 `pass-N.<lensid>.response.json`. Not renamed — no lens produced it, and
 relabelling it would be revisionist.
 
-**Audited in Phase 4:** validates cleanly against the current
-`../reviewer-output.schema.json`. The shared-contract/per-lens split changed how
-the reviewer *prompt* is assembled and left the output schema untouched, so this
-fixture asserts nothing the split removed. No update needed.
+**Audited in Phase 4:** validated cleanly against the schema as it stood then. The
+shared-contract/per-lens split changed how the reviewer *prompt* is assembled and
+left the output schema untouched, so it asserted nothing that split removed.
+
+**Reshaped for question classification (2.1).** Its one `new_questions` entry went
+from a bare string to the `{question, settled_by, why}` object the schema now
+requires. The question **text is verbatim**; only the container changed, and a
+`settled_by` of `resolvable_in_fold` plus a `why` were added. Flagging it because
+this is the repo's only *real* Codex capture, and it is now a lightly-reshaped
+artifact rather than a byte-exact one — the frozen copy at
+`../../v1/iterate-plan-v1/examples/pass-4-response.json` remains untouched if you
+need the original shape.
 
 ## Fixture naming conventions
 

@@ -16,6 +16,10 @@
   ],
   "code_corrections": [],
   "new_questions": [
-    "What measured latency problem motivated caching this lookup? The answer determines whether a shared-store cache is even needed."
+    {
+      "question": "What measured latency problem motivated caching this lookup? The answer determines whether a shared-store cache is even needed.",
+      "settled_by": "needs_human",
+      "why": "The motivation for the change is not recorded in the repository; only the author knows what was measured."
+    }
   ]
 }

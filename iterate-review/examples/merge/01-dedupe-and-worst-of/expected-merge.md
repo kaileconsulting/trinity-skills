@@ -97,8 +97,8 @@ mechanically, and two `new_questions` carried forward.
 
 ### New questions Codex raised
 
-- Is this router mounted behind app-level authentication middleware, or is each route expected to guard itself?
-- Should `q` containing `%` or `_` be treated as a literal search string, or is metacharacter matching intended?
+- Is this router mounted behind app-level authentication middleware, or is each route expected to guard itself? — resolvable_in_fold (lens: security): the app mount point is in the repo; read it. Resolved: the router is mounted without auth middleware, which corroborates finding 2.
+- Should `q` containing `%` or `_` be treated as a literal search string, or is metacharacter matching intended? — needs_human (lens: qa): both behaviours are defensible and nothing in the repo settles which is intended. Escalated to the user.
 
 ### Lens run summary
 
@@ -119,16 +119,33 @@ Recommendation: Continue. Choose: (C)ontinue / (V)Converge / (A)bort / (L)oop
 Three Codex calls, one HISTORICAL block, one prompt. That invariant is what keeps
 fan-out from multiplying the human's workload (plan risk **R1**).
 
-## Secondary assertion — loop mode halts here
+## Secondary assertion — loop mode halts, but only on one of the two questions
 
 If this pass ran under `--loop`, it would **not** auto-continue, despite the
 verdict being REVISE and every finding incorporated. The fifth guardrail
-("fold needs human judgment") fires on the first `new_question`: whether the
-router sits behind app-level auth **cannot be answered from the diff** — the diff
-shows the route file, not the mount point. Loop mode stops and escalates.
+("fold needs human judgment") fires — but **only on `qa`'s question**, and this
+is the distinction the `settled_by` classification exists to draw:
 
-Worth pinning because it's the easiest guardrail to under-apply: it is tempting
-to treat "all findings incorporated" as sufficient to keep looping.
+| Question | `settled_by` | Loop behaviour |
+|---|---|---|
+| Is the router behind app-level auth middleware? | `resolvable_in_fold` | **does not halt** — the mount point is in the repo; Opus reads it and continues |
+| Should `%`/`_` be literal or metacharacters? | `needs_human` | **halts** — both behaviours are defensible and no artefact settles which is intended |
+
+Two things worth pinning here:
+
+- **The security question no longer halts the loop.** Before classification, the
+  guardrail read "an open question Opus can't answer from the diff + repo
+  context," and this question was treated as halting because *the diff* doesn't
+  show the mount point. But the **repo** does. An unattended loop stopping to ask
+  a question it could have answered by reading one file is a false halt, and that
+  class of false halt is what the label removes.
+- **The qa question still halts, and must.** No amount of repo reading settles
+  whether `%` is meant literally — that is the author's intent. Continuing past it
+  would mean fabricating a product decision.
+
+Also worth pinning because it's the easiest guardrail to under-apply in the other
+direction: it is tempting to treat "all findings incorporated" as sufficient to
+keep looping.
 
 ## What a wrong merge looks like
 
@@ -141,3 +158,6 @@ Both directions of R4, so a regression is recognisable:
 | 4 findings, SQL tagged `security` only | **Attribution loss** — a co-report must retain *all* contributing lens ids or the ROI metric under-counts `senior-dev` |
 | Aggregate APPROVE | **Aggregation inverted** — best-of instead of worst-of; `qa`'s APPROVE must not outrank two REVISEs |
 | Two checkpoints, or one block per lens | **Single-checkpoint invariant broken** (R1) |
+| The `%`/`_` question answered by Opus rather than escalated | **`needs_human` label ignored or overridden downward** — a product decision fabricated. This is plan risk R2 in a new place, and it is the reason `settled_by` defaults to `needs_human` when a lens is unsure. |
+| Loop mode halting on the router/auth question | **False halt** — it is `resolvable_in_fold`; an unattended loop stopped for something one file read answers |
+| A question folded with no `settled_by` recorded in the pass log | **Routing unauditable** — the `why` exists so the label can be checked, not trusted |

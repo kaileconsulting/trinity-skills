@@ -135,8 +135,9 @@ REVISE   (worst-of architect REVISE / product-manager REVISE; no FAILED lenses)
    - Not resolvable from the plan + repo: this is a product decision. Both answers recorded; awaiting Kyle.
 
 ### New questions Codex raised
-- What is the gateway timeout in the target environment? (architect)
-- Is there a secondary use case the 10k cap would fully serve? (product-manager)
+- What is the gateway timeout in the target environment? — resolvable_in_fold (lens: architect): the ingress config is in this repository, outside the sliced sections. Resolved by reading `infra/ingress.yaml`: 30s.
+- What is the p95 row count of the monthly finance export in production today? — needs_lookup (lens: architect): the figure is in production data, not on disk. Queried: p95 is 47,000 rows, which puts every real export above the 10k cap.
+- Is there a secondary use case the 10k cap would fully serve? — needs_human (lens: product-manager): no artefact names one; whether it exists and is worth targeting is Kyle's product knowledge. Carried to Open questions as Q2.
 
 ### Lens run summary
 - architect: REVISE · product-manager: REVISE
@@ -153,6 +154,27 @@ Recommendation: Continue (after resolving Q1). Choose: (C)ontinue / (V)Converge 
 Two Codex calls, one HISTORICAL block, one prompt (plan risk **R1**). Under
 `--loop`, this halts on the human-judgment guardrail rather than auto-continuing,
 because Q1 is unresolved.
+
+This scenario also exercises all three `settled_by` classes in one pass, which is
+why it is the reference example for question routing:
+
+| Source | Class | Handling |
+|---|---|---|
+| `architect`: gateway timeout | `resolvable_in_fold` | the ingress config is **in the repo** — Opus reads it and answers. **Does not halt.** |
+| `architect`: production p95 row count | `needs_lookup` | the figure is **not on disk** — needs a query. Opus performs it and answers. **Does not halt** (a *failed* query would reclassify to `needs_human` and then halt). |
+| `product-manager`: secondary use case | `needs_human` | carried to Open questions — **halts the loop** |
+| Q1 (cap vs unbounded), answered *in conflict* by both lenses | — | escalated as a disagreement, not a classification — **halts the loop** |
+
+**The first two rows are the boundary that matters**, and the one the pass-1 review of
+this change caught me getting wrong: *reading a repo file is `resolvable_in_fold`, not
+`needs_lookup`.* `needs_lookup` is for facts that are not on disk at all. Collapsing
+the two makes `needs_lookup` a synonym for "the lens couldn't see it," which would put
+ordinary file reads one failed-lookup away from a spurious human escalation.
+
+The third row is a different mechanism from the other two and must not be
+conflated with them: conflicting `open_question_answers` escalate because the
+lenses *disagree*, not because a class says so. A pass can halt for either reason
+independently.
 
 ## What a wrong merge looks like
 
