@@ -1,8 +1,47 @@
 # Trinity Axis 1 — Cross-Vendor Tiebreaker — Plan
 
-> **STATUS: IN REVIEW (pass 2 folded 2026-07-28).** Scaffolded + first-draft authored by Opus from the expansion brief + the `gemini-access` memory. Sequenced **after Axis 2** (shipped 2026-07-28). Two `iterate-plan` passes folded — REVISE (8 findings) → REVISE (4 findings, product-manager APPROVE). Q1–Q8 resolved; **Q9 open and blocking.**
+> # ⏸ PARKED — 2026-07-28
 >
-> **Do not execute — and note that Phase 0 currently cannot start.** Pass 2 raised **R6**: measured over this repo's 22 folded findings, the `disputed` disposition this entire axis triggers on has fired **zero** times. Phase 0's model benchmark needs a dispute corpus that does not yet exist. The recommended next step is not Phase 0 but a real-code run of the *existing* Axis 2 harness, which produces both the corpus and the frequency evidence for whether Axis 1 is worth building at all.
+> **Deliberately stopped, not abandoned, and not ready to execute.** Design is in good
+> shape after two `iterate-plan` passes (REVISE, 8 findings → REVISE, 4 findings with
+> `product-manager` at APPROVE; merged HIGH+MEDIUM 8 → 3). Q1–Q8 resolved. **Q9 open.**
+>
+> ### Why parked
+>
+> Pass 2 raised **R6**: measured across this repo's 22 folded findings, the `disputed`
+> disposition this entire axis triggers on has fired **zero** times. The tiebreaker has
+> nothing observed to arbitrate, and Phase 0's model benchmark needs a dispute corpus
+> that does not exist. Building ~2.5 days of machinery for an unobserved event is the
+> wrong order of operations.
+>
+> Note the causal story, because it is easy to get wrong: this is **not** because Axis 2
+> is good. Disputes come from the reviewer being *wrong* — usually because what makes
+> the code correct isn't visible in what it was shown. Better lenses don't reduce that.
+> The real reasons are that we have only ever reviewed prose the author wrote (little
+> hidden context to misread), Opus both selects the disposition and writes the log (a
+> bias toward `incorporated` would be invisible), and this repo has no third-party
+> constraints or legacy invariants — precisely the conditions that produce genuine
+> disagreement. The use case is **untested, not absent.**
+>
+> ### What unparks it
+>
+> Run the **existing** Axis 2 harness on real code — ideally a diff touching history the
+> author didn't write, or where a caller-side guarantee matters — and count how often a
+> HIGH finding reads as *wrong*. That single run yields three things: the frequency
+> evidence for whether Axis 1 has a job, the dispute corpus Phase 0 needs, and the
+> lens-ROI measurement that has been outstanding since Axis 2 shipped.
+>
+> - **Disputes occur with any regularity** → unpark, answer Q9 from the corpus, start Phase 0.
+> - **Findings keep proving correct** → close this out. Record the measurement and the
+>   decision; the design work is not wasted, it's a documented "not needed, and here's
+>   how we know."
+>
+> ### Read before resuming
+>
+> Both HISTORICAL pass blocks at the bottom — they carry the reasoning behind the
+> disposition matrix, the payload budget, and the loop-guardrail interaction, none of
+> which is obvious from the current prose. Axis 2 shipped 2026-07-28 and the fan-out +
+> merge scaffold this plan slots onto now exists.
 
 ## TL;DR
 
@@ -324,11 +363,22 @@ After Axis 2 (built + live-validated 2026-07-27). Axis 1 depends on the Axis 2 f
 
 ## Closeout
 
-- [ ] Append entry to milestones / changelog index: what shipped, ship commit, key delta, link to archived plan.
+**Not applicable yet — this plan is parked, not shipped.** Left unchecked deliberately so
+nobody mistakes a parked plan for a completed one. It stays in `docs/` rather than
+`docs/archive/`: the archive is for shipped work, and moving it there would imply it
+was executed.
+
+- [ ] Append entry to `CHANGELOG.md`: what shipped, ship commit, key delta, link to the archived plan.
 - [ ] Update memory: mark Axis 1 completed, link ship commits, update `trinity-expansion` + `gemini-access`.
 - [ ] Update any backlog / priority queue.
 - [ ] Move plan to archive: `git mv docs/<plan>.md docs/archive/<plan>.md`.
 - [ ] Final commit referencing this plan.
+
+**If Axis 1 is instead closed out as "not needed"** (see the parked banner — the measurement
+comes back showing findings keep proving correct), the closeout is different and shorter:
+record the measurement and the decision in `CHANGELOG.md`, note it in the
+`trinity-expansion` memory, and archive the plan as a documented non-build. A design that
+was correctly *not* built is a result worth keeping, not a failure to tidy away.
 
 ## References
 
