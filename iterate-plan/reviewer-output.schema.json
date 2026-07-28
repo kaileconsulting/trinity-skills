@@ -98,10 +98,28 @@
     },
     "new_questions": {
       "type": "array",
-      "description": "Questions Codex wants answered in the next pass. Required; may be empty.",
+      "description": "Questions you want answered in the next pass, each classified by WHO CAN SETTLE IT. Required; may be empty. If you can answer a question yourself from the context you were given, answer it in a finding or an open_question_answer instead of filing it here.",
       "items": {
-        "type": "string",
-        "minLength": 1
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["question", "settled_by", "why"],
+        "properties": {
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The question itself."
+          },
+          "settled_by": {
+            "type": "string",
+            "enum": ["resolvable_in_fold", "needs_lookup", "needs_human"],
+            "description": "Who can settle this. 'resolvable_in_fold' = answerable from the FULL plan plus the repository — you may only have been given a slice of it, so the editor likely already has what you're missing. 'needs_lookup' = a fact exists that settles it, but reaching that fact requires something you cannot do (a network call, an API query, running a benchmark or command). 'needs_human' = no fact and no derivation settles it; it needs the author's preference, risk tolerance, cost appetite, or product judgment. WHEN UNSURE, CHOOSE 'needs_human' — wrongly labelling an author's decision as machine-resolvable invites a fabricated answer, which is far worse than an unnecessary escalation."
+          },
+          "why": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One line justifying the classification — e.g. which section you'd need, what lookup would settle it, or which judgment only the author can make. This exists so the label can be audited rather than trusted; a bare enum is easy to rubber-stamp."
+          }
+        }
       }
     }
   }

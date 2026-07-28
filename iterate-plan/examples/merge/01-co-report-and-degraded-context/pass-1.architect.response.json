@@ -34,6 +34,10 @@
     }
   ],
   "new_questions": [
-    "What is the gateway timeout in the target environment? The synchronous-path threshold in Approach has to be derived from it."
+    {
+      "question": "What is the gateway timeout in the target environment? The synchronous-path threshold in Approach has to be derived from it.",
+      "settled_by": "needs_lookup",
+      "why": "A deployment config or ingress manifest states it; it is a fact, but not one visible in the plan sections this lens was given."
+    }
   ]
 }

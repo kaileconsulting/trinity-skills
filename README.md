@@ -57,9 +57,21 @@ Both skills accept `--loop` (alias `--until-approve`), and every checkpoint offe
 - **Max-pass cap** — default 6, `--max-passes=N`, a fresh budget per activation.
 - **BLOCK verdict.**
 - **Non-convergence** — the merged HIGH+MEDIUM count fails to strictly decrease across two consecutive transitions.
-- **A fold needing human judgment** — an un-incorporated HIGH, or an open question Opus cannot answer from the plan/diff plus repo context.
+- **A fold needing human judgment** — an un-incorporated HIGH, or an open question only you can settle (see below).
 
 Every auto-continued pass still appends its HISTORICAL block, so the loop is unattended but not silent.
+
+### Which questions stop the loop
+
+A reviewer that raises a question classifies it by **who can settle it**, and that label decides whether an unattended loop stops:
+
+| `settled_by` | Meaning | Loop behavior |
+|---|---|---|
+| `resolvable_in_fold` | answerable from the full plan / the repo — the reviewer only saw a slice | Opus answers it and **continues** |
+| `needs_lookup` | a fact settles it, but reaching it needs a call the reviewer can't make | Opus performs the lookup and **continues**; if the lookup fails it becomes `needs_human` |
+| `needs_human` | no fact settles it — your preference, risk tolerance, or product judgment | **halts**, always |
+
+Without this, the guardrail read "a question Opus can't answer from the plan + repo context," which lumped all three together: an unattended loop would stop to ask something one file read would have answered. **When a reviewer is unsure, the contract requires `needs_human`** — an unnecessary escalation costs a question, while mislabeling your decision as machine-resolvable invites a fabricated answer. Each label carries a one-line `why` so it can be audited rather than trusted, and Opus overrides a label it doesn't believe.
 
 ## Prerequisites
 
@@ -154,8 +166,8 @@ tools/check-all.sh          # everything; requires python3 + pip install jsonsch
 |---|---|
 | `iterate-review/examples/selection/check-selection.py` | A **second implementation** of the deterministic selection rules, run against 13 golden fixtures. The rules claim any two implementations agree; until this existed there was one, and it was a language model reading prose. |
 | `tools/check-examples.py` | Every fixture validates against its skill's schema — and fixtures whose *names* make a claim have that claim verified. |
-| `tools/check-parity.py` | 32 shared-machinery rules are present in **both** skills' per-pass loops. Semantic parity, not byte-identity: prose may differ, rules may not. |
-| `tools/test-checkers.py` | 36 tests that the three above actually fail when they should. |
+| `tools/check-parity.py` | 36 shared-machinery rules are present in **both** skills' per-pass loops. Semantic parity, not byte-identity: prose may differ, rules may not. |
+| `tools/test-checkers.py` | 44 tests that the three above actually fail when they should. |
 
 Worth knowing what they don't cover: `check-parity.py` checks a rule is *stated*, not that it is *correct*, and the merge step is deliberately not scripted — semantic dedupe is Opus's judgment, so it ships worked goldens to compare against rather than assertions. See `tools/README.md`.
 

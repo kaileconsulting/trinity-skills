@@ -135,8 +135,8 @@ REVISE   (worst-of architect REVISE / product-manager REVISE; no FAILED lenses)
    - Not resolvable from the plan + repo: this is a product decision. Both answers recorded; awaiting Kyle.
 
 ### New questions Codex raised
-- What is the gateway timeout in the target environment? (architect)
-- Is there a secondary use case the 10k cap would fully serve? (product-manager)
+- What is the gateway timeout in the target environment? — needs_lookup (lens: architect): a deployment config or ingress manifest states it, but it is not in the plan sections this lens was given. Resolved by reading `infra/ingress.yaml`: 30s.
+- Is there a secondary use case the 10k cap would fully serve? — needs_human (lens: product-manager): no artefact names one; whether it exists and is worth targeting is Kyle's product knowledge. Carried to Open questions as Q2.
 
 ### Lens run summary
 - architect: REVISE · product-manager: REVISE
@@ -153,6 +153,20 @@ Recommendation: Continue (after resolving Q1). Choose: (C)ontinue / (V)Converge 
 Two Codex calls, one HISTORICAL block, one prompt (plan risk **R1**). Under
 `--loop`, this halts on the human-judgment guardrail rather than auto-continuing,
 because Q1 is unresolved.
+
+This scenario also exercises all three `settled_by` classes in one pass, which is
+why it is the reference example for question routing:
+
+| Source | Class | Handling |
+|---|---|---|
+| `architect`: gateway timeout | `needs_lookup` | Opus reads the infra config and answers — **does not halt the loop** |
+| `product-manager`: secondary use case | `needs_human` | carried to Open questions — **halts the loop** |
+| Q1 (cap vs unbounded), answered *in conflict* by both lenses | — | escalated as a disagreement, not a classification — **halts the loop** |
+
+The third row is a different mechanism from the other two and must not be
+conflated with them: conflicting `open_question_answers` escalate because the
+lenses *disagree*, not because a class says so. A pass can halt for either reason
+independently.
 
 ## What a wrong merge looks like
 

@@ -16,6 +16,10 @@
   ],
   "code_corrections": [],
   "new_questions": [
-    "Is this router mounted behind app-level authentication middleware, or is each route expected to guard itself?"
+    {
+      "question": "Is this router mounted behind app-level authentication middleware, or is each route expected to guard itself?",
+      "settled_by": "resolvable_in_fold",
+      "why": "The app mount point is in the repository — the editor can read it even though the diff shows only the route file."
+    }
   ]
 }

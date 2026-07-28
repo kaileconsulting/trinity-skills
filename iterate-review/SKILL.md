@@ -115,6 +115,11 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     - **Lens failure:** a lens that crashes or returns malformed/off-schema output is **retried once**; if it still fails, record it as `FAILED` orchestration metadata — not a verdict (the reviewer schema is untouched).
     - **Merge (Opus, semantic judgment — not a mechanical key):** collapse findings that target the same location and assert the same defect; keep distinct concerns separate; a co-reported finding retains **all** contributing lens ids. Produce one merged findings list.
     - **Dedupe `code_corrections` too.** Two lenses can file the same tactical correction. Corrections are applied *mechanically*, so a surviving duplicate can double-apply the same edit. Collapse by location + intended fix. (iterate-plan carries an additional rule for conflicting `open_question_answers`; the reviewer schema here has `new_questions` but no answer field, so that collision cannot arise.)
+    - **Route `new_questions` by `settled_by`.** Each carries a class saying who can settle it. Dedupe across lenses first (two lenses often ask the same thing); on a class conflict for the same question, take the **most escalating** label (`needs_human` > `needs_lookup` > `resolvable_in_fold`) — the cautious label is the safe one. Then:
+      - **`resolvable_in_fold`** — answer it now from the repo. The lens saw only the diff; you can read the surrounding code, callers, and tests. Record the answer in the HISTORICAL block.
+      - **`needs_lookup`** — perform the lookup (read the file, run the tests, query the API) and answer it. If the lookup fails or isn't available, **reclassify to `needs_human`** and escalate rather than guessing.
+      - **`needs_human`** — surface it at the checkpoint for the user, with the lens's `why` and, where you can, a concrete proposal to accept or change. Never answer it yourself.
+      - **Sanity-check the label, don't trust it.** The `why` exists to be audited. If a question labelled `resolvable_in_fold` plainly needs the author's intent, treat it as `needs_human`; a mislabel that licenses a fabricated answer is the failure mode this routing exists to prevent.
     - **Aggregate verdict = worst-of** the lens verdicts (BLOCK > REVISE > APPROVE). A `FAILED` selected lens raises the aggregate to **at least REVISE** — BLOCK is preserved if any *completed* lens returned BLOCK — and blocks Converge (step 14).
 
 12. **Fold merged findings + append ONE HISTORICAL block to the pass log.** Opus is the sole writer: fold findings into the working code and `code_corrections` mechanically. If the pass log doesn't exist, create it with a `# Code Review — <scope-tag>` H1 header, then append a single pass section (each finding tagged with its originating lens id):
@@ -136,7 +141,7 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
 
     ### New questions Codex raised
 
-    - <question>
+    - <question> — <settled_by> (lens: <lensid>): <resolution — the answer if `resolvable_in_fold`/`needs_lookup`, or "escalated to the user" if `needs_human`. Note any label you overrode, and why.>
 
     ### Lens run summary
 
@@ -163,7 +168,7 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     - **Max-pass cap** (default 6, `--max-passes=N`) — a *fresh per-activation budget* counting auto-continued passes (the activating pass doesn't count; manual/historical passes don't deplete it) → stop, "hit cap without converging."
     - **BLOCK verdict** → stop.
     - **Non-convergence** — the merged **HIGH+MEDIUM** finding count fails to strictly decrease across two consecutive transitions (LOW / `FAILED` / open-questions excluded; a `FAILED`-lens pass is skipped in the comparison but still counts toward the cap) → stop, surface the stall.
-    - **Fold needs human judgment** — any HIGH finding was *not incorporated*, or an open question surfaced that Opus can't answer from the diff + repo context → stop, escalate.
+    - **Fold needs human judgment** — any HIGH finding was *not incorporated*, or a `new_question` classified **`needs_human`** survived the fold (after the label sanity-check and any override in step 11) → stop, escalate. `resolvable_in_fold` and `needs_lookup` questions do **not** halt the loop: Opus resolves them and continues. If a `needs_lookup` resolution *fails*, it becomes `needs_human` and then halts. This is the whole point of the classification — an unattended loop shouldn't stop for a question it could have answered, and must never continue past one only the user can.
 
 15. **If `--once` was set**, skip the checkpoint entirely — write the state file (step 16) with `final_action: "once-mode-exit"` and exit immediately after step 13, regardless of verdict. (`--once` and `--loop` are mutually exclusive — reject both together.)
 

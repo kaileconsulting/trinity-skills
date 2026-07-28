@@ -385,6 +385,46 @@ def test_examples() -> None:
     ce.SKILLS = real_skills
     record("examples: skill without a schema -> exit 1", rc == 1, f"exit {rc}")
 
+    # --- new_questions classification is enforced, not optional ------------
+    # 2.1 made new_questions objects. If the schema still accepted bare strings,
+    # a lens could silently skip classifying and the loop guardrail would have
+    # nothing to route on.
+    import json as _json
+    try:
+        import jsonschema
+    except ImportError:
+        record("examples: new_questions classification enforced", False,
+               "jsonschema not installed")
+        return
+
+    base = {"verdict": "APPROVE", "findings": [], "new_questions": []}
+    shapes = {
+        "iterate-plan": dict(base, plan_corrections=[], open_question_answers=[]),
+        "iterate-review": dict(base, code_corrections=[]),
+    }
+    for skill, doc in shapes.items():
+        schema = _json.load(open(os.path.join(REPO, skill, "reviewer-output.schema.json")))
+        v = jsonschema.Draft202012Validator(schema)
+
+        legacy = dict(doc, new_questions=["a bare string question"])
+        record(f"examples: {skill} rejects unclassified new_questions",
+               bool(list(v.iter_errors(legacy))))
+
+        classified = dict(doc, new_questions=[{
+            "question": "q", "settled_by": "needs_human", "why": "author's call"}])
+        record(f"examples: {skill} accepts classified new_questions",
+               not list(v.iter_errors(classified)))
+
+        bad_class = dict(doc, new_questions=[{
+            "question": "q", "settled_by": "ask_someone", "why": "w"}])
+        record(f"examples: {skill} rejects an unknown settled_by",
+               bool(list(v.iter_errors(bad_class))))
+
+        no_why = dict(doc, new_questions=[{
+            "question": "q", "settled_by": "needs_human"}])
+        record(f"examples: {skill} requires the audit trail (why)",
+               bool(list(v.iter_errors(no_why))))
+
 
 def main() -> int:
     test_selection()
