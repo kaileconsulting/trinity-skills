@@ -19,6 +19,8 @@ They're independent — install any one of them — but compose naturally:
          (scaffold)      (design review)   (code review)
 ```
 
+Version history, including the breaking changes and the known gaps, is in [`CHANGELOG.md`](CHANGELOG.md).
+
 ## Why this exists
 
 Sending a plan or diff to Codex for review is high-value but tedious to do by hand: copy the markdown out, paste into a Codex prompt, copy the response back, manually decide what to incorporate, repeat. The trinity skills automate the shuttle while preserving the load-bearing invariants:
@@ -162,12 +164,14 @@ The skills are prose, so two failure modes are invisible without tooling: the tw
 tools/check-all.sh          # everything; requires python3 + pip install jsonschema
 ```
 
+Its output is the live count of what's covered — deliberately not restated here, since a number in prose goes stale the first time a fixture is added.
+
 | Check | What it asserts |
 |---|---|
-| `iterate-review/examples/selection/check-selection.py` | A **second implementation** of the deterministic selection rules, run against 13 golden fixtures. The rules claim any two implementations agree; until this existed there was one, and it was a language model reading prose. |
+| `iterate-review/examples/selection/check-selection.py` | A **second implementation** of the deterministic selection rules, run against a set of golden diff fixtures. The rules claim any two implementations agree; until this existed there was one, and it was a language model reading prose. |
 | `tools/check-examples.py` | Every fixture validates against its skill's schema — and fixtures whose *names* make a claim have that claim verified. |
-| `tools/check-parity.py` | 36 shared-machinery rules are present in **both** skills' per-pass loops. Semantic parity, not byte-identity: prose may differ, rules may not. |
-| `tools/test-checkers.py` | 44 tests that the three above actually fail when they should. |
+| `tools/check-parity.py` | Every shared-machinery rule is present in **both** skills' per-pass loops. Semantic parity, not byte-identity: prose may differ, rules may not. |
+| `tools/test-checkers.py` | Tests that the three above actually fail when they should. |
 
 Worth knowing what they don't cover: `check-parity.py` checks a rule is *stated*, not that it is *correct*, and the merge step is deliberately not scripted — semantic dedupe is Opus's judgment, so it ships worked goldens to compare against rather than assertions. See `tools/README.md`.
 
