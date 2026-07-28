@@ -137,12 +137,15 @@ selection + matched-context composition (step 5) is skill-specific.
      same thing); on a class conflict for the same question, take the **most
      escalating** label (`needs_human` > `needs_lookup` >
      `resolvable_in_fold`) — the cautious label is the safe one. Then:
-     - **`resolvable_in_fold`** — answer it now from the full plan + repo. The
-       lens saw only its required sections; you have everything. Record the
-       answer in the HISTORICAL block.
-     - **`needs_lookup`** — perform the lookup (read a file, query an API, run
-       the command) and answer it. If the lookup fails or isn't available,
-       **reclassify to `needs_human`** and escalate rather than guessing.
+     - **`resolvable_in_fold`** — answer it now by **reading the plan and the
+       repository**. The lens saw only its required sections; you have
+       everything on disk. *Reading any file in the repo is this class, not
+       `needs_lookup`.* Record the answer in the HISTORICAL block.
+     - **`needs_lookup`** — the fact is **outside the repository**: it needs a
+       network or API call, or executing something (a benchmark, a test run, a
+       command whose output isn't already on disk). Perform it and answer. If
+       it fails or isn't available, **reclassify to `needs_human`** and
+       escalate rather than guessing.
      - **`needs_human`** — carry it into the plan's `## Open questions` as a
        numbered Q for Kyle, with the lens's `why` and, where you can, a
        concrete proposal to accept or change. Never answer it yourself.

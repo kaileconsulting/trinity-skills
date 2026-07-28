@@ -67,6 +67,13 @@ historical artifacts, and nothing reads them back against the schema.
   fabricated answer. This is plan risk R2 surfacing in a new place.
 - The value concentrates in loop mode. Attended, Opus already made this distinction
   by hand; the label makes it explicit and machine-actionable.
+- **Routing behaviour is not mechanically tested — only schema shape is.** The 8 new
+  self-tests assert the schemas reject unclassified questions, unknown classes, and a
+  missing `why`. Nothing asserts that `needs_human` halts the loop and the other two
+  continue, because there is no executable fold path to call: routing is prose Opus
+  follows at runtime. The goldens state the expected continue-vs-halt outcome per
+  class, which is the same coverage model merge correctness uses. Raised as a MEDIUM
+  in review and recorded rather than resolved.
 
 ## 2.0.0 — 2026-07-28 — Axis 2: persona lenses
 

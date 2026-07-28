@@ -68,7 +68,7 @@ Array of objects (required, may be empty). Questions you want answered in the ne
 **Classify each by WHO CAN SETTLE IT** — the label routes the question, so it changes what happens next:
 
 - **`resolvable_in_fold`** — answerable from **the repository the diff came from**. You see only the diff; the editor can read the surrounding code, the callers, and the tests. In `why`, name the file or symbol that would settle it.
-  - *"Is the new `foo()` intended as public API or internal? It's exported but undocumented."* → `resolvable_in_fold` — the editor can check whether anything outside the module imports it.
+  - *"Does anything outside this module import the new `foo()`? It's exported but undocumented."* → `resolvable_in_fold` — the editor can grep the callers. Note the phrasing: this asks about **current usage**, which files settle. *"Is `foo()` **intended** as public API?"* is a different question and is `needs_human` — imports show what is, not what was meant.
 - **`needs_lookup`** — a fact settles it, but reaching that fact needs something you cannot do: a network call, an API query, running the test suite or a benchmark. In `why`, name the lookup.
   - *"Does the bumped dependency version carry a known advisory?"* → `needs_lookup` — an advisory database answers it; you cannot query one.
 - **`needs_human`** — no fact and no derivation settles it. It needs the author's intent, risk tolerance, cost appetite, or product judgment.
