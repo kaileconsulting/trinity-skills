@@ -147,7 +147,11 @@ After Axis 2 (built + live-validated 2026-07-27). Axis 1 depends on the Axis 2 f
 
 - Expansion brief: `/home/kyle/trinity-review-expansion-brief.md`
 - Gemini access (key location, validated headless recipe, paid-tier state): memory `gemini-access`
-- Axis 2 (the scaffold this reuses): `docs/trinity-axis-2-persona-lenses-2026-07-27.md`
+- Axis 2 (the scaffold this reuses): `docs/archive/trinity-axis-2-persona-lenses-2026-07-27.md`
+  — **shipped 2026-07-28.** The fan-out + merge stage this plan's conditional
+  extra-reviewer step slots onto now exists, along with worst-of aggregation,
+  `FAILED`-lens handling, and the single-checkpoint invariant. Read that plan's
+  Approach → Merge section before drafting the tiebreaker's verdict handling.
 - Overall expansion state: memory `trinity-expansion`
 
 ## Review checkpoints

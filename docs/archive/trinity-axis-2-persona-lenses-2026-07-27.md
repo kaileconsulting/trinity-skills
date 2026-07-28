@@ -136,7 +136,7 @@ In loop mode Opus still folds HIGH/MEDIUM findings mechanically as usual; the gu
 - Ambiguous/borderline inputs bias toward *including* the specialized lens, with concrete worked examples pinning borderline network, input-parsing, user-facing, and test-only/refactor cases.
 
 **Iterate-review:** CONDITIONAL (rationale: mostly design, but lands the load-bearing lens definitions + selection tables later phases depend on — review if it ships those spec files)
-**Status:** reviewed (iterate-review converged after 6 passes, 2026-07-27; see `code-review-working.md`)
+**Status:** reviewed (iterate-review converged after 6 passes, 2026-07-27; see `code-review-phase0-lenses.md`)
 
 ### Phase 1 — Fan-out + merge scaffold (shared machinery) (~1 day)
 **Deliverables:**
@@ -280,15 +280,11 @@ Axis 2 before Axis 1 (per the brief and Kyle's call): personas need no new vendo
 
 ## Closeout
 
-- [ ] Append entry to your project's milestones / changelog index (if you
-  keep one): one paragraph covering what shipped, the ship commit, key
-  delta, and a link back to the archived plan path.
-- [ ] Update memory and/or project notes: mark plan completed, link to
-  ship commits, update any related context files this plan touched.
-- [ ] Update any backlog / priority queue: remove if it was queued, or
-  mark closed inline.
-- [ ] Move plan to archive: `git mv docs/<plan>.md docs/archive/<plan>.md`.
-- [ ] Final commit with a "shipped" message referencing this plan.
+- [x] Changelog: `CHANGELOG.md` created; **2.0.0 — 2026-07-28 — Axis 2: persona lenses**, linking back to this archived plan and the review trail.
+- [x] Memory updated (`trinity-expansion`): all 5 phases shipped + reviewed, Phase 4 discoveries recorded, Closeout done.
+- [x] Backlog: issue #1 (pluggable persona-pack loader) remains open by design — the lens record format it builds on is now stable and shipped. Axis 1 stub plan (`docs/trinity-axis-1-cross-vendor-tiebreaker-2026-07-27.md`) is unblocked: the fan-out + merge scaffold it reuses now exists.
+- [x] Plan archived to `docs/archive/`, with all three review logs moved alongside it as the artefact bundle (`code-review-phase{0,1,4}-*.md`).
+- [x] Final "shipped" commit referencing this plan.
 
 ## References
 
@@ -302,7 +298,7 @@ Axis 2 before Axis 1 (per the brief and Kyle's call): personas need no new vendo
 
 | Phase | Iterate-review | Status | Last pass | Pass log |
 |-------|----------------|--------|-----------|----------|
-| Phase 0 | CONDITIONAL | reviewed | 2026-07-27 (6 passes → APPROVE) | `code-review-working.md` |
+| Phase 0 | CONDITIONAL | reviewed | 2026-07-27 (6 passes → APPROVE) | `code-review-phase0-lenses.md` |
 | Phase 1 | YES | reviewed | 2026-07-27 (2 passes) | `code-review-phase1-machinery.md` |
 | Phase 2 | YES | reviewed | 2026-07-27 (live multi-lens test) | live run (architect+PM) |
 | Phase 3 | YES | reviewed | 2026-07-27 (live selection+fan-out test) | live run (3 lenses) |

@@ -1,0 +1,6 @@
+# Dev-time only — the skills themselves have no Python dependencies and never
+# invoke anything here at runtime. Needed to run tools/check-all.sh.
+#
+#   pip install -r requirements-dev.txt
+#
+jsonschema>=4.0

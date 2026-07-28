@@ -1,0 +1,45 @@
+{
+  "_comment": "Example state file — illustrates the schema. Real state files are named by SHA1(absolute_plan_path) and live in this directory. This example is the only file in state/ that's tracked in git; real state files are gitignored.",
+  "plan_abs_path": "/path/to/your/project/docs/some-plan-2026-05-19.md",
+  "plan_path_sha1": "abc123def456...",
+  "plan_content_hash": "sha256:0123456789abcdef...",
+  "pass_count": 3,
+  "last_verdict": "APPROVE",
+  "started_at": "2026-04-29T12:38:00Z",
+  "last_pass_at": "2026-04-29T13:15:00Z",
+  "passes": [
+    {
+      "n": 1,
+      "verdict": "REVISE",
+      "started_at": "2026-04-29T12:38:00Z",
+      "completed_at": "2026-04-29T12:42:00Z",
+      "response_file": "pass-1.response.json",
+      "findings_count": 5,
+      "corrections_count": 0
+    },
+    {
+      "n": 2,
+      "verdict": "REVISE",
+      "started_at": "2026-04-29T12:55:00Z",
+      "completed_at": "2026-04-29T12:58:00Z",
+      "response_file": "pass-2.response.json",
+      "findings_count": 1,
+      "corrections_count": 0
+    },
+    {
+      "n": 3,
+      "verdict": "APPROVE",
+      "started_at": "2026-04-29T13:12:00Z",
+      "completed_at": "2026-04-29T13:15:00Z",
+      "response_file": "pass-3.response.json",
+      "findings_count": 1,
+      "corrections_count": 0
+    }
+  ],
+  "convergence": {
+    "suggested_at": "2026-04-29T13:16:00Z",
+    "trigger": "verdict=APPROVE + opus_no_further_changes",
+    "human_confirmed": null,
+    "handoff_decision": null
+  }
+}
