@@ -86,7 +86,7 @@ Two copies of a rule is how a checker starts lying. The script therefore
 | Rule data | Lives in | Script behaviour |
 |---|---|---|
 | `path_globs`, `content_regexes`, `non_trivial_without_tests`, `always` | `../../lenses/<id>.md` frontmatter | parsed at runtime |
-| `source_exts`, `test_globs`, non-trivial line threshold | `../../lenses/README.md` | parsed at runtime |
+| `source_exts`, `test_globs`, non-trivial line threshold, match-span bound + overlap | `../../lenses/README.md` | parsed at runtime |
 | Evaluation algorithm (glob semantics, case-insensitivity, which diff lines count) | `check-selection.py` | the only duplication |
 
 Consequences worth knowing:
@@ -130,6 +130,7 @@ implementation gets wrong:
 | `11-source-to-nonsource-rename` | each diff side is classified by **its own** path — a rename out of `source_exts` still counts its removed source lines |
 | `12-quoted-path-rename` | git C-quoted paths (a space in the filename) |
 | `13-plain-unified-with-timestamps` | a non-git unified diff with tab-separated timestamps and no `diff --git` line |
+| `14-minified-json-span` | the content-regex **match-span bound** — a pattern must not bridge a whole minified-JSON file (issue #5) |
 
 Rows 11–13 all came out of the Phase 4 code review, and all three shared one
 failure mode: the checker returned a **wrong answer silently**, reporting zero

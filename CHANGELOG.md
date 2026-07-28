@@ -1,5 +1,46 @@
 # Changelog
 
+## 2.1.1 — 2026-07-28 — bound the content-regex match span
+
+Fixes [#5](https://github.com/kaileconsulting/trinity-skills/issues/5), found while
+dogfooding `iterate-review` on this repo.
+
+### Fixed
+
+- **A content regex could bridge an entire minified file.** Lens `content_regexes` are
+  matched against changed content lines — but minified or single-line JSON makes a whole
+  file *one* line, so a pattern like
+  `(SELECT|UPDATE|…)\s+.*\b(FROM|TABLE)\b` spanned **959 characters** of unrelated
+  prose and selected the `security` lens for a fixture containing no SQL.
+  A regex is now evaluated against at most **400 characters** of a changed line, chunked
+  with a **200-character overlap** so any genuine match up to 200 chars is still found
+  in full. Bound and overlap are parsed from `lenses/README.md` like the other rule
+  data, and an overlap ≥ span is a hard error rather than a non-terminating loop.
+
+### Why this was worth fixing before a measurement period
+
+Over-inclusion is the deliberate selection bias, so a spurious lens costs one Codex
+call rather than correctness. But real repos contain minified JSON, and the next few
+weeks are for measuring **whether the added lenses earn their keep**. A `security` lens
+that fires on bundled artifacts and returns empty APPROVEs would make itself look
+low-value — contaminating exactly the signal being collected.
+
+### Added
+
+- `selection/14-minified-json-span.diff` — a true regression fixture: it selects
+  `security` spuriously *without* the bound and `senior-dev` alone with it. 13 → 14
+  routing fixtures.
+- 9 checker self-tests (44 → 53) covering chunking, the bound stopping a bridge, a
+  genuine match surviving chunking at four offsets including chunk boundaries, and
+  overlap ≥ span raising.
+
+### Not changed
+
+The same run also selected `qa` because `\bresponse\b` matched the word "response" in
+prose mentioning a filename. That is **pattern breadth in the qa lens, not a mechanism
+bug** — narrowing it would change routing behaviour and is a judgment call about the
+lens rather than a fix. Left alone deliberately; issue #5 was corrected to say so.
+
 ## 2.1.0 — 2026-07-28 — classified open questions
 
 A reviewer raising a question now says **who can settle it**, and that label decides

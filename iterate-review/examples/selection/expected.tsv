@@ -25,3 +25,7 @@
 # source lines — the worst failure mode for a checker meant to be a second opinion.
 12-quoted-path-rename.diff	qa,senior-dev	git C-quotes a path containing a space; the quotes and the a//b/ prefix must be stripped, or the path stops matching source_exts and the rename's removed source lines vanish
 13-plain-unified-with-timestamps.diff	qa,senior-dev	a non-git unified diff has no `diff --git` line and appends a TAB-separated timestamp to each ---/+++ header; the timestamp must not become part of the path
+#
+# Row 14 pins the content-regex match-span bound (issue #5). Without it this
+# fixture selects `security` spuriously.
+14-minified-json-span.diff	senior-dev	minified single-line JSON makes the whole file one "changed content line" — a content regex must not bridge it. UPDATE and TABLE sit 506 chars apart with no SQL between them; the 400-char span bound keeps the SQL regex from matching

@@ -21,6 +21,7 @@ import contextlib
 import importlib.util
 import io
 import os
+import re
 import sys
 import tempfile
 
@@ -203,8 +204,47 @@ def test_selection() -> None:
            and sorted(removed) == ["one.py", "two.py"],
            f"paths={sorted(paths)}")
 
+    # --- content-regex match-span bound (issue #5) --------------------------
+    # A pattern must not bridge a whole minified-JSON file. Guards both
+    # directions: the bound applies, and it doesn't break genuine matches.
+    cfg = quiet(cs.load_readme_config)
+    span, overlap = cfg["span"], cfg["overlap"]
+    record("selection: span bound parsed from the README",
+           span > 0 and 0 < overlap < span, f"span={span} overlap={overlap}")
+
+    long_line = "UPDATE the layout " + ("x" * (span + 200)) + " render as a TABLE"
+    windows = list(cs.match_windows(long_line, span, overlap))
+    record("selection: a long line is chunked, not passed whole",
+           len(windows) > 1 and all(len(w) <= span for w in windows),
+           f"{len(windows)} windows, max {max(len(w) for w in windows)}")
+    sql = re.compile(r"(SELECT|UPDATE|DELETE)\s+.*\b(FROM|TABLE)\b", re.IGNORECASE)
+    record("selection: bound stops a pattern bridging distant text",
+           not any(sql.search(w) for w in windows))
+
+    # A genuine match up to `overlap` chars must survive chunking wherever it sits.
+    genuine = "UPDATE rows " + ("y" * (overlap - 40)) + " FROM ledger"
+    assert len(genuine) <= overlap, len(genuine)
+    for offset in (0, span - 10, span + 5, 2 * span - 30):
+        padded = ("z" * offset) + genuine + ("z" * 500)
+        hit = any(sql.search(w) for w in cs.match_windows(padded, span, overlap))
+        record(f"selection: genuine match still found at offset {offset}", hit)
+
+    record("selection: short line yields exactly one window",
+           list(cs.match_windows("short", span, overlap)) == ["short"])
+
     # Rule data that cannot be parsed must raise, never default to empty.
     real_readme, real_lensdir, real_expected = cs.README, cs.LENS_DIR, cs.EXPECTED
+
+    p = os.path.join(tmp, "bad_overlap.md")
+    open(p, "w").write(
+        "`source_exts`: `.py`\n`test_globs`: `**/*test*`\n"
+        "  - *non-trivial source change* = **>= 8 changed non-blank lines**\n"
+        "at most **100 characters** of a changed line, with a "
+        "**200-character overlap**\n")
+    cs.README = p
+    record("selection: overlap >= span raises rather than looping",
+           raises(cs.load_readme_config, cs.RuleDataError))
+    cs.README = real_readme
 
     # --- threshold is read from its DEFINING bullet ------------------------
     # Guard for the Phase 4 review's MEDIUM finding: an unanchored search would
@@ -216,6 +256,10 @@ def test_selection() -> None:
         "`test_globs`: `**/*test*`, `**/tests/**`\n"
         "  - *non-trivial source change* = **>= 8 changed non-blank content "
         "lines across source files**\n"
+        # Required by load_readme_config; present so this fixture isolates the
+        # threshold anchoring rather than tripping an unrelated missing field.
+        "at most **400 characters** of a changed line, chunked with a "
+        "**200-character overlap**\n"
     )
     cs.README = p
     try:

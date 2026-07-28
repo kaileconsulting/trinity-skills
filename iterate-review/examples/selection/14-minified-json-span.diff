@@ -1,0 +1,7 @@
+diff --git a/config/export.min.json b/config/export.min.json
+index 5a6b7c8..9d0e1f2 100644
+--- a/config/export.min.json
++++ b/config/export.min.json
+@@ -1 +1 @@
+-{"v":2,"description":"UPDATE the saved layout whenever the operator reorders columns and the saved view is persisted for the next session so repeated visits keep the same arrangement without extra clicks, which the team asked for after the winter usability round and the follow-up interviews covering roughly forty accounts across three regions and two device classes, plus the accessibility review notes and the localisation pass that added seven locales and a right-to-left variant nobody had budgeted for,  rendering it as a TABLE","kind":"grid","columns":["name","qty","total"],"sticky":false}
++{"v":3,"description":"UPDATE the saved layout whenever the operator reorders columns and the saved view is persisted for the next session so repeated visits keep the same arrangement without extra clicks, which the team asked for after the winter usability round and the follow-up interviews covering roughly forty accounts across three regions and two device classes, plus the accessibility review notes and the localisation pass that added seven locales and a right-to-left variant nobody had budgeted for,  rendering it as a TABLE","kind":"grid","columns":["name","qty","total"],"sticky":true}

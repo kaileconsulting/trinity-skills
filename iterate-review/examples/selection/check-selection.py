@@ -15,6 +15,7 @@ rule data instead of restating it:
     path_globs / content_regexes / non_trivial_without_tests
         <- parsed from ../../lenses/*.md frontmatter
     source_exts / test_globs / non-trivial line threshold
+    content-regex match-span bound + chunk overlap
         <- parsed from ../../lenses/README.md
 
 Only the *evaluation algorithm* (glob semantics, case-insensitivity, which diff
@@ -189,12 +190,36 @@ def load_readme_config() -> dict:
         )
     threshold = int(m.group(1))
 
+    m = re.search(r"at most \*\*(\d+) characters\*\* of a changed line", text)
+    if not m:
+        raise RuleDataError(
+            f"{README}: could not find the content-regex match-span bound "
+            '(expected "at most **N characters** of a changed line")'
+        )
+    span = int(m.group(1))
+
+    m = re.search(r"\*\*(\d+)-character overlap\*\*", text)
+    if not m:
+        raise RuleDataError(
+            f"{README}: could not find the chunk overlap "
+            '(expected "**N-character overlap**")'
+        )
+    overlap = int(m.group(1))
+
+    if overlap >= span:
+        raise RuleDataError(
+            f"{README}: overlap ({overlap}) must be smaller than the span ({span}), "
+            "or chunking makes no progress"
+        )
+
     if not source_exts or not test_globs:
         raise RuleDataError(f"{README}: parsed an empty source_exts/test_globs list")
     return {
         "source_exts": source_exts,
         "test_globs": test_globs,
         "threshold": threshold,
+        "span": span,
+        "overlap": overlap,
     }
 
 
@@ -224,6 +249,27 @@ def glob_to_regex(glob: str) -> re.Pattern:
             out.append(re.escape(glob[i]))
             i += 1
     return re.compile("".join(out) + r"\Z", re.IGNORECASE)
+
+
+def match_windows(line: str, span: int, overlap: int):
+    r"""Yield bounded windows of a changed line for content-regex matching.
+
+    A content regex must not bridge arbitrarily distant text. Minified or
+    single-line JSON makes an entire file one "changed line", and a pattern like
+    `(SELECT|UPDATE|...)\s+.*\b(FROM|TABLE)\b` will happily span hundreds of
+    characters of unrelated prose and match a file containing no SQL.
+
+    Windows are `span` wide with `overlap` shared between neighbours, so any
+    genuine match up to `overlap` characters is fully contained in some window."""
+    if len(line) <= span:
+        yield line
+        return
+    stride = span - overlap
+    for start in range(0, len(line), stride):
+        chunk = line[start:start + span]
+        yield chunk
+        if start + span >= len(line):
+            break
 
 
 def path_matches_any(path: str, globs: list[str]) -> str | None:
@@ -438,7 +484,14 @@ def select(diff_text: str, lenses: list[dict], cfg: dict) -> tuple[list[str], di
                 raise RuleDataError(
                     f"lens {lid}: content_regex {rx!r} is not a valid regex: {exc}"
                 ) from None
-            match = next((ln for ln in changed_lines if pat.search(ln)), None)
+            match = None
+            for ln in changed_lines:
+                for window in match_windows(ln, cfg["span"], cfg["overlap"]):
+                    if pat.search(window):
+                        match = window
+                        break
+                if match is not None:
+                    break
             if match is not None:
                 why.append(f"content_regex {rx!r} matched: {match.strip()[:70]}")
                 break
