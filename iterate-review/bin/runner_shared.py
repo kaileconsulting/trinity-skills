@@ -499,9 +499,12 @@ def publish_summary(lock: ScopeLock, state_dir: Path, pass_num: int,
         "complete": True,
     }
     path = summary_path(state_dir, pass_num)
-    lock.verify_and(lambda: atomic_publish(
-        path, json.dumps(payload, indent=2, sort_keys=True) + "\n"))
-    return path
+    text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    lock.verify_and(lambda: atomic_publish(path, text))
+    # Return the committed bytes too: the caller must never have to re-read
+    # the file to emit them — a post-publication read failure would break
+    # the exit-0-iff-summary-published contract.
+    return path, text
 
 
 # --------------------------------------------------------------------------

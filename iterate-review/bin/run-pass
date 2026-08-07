@@ -113,6 +113,14 @@ def main(argv=None):
         return EXIT_ERROR
 
     log_path, warnings = rr.resolve_log_path(args.scope_tag, args.log_path)
+    try:
+        # The DEFAULT log path gets the same boundary check as an override:
+        # a repo-controlled symlink at docs/reviews/... must not pull
+        # out-of-repo content into the PRIOR PASSES block.
+        log_path = shared.ensure_trusted_path(log_path, [repo_root], "pass log")
+    except shared.TrustedPathError as exc:
+        sys.stderr.write(f"run-pass: {exc}\n")
+        return EXIT_ERROR
     shash = rr.scope_hash(args.scope_tag, log_path)
     state_dir = rr.STATE_ROOT / shash
 
@@ -178,12 +186,12 @@ def main(argv=None):
         for lid in entries:
             entries[lid]["selection_reasons"] = reasons.get(lid, [])
 
-        summary_file = shared.publish_summary(
+        # publish_summary returns the committed bytes alongside the path so
+        # nothing is ever re-read after publication: exit 0 must mean exactly
+        # "a summary was published" even if the scope is pruned or the disk
+        # errors immediately afterwards.
+        _summary_file, summary_text = shared.publish_summary(
             lock, state_dir, pass_num, shash, log_path, warnings, entries)
-        # Capture the committed bytes while still owning the scope: after
-        # release, another actor may legitimately prune the directory, and
-        # exit 0 must still mean exactly "a summary was published".
-        summary_text = summary_file.read_text(encoding="utf-8")
     except shared.LockError as exc:
         sys.stderr.write(f"run-pass: {exc}\n")
         return EXIT_ERROR

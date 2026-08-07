@@ -71,7 +71,14 @@ def read_lens_record(lens_id: str):
     body = everything after the frontmatter's closing `---`, verbatim.
     matched_context = the frontmatter's folded scalar, joined to one line
     (YAML `>` semantics as the skill has always applied them: continuation
-    lines joined with single spaces)."""
+    lines joined with single spaces).
+
+    Defense in depth: the CLIs validate lens ids against load_lenses(), and
+    this rejects separator/traversal components outright so an id can never
+    address a file outside lenses/."""
+    if os.sep in lens_id or (os.altsep and os.altsep in lens_id) \
+            or ".." in lens_id:
+        raise CompositionError(f"invalid lens id: {lens_id!r}")
     path = LENS_DIR / f"{lens_id}.md"
     try:
         lines = path.read_text(encoding="utf-8").splitlines(keepends=True)

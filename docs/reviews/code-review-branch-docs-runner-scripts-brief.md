@@ -62,3 +62,34 @@ Diff captured at 2026-08-06 17:45; head SHA `bd98f4666e4b48f9ea42f1ad792f2887f57
 ### Diff snapshot reference
 
 Diff captured at 2026-08-06 17:57; head SHA `59641af` (pass-1 fold commit).
+
+## Pass 3 — 2026-08-06 18:10 [HISTORICAL]
+
+**Scope:** branch · **Diff size:** 4235 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Lenses:** senior-dev, security, qa
+
+Inputs handed off through the new `state/inbox/` boundary introduced by the pass-2 fold.
+
+### Findings
+
+1. **Default pass-log path escapes the trusted boundary through a symlink** — HIGH · lens: senior-dev, security, qa (co-reported): only an explicit `--log-path` was boundary-checked; the *default* `docs/reviews/…` path went straight to `read_prior_passes()`, so a repo-controlled symlink there could pull out-of-repo file contents into the codex prompt.
+   → Opus: incorporated — both CLIs now pass the resolved log path (default or override) through `ensure_trusted_path()` before any read; the realpath'd result is what feeds `scope_hash` and PRIOR PASSES. Fixture: symlinked default log → refused.
+2. **Standalone `--lens` accepts path-traversing identifiers** — HIGH · lens: security, senior-dev (co-reported): `run-lens` interpolated an arbitrary id into `lenses/<id>.md` and the debug artifact names — `../` components could read Markdown outside `lenses/` and write artifacts outside `debug/`.
+   → Opus: incorporated — `run-lens` validates the id against `load_lenses()` (same rule as `run-pass --lenses`), and `read_lens_record()` rejects separator/traversal components outright as defense in depth. Fixture: `--lens ../evil` → refused.
+3. **Summary publication could still exit non-zero after committing** — MEDIUM · lens: senior-dev: the post-publish `read_text()` could fail (I/O error, not just the prune race pass 1 fixed), breaking exit-0 ⇔ summary-published.
+   → Opus: incorporated — `publish_summary()` now returns the committed bytes alongside the path; `run-pass` never re-reads anything after publication.
+
+### Code corrections applied
+
+(none filed this pass)
+
+### New questions Codex raised
+
+(none — all three lenses returned empty `new_questions`)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: REVISE · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-06 18:04; head SHA `6df0a27` (pass-2 fold commit).

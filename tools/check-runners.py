@@ -606,6 +606,24 @@ def test_pass2_fold(env: Env, shared) -> None:
            env.run("run-lens", "--diff", outside, "--intent", env.intent,
                    "--lens", "senior-dev", "--scope-tag", "s6").returncode == 1)
 
+    # The DEFAULT log path is boundary-checked too: a repo-controlled symlink
+    # at docs/reviews/code-review-<tag>.md pointing outside is refused.
+    reviews_dir = os.path.join(env.repo, "docs", "reviews")
+    os.makedirs(reviews_dir, exist_ok=True)
+    os.symlink(secret, os.path.join(reviews_dir, "code-review-s7.md"))
+    proc = env.run("run-pass", "--diff", env.diff, "--intent", env.intent,
+                   "--scope-tag", "s7")
+    record("boundary: symlinked DEFAULT pass log refused",
+           proc.returncode == 1 and "trusted boundaries" in proc.stderr,
+           proc.stderr.strip()[-140:])
+
+    # run-lens validates the lens id — a traversal component can't address a
+    # file outside lenses/ or smuggle separators into debug artifact names.
+    proc = env.run("run-lens", "--diff", env.diff, "--intent", env.intent,
+                   "--lens", "../evil", "--scope-tag", "s8")
+    record("boundary: traversal --lens id refused by run-lens",
+           proc.returncode == 1 and "unknown lens id" in proc.stderr)
+
     # Fencing: a revocation during a fenced publication blocks until the
     # publication completes (publish-before-revoke), then ownership is gone.
     scope = os.path.join(env.skill, "state", "fenced")

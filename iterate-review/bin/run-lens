@@ -28,7 +28,8 @@ import json
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import review_runner as rr  # noqa: E402
+import review_runner as rr        # noqa: E402
+import selection_engine as sel    # noqa: E402
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -76,7 +77,20 @@ def main(argv=None):
         sys.stderr.write(f"run-lens: {exc}\n")
         return EXIT_ERROR
 
+    known = {lens["id"] for lens in sel.load_lenses()}
+    if args.lens not in known:
+        sys.stderr.write(
+            f"run-lens: unknown lens id {args.lens!r} "
+            f"(known: {', '.join(sorted(known))})\n")
+        return EXIT_ERROR
+
     log_path, warnings = rr.resolve_log_path(args.scope_tag, args.log_path)
+    try:
+        # Same boundary check as run-pass — the default path included.
+        log_path = rr.shared.ensure_trusted_path(log_path, [repo_root], "pass log")
+    except rr.shared.TrustedPathError as exc:
+        sys.stderr.write(f"run-lens: {exc}\n")
+        return EXIT_ERROR
     shash = rr.scope_hash(args.scope_tag, log_path)
     state_dir = rr.STATE_ROOT / shash
 
