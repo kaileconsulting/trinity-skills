@@ -114,8 +114,15 @@ except OSError:
     pass
 if mode == "sleep":
     time.sleep(30)
+if mode == "sleep3":
+    time.sleep(3)
 if mode == "fail":
     sys.exit(3)
+if mode == "partial":
+    with open(out, "w") as fh:
+        fh.write('{{"verdict": "APPRO')
+        fh.flush()
+        time.sleep(30)
 if mode == "patchmarkers":
     with open({BAD_RESPONSE!r}) as fh:
         body = fh.read()
@@ -449,6 +456,98 @@ def test_lifecycle(env: Env, shared) -> None:
     scope4_lock.release()
 
 
+def test_immutability(env: Env, shared) -> None:
+    """Pass-1 review fold: published pass state is immutable; responses are
+    staged and published atomically under a verified token."""
+    # A used explicit --pass-num is refused and existing bytes stay put.
+    env.set_mode("ok")
+    proc = env.run("run-pass", "--diff", env.diff, "--intent", env.intent,
+                   "--scope-tag", "imm1", "--pass-num", "1")
+    summary = json.loads(proc.stdout or "{}")
+    resp = summary["lenses"]["senior-dev"]["response_path"]
+    before = read(resp)
+    proc = env.run("run-pass", "--diff", env.diff, "--intent", env.intent,
+                   "--scope-tag", "imm1", "--pass-num", "1")
+    record("immutability: repeated --pass-num refused, no summary overwrite",
+           proc.returncode == 1 and "already has artifacts" in proc.stderr,
+           proc.stderr.strip()[-140:])
+    record("immutability: refused rerun leaves existing artifacts byte-identical",
+           read(resp) == before)
+    proc = env.run("run-pass", "--diff", env.diff, "--intent", env.intent,
+                   "--scope-tag", "imm1")
+    summary = json.loads(proc.stdout or "{}")
+    record("immutability: omitting --pass-num allocates past the used number",
+           proc.returncode == 0 and summary.get("pass") == 2,
+           f"pass={summary.get('pass')}")
+
+    # Zero/negative pass numbers never reach scope state.
+    proc = env.run("run-pass", "--diff", env.diff, "--intent", env.intent,
+                   "--scope-tag", "imm2", "--pass-num", "0")
+    record("immutability: --pass-num 0 rejected at the argument boundary",
+           proc.returncode == 2 and "must be >= 1" in proc.stderr)
+
+    # A codex killed mid-write leaves NO readable final response — the
+    # partial exists only at the run-unique staging path.
+    env.set_mode("partial")
+    env_path = dict(os.environ)
+    env_path["PATH"] = env.fakebin + os.pathsep + env_path["PATH"]
+    slow = subprocess.Popen(
+        [os.path.join(env.bin, "run-pass"), "--diff", env.diff,
+         "--intent", env.intent, "--scope-tag", "imm3", "--pass-num", "1"],
+        cwd=env.repo, env=env_path,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    deadline = time.time() + 10
+    staged = []
+    while time.time() < deadline and not staged:
+        for d in env.state_dirs():
+            staged = [f for f in os.listdir(d) if ".stage-" in f]
+            if staged:
+                imm3_dir = d
+                break
+        time.sleep(0.05)
+    slow.send_signal(signal.SIGKILL)
+    slow.wait(timeout=10)
+    finals = [f for f in os.listdir(imm3_dir)
+              if f.endswith(".response.json")] if staged else ["(no staging seen)"]
+    record("staging: killed codex leaves no readable final response",
+           staged != [] and finals == [], f"staged={staged} finals={finals}")
+    record("staging: killed run publishes no summary",
+           not any(f.endswith(".summary.json") for f in os.listdir(imm3_dir)))
+    os.unlink(os.path.join(imm3_dir, "run.lock"))
+
+    # Ownership revoked while codex runs: the pass aborts with no summary and
+    # no final response artifact — the staged bytes never publish.
+    env.set_mode("sleep3")
+    known = set(env.state_dirs())
+    slow = subprocess.Popen(
+        [os.path.join(env.bin, "run-pass"), "--diff", env.diff,
+         "--intent", env.intent, "--scope-tag", "imm4", "--pass-num", "1"],
+        cwd=env.repo, env=env_path,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    deadline = time.time() + 10
+    lock_file = None
+    while time.time() < deadline and lock_file is None:
+        for d in set(env.state_dirs()) - known:
+            p = os.path.join(d, "run.lock")
+            if os.path.exists(p):
+                lock_file, imm4_dir = p, d
+        time.sleep(0.05)
+    with open(lock_file, "w") as fh:
+        fh.write(json.dumps({"pid": os.getpid(), "timestamp": "t",
+                             "role": "prune", "token": "revoked",
+                             "owner_name": "test"}) + "\n")
+    slow.wait(timeout=30)
+    finals = [f for f in os.listdir(imm4_dir) if f.endswith(".response.json")
+              or f.endswith(".summary.json")]
+    record("displacement: revoked-mid-codex run aborts (non-zero, no summary, "
+           "no published response)",
+           slow.returncode != 0 and finals == [],
+           f"exit={slow.returncode} finals={finals}")
+    record("displacement: displaced run leaves the revoking lock untouched",
+           os.path.exists(lock_file) and "revoked" in read(lock_file))
+    os.unlink(lock_file)
+
+
 def spawn_dead_pid() -> int:
     proc = subprocess.Popen(["true"])
     proc.wait()
@@ -473,6 +572,7 @@ def main() -> int:
         test_composition(rr)
         test_contracts(env)
         test_lifecycle(env, shared)
+        test_immutability(env, shared)
     except Exception as exc:  # noqa: BLE001
         import traceback
         traceback.print_exc()

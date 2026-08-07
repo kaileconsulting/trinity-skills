@@ -40,6 +40,13 @@ EXIT_OK = 0
 EXIT_ERROR = 1
 
 
+def positive_int(value):
+    n = int(value)
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"pass number must be >= 1, got {n}")
+    return n
+
+
 def build_parser():
     p = argparse.ArgumentParser(
         prog="run-pass",
@@ -51,8 +58,10 @@ def build_parser():
     )
     p.add_argument("--diff", required=True, type=Path, help="path to the scope diff file")
     p.add_argument("--intent", required=True, type=Path, help="path to the intent file")
-    p.add_argument("--pass-num", type=int, default=None, metavar="N",
-                   help="pass number; default allocates max+1 under the run lock")
+    p.add_argument("--pass-num", type=positive_int, default=None, metavar="N",
+                   help="pass number (>= 1); refused if any pass-N.* artifact "
+                        "already exists — published pass state is immutable. "
+                        "Default allocates max+1 under the run lock")
     p.add_argument("--scope-tag", required=True, help="scope tag (with the resolved log path, keys the state dir)")
     p.add_argument("--log-path", type=Path, default=None,
                    help="pass-log override; default is <repo-root>/docs/reviews/code-review-<scope-tag>.md")
@@ -111,6 +120,13 @@ def main(argv=None):
         pass_num = args.pass_num
         if pass_num is None:
             pass_num = shared.allocate_pass_number(state_dir)
+        elif shared.pass_number_in_use(state_dir, pass_num):
+            sys.stderr.write(
+                f"run-pass: pass {pass_num} already has artifacts in "
+                f"{state_dir} — published pass state is immutable. Omit "
+                f"--pass-num to allocate a fresh number, or prune the scope "
+                f"first (prune-state).\n")
+            return EXIT_ERROR
 
         def one(lens_id):
             input_path = state_dir / f"pass-{pass_num}.{lens_id}.input.txt"
@@ -151,13 +167,17 @@ def main(argv=None):
 
         summary_file = shared.publish_summary(
             lock, state_dir, pass_num, shash, log_path, warnings, entries)
+        # Capture the committed bytes while still owning the scope: after
+        # release, another actor may legitimately prune the directory, and
+        # exit 0 must still mean exactly "a summary was published".
+        summary_text = summary_file.read_text(encoding="utf-8")
     except shared.LockError as exc:
         sys.stderr.write(f"run-pass: {exc}\n")
         return EXIT_ERROR
     finally:
         lock.release()
 
-    print(summary_file.read_text(encoding="utf-8"), end="")
+    print(summary_text, end="")
     return EXIT_OK
 
 

@@ -1,0 +1,35 @@
+# Code Review — branch-docs-runner-scripts-brief
+
+## Pass 1 — 2026-08-06 17:52 [HISTORICAL]
+
+**Scope:** branch · **Diff size:** 3763 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Lenses:** senior-dev, security, qa
+
+First review executed through the Phase 1 runners themselves: one `run-pass` invocation, zero Bash permission prompts beyond the single allowlist rule. Selection (deterministic, `bin/selection_engine.py`): senior-dev (floor), security (crypto-terms content regex — matched the lens file's own regex prose in the diff), qa (response-pattern content regex — matched plan prose).
+
+### Findings
+
+1. **Explicit `--pass-num` can overwrite committed pass artifacts** — HIGH · lens: senior-dev, security, qa (co-reported): `run-pass` used a caller-supplied pass number unchecked; a repeated/stale/negative value could replace published inputs, responses, and even `pass-N.summary.json`, violating the never-overwrite invariant and making the summary commit point mutable.
+   → Opus: incorporated — explicit pass numbers are validated at the argument boundary (must be ≥ 1) and refused under the scope lock if **any** `pass-N.*` artifact exists ("published pass state is immutable"; omit the flag to allocate, or prune first). `pass_number_in_use()` added to `runner_shared.py`. Fixtures: repeated `--pass-num` refused with bytes byte-identical; `--pass-num 0` rejected; allocation skips past used numbers.
+2. **Codex responses bypassed atomic publication and ownership verification** — HIGH · lens: senior-dev, security, qa (co-reported): `--output-last-message` pointed at the final response path, so codex wrote the published artifact in place — a killed codex could leave a readable partial, and a force-unlocked run's still-writing child could clobber a successor's artifact.
+   → Opus: incorporated — codex now writes to a run-unique staging path (`.stage-<pid>-<rand>.tmp`); the runner re-verifies the ownership token after codex completes and only then `os.replace()`s the staged response into place. Fixtures: killed codex leaves no readable final response (staging only, no summary); ownership revoked mid-codex → run aborts non-zero with no summary and no published response, revoking lock untouched.
+3. **Exit contract violable while printing stdout** — MEDIUM · lens: senior-dev: `run-pass` re-read the summary file *after* releasing the lock; a concurrent prune in that window would exit 1 despite a published summary, breaking exit-0 ⇔ summary-published.
+   → Opus: incorporated — the committed summary bytes are captured while still holding the lock; stdout emission can no longer fail on post-release cleanup.
+4. **Structural rejection misreported as patch-marker violation** — MEDIUM · lens: senior-dev (as correction), qa (as finding; merged): SKILL.md step 11's abort message always claimed patch-shaped output even when `status: rejected` was a structural failure.
+   → Opus: incorporated — step 11 now reports the actual cause from the summary's `reject_reasons`, distinguishing patch-marker rejection from structural validation failure.
+
+### Code corrections applied
+
+- `iterate-review/bin/run-pass` `--pass-num` — accepted 0/negative values → `positive_int` argparse type (senior-dev; folded into finding 1's fix).
+- `iterate-review/SKILL.md` step 11 rejected-response message — folded into finding 4.
+
+### New questions Codex raised
+
+(none — all three lenses returned empty `new_questions`)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: REVISE · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-06 17:45; head SHA `bd98f4666e4b48f9ea42f1ad792f2887f57d20a8`.

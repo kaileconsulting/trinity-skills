@@ -198,16 +198,29 @@ def run_one_lens(lens_id: str, intent: str, diff: str,
         verify()
     shared.atomic_publish(input_path, composed)
 
-    result = shared.invoke_codex(composed, SCHEMA_PATH, response_path)
+    # Codex writes to a run-unique STAGING path, never the final one: a
+    # killed codex leaves only an ignorable staging file, and a displaced
+    # run's still-writing child cannot touch a successor's artifacts. The
+    # staged response is published atomically only after codex completed
+    # AND ownership was re-verified.
+    staging = shared.staging_path_for(response_path)
+    result = shared.invoke_codex(composed, SCHEMA_PATH, staging)
     entry = {
         "status": "ok",
         "response_path": str(response_path),
         "exit_code": result["exit_code"],
         "stderr_tail": result["stderr_tail"],
     }
-    if result["exit_code"] != 0 or not response_path.exists():
+    if result["exit_code"] != 0 or not staging.exists():
         entry["status"] = "failed"
+        try:
+            staging.unlink()
+        except OSError:
+            pass
         return entry
+    if verify is not None:
+        verify()
+    os.replace(staging, response_path)
     problems = shared.validate_response_file(SCHEMA_PATH, response_path)
     if problems:
         entry["status"] = "rejected"

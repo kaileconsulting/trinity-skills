@@ -66,10 +66,21 @@ def codex_command(schema_path: Path, response_path: Path) -> list:
     ]
 
 
-def invoke_codex(input_text: str, schema_path: Path, response_path: Path) -> dict:
-    """Run one codex invocation. Returns {exit_code, stderr_tail}."""
+def staging_path_for(response_path: Path) -> Path:
+    """A run-unique staging target for one codex invocation. Codex writes
+    here — never to the final published path — so a killed codex leaves only
+    an ignorable staging file, and a displaced run's still-writing child can
+    never collide with a successor's artifacts (pid + random suffix)."""
+    suffix = f".stage-{os.getpid()}-{secrets.token_hex(4)}.tmp"
+    return response_path.with_name(response_path.name + suffix)
+
+
+def invoke_codex(input_text: str, schema_path: Path, staging_path: Path) -> dict:
+    """Run one codex invocation writing to a STAGING path (see
+    staging_path_for). Returns {exit_code, stderr_tail}. The caller verifies
+    ownership and atomically publishes the staged response afterwards."""
     proc = subprocess.run(
-        codex_command(schema_path, response_path),
+        codex_command(schema_path, staging_path),
         input=input_text.encode("utf-8"),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
@@ -343,6 +354,19 @@ def allocate_pass_number(state_dir: Path) -> int:
         if m:
             highest = max(highest, int(m.group(1)))
     return highest + 1
+
+
+def pass_number_in_use(state_dir: Path, pass_num: int) -> bool:
+    """True if ANY pass-<N>.* artifact exists (input, response, summary, or
+    staging leftovers). An explicit --pass-num that collides is refused —
+    published pass state is immutable; orphaned numbers are skipped, never
+    reused. Call while holding the scope lock."""
+    prefix = f"pass-{pass_num}."
+    try:
+        names = os.listdir(state_dir)
+    except FileNotFoundError:
+        return False
+    return any(n.startswith(prefix) for n in names)
 
 
 def summary_path(state_dir: Path, pass_num: int) -> Path:
