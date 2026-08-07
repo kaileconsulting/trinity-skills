@@ -90,11 +90,12 @@ def select_lenses(diff_text: str, override):
 def main(argv=None):
     args = build_parser().parse_args(argv)
 
-    # The pre-approved runner only reads inside the trusted boundary: the
-    # invoking repo root + the inbox handoff area (NOT the whole state root —
-    # other scopes' artifacts belong to other repositories' reviews).
+    # The pre-approved runner only reads inside the invoking repo root —
+    # nothing else. A shared handoff area (even a dedicated inbox) crosses
+    # repository confidentiality boundaries; the conventional in-boundary
+    # location for model-written inputs is <repo>/.git/iterate-review/.
     repo_root, _ = shared.resolve_repo_root()
-    boundaries = [repo_root, rr.INBOX]
+    boundaries = [repo_root]
     try:
         diff_path = shared.ensure_trusted_path(args.diff, boundaries, "--diff")
         intent_path = shared.ensure_trusted_path(args.intent, boundaries, "--intent")

@@ -153,3 +153,34 @@ Note: merged HIGH+MEDIUM count rose 2 → 4 (first non-decreasing transition; th
 ### Diff snapshot reference
 
 Diff captured at 2026-08-06 18:23; head SHA pass-4 fold commit.
+
+## Pass 6 — 2026-08-06 18:40 [HISTORICAL]
+
+**Scope:** branch · **Diff size:** ~4400 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+1. **Runner uses Python 3.10-only union syntax despite the 3.9 floor** — HIGH · lens: senior-dev: claimed PEP 604 annotations (`str | None`) in `selection_engine.py` are unparseable on 3.9 and that `from __future__ import annotations` "does not make the syntax parseable."
+   → Opus: **disputed** — the claim is factually incorrect. `X | Y` is valid *syntax* on every Python 3 (it parses as a BinOp); PEP 604 concerns runtime *evaluation*, which the `from __future__ import annotations` present in all three modules defers. Concrete disproof executed during the fold on the floor interpreter itself (Python 3.9.6, this machine): all three modules import, `select()` runs, and `path_matches_any.__annotations__['return']` is the unevaluated string `'str | None'`; the entire 56-fixture suite plus 14/14 selection goldens pass on 3.9.6. The Linux `python:3.9-slim` container check in the acceptance matrix re-verifies this before ship. **First `disputed` disposition in this repo's history — relevant to the parked Axis 1 plan's unpark criteria (a HIGH finding that reads as wrong).**
+2. **Shared inbox still crosses repository confidentiality boundaries** — HIGH · lens: security: pass 5 narrowed the boundary to inbox/, but the inbox was still a single global directory — repo A's invocation could read a diff staged for repo B.
+   → Opus: incorporated — the inbox is gone; the trusted boundary is the invoking repo root, full stop. Conventional input location is now `<repo>/.git/iterate-review/` (inside the boundary, invisible to git, uncommittable). Fixtures: shared-inbox file refused; another scope's artifact refused; `.git/iterate-review/` handoff accepted.
+3. **Concurrent standalone debug-path uniqueness not exercised** — MEDIUM · lens: qa: the pid+random naming from pass 5 had no fixture; a regression to timestamp-only names would pass undetected.
+   → Opus: incorporated — fixture launches two concurrent standalone `run-lens` invocations for the same scope+lens and asserts 4 distinct artifact paths.
+
+### Code corrections applied
+
+(none filed this pass)
+
+### New questions Codex raised
+
+(none — all three lenses returned empty `new_questions`)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: REVISE · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-06 18:33; head SHA pass-5 fold commit.
+
+**Loop halt:** the disputed HIGH (finding 1) is a not-incorporated HIGH — the fold-needs-human-judgment guardrail stops loop mode here for the human's call.

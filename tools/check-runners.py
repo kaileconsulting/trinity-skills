@@ -648,8 +648,9 @@ def test_pass2_fold(env: Env, shared) -> None:
     record("boundary: traversal --lens id refused by run-lens",
            proc.returncode == 1 and "unknown lens id" in proc.stderr)
 
-    # The state-root allowance is inbox/ ONLY: another scope's artifacts are
-    # other repositories' review material and must not be readable as inputs.
+    # The boundary is the repo root ONLY: another scope's state artifacts —
+    # and even a would-be shared inbox — are other repositories' review
+    # material and must not be readable as inputs.
     foreign = None
     for d in env.state_dirs():
         for f in os.listdir(d):
@@ -660,17 +661,40 @@ def test_pass2_fold(env: Env, shared) -> None:
             break
     proc = env.run("run-pass", "--diff", foreign, "--intent", env.intent,
                    "--scope-tag", "s10")
-    record("boundary: another scope's artifact refused as input (inbox-only)",
+    record("boundary: another scope's state artifact refused as input",
            foreign is not None and proc.returncode == 1
            and "trusted boundaries" in proc.stderr)
     inbox = os.path.join(env.skill, "state", "inbox")
     os.makedirs(inbox, exist_ok=True)
     shutil.copy(env.diff, os.path.join(inbox, "diff.txt"))
     proc = env.run("run-pass", "--diff", os.path.join(inbox, "diff.txt"),
-                   "--intent", env.intent, "--scope-tag", "s11",
+                   "--intent", env.intent, "--scope-tag", "s11")
+    record("boundary: a shared state/inbox file is refused (repo-root only)",
+           proc.returncode == 1 and "trusted boundaries" in proc.stderr)
+    gitdir_inputs = os.path.join(env.repo, ".git", "iterate-review")
+    os.makedirs(gitdir_inputs, exist_ok=True)
+    shutil.copy(env.diff, os.path.join(gitdir_inputs, "diff.txt"))
+    proc = env.run("run-pass", "--diff",
+                   os.path.join(gitdir_inputs, "diff.txt"),
+                   "--intent", env.intent, "--scope-tag", "s11b",
                    "--pass-num", "1")
-    record("boundary: inbox handoff accepted",
-           proc.returncode == 0)
+    record("boundary: .git/iterate-review/ handoff accepted",
+           proc.returncode == 0, proc.stderr.strip()[-140:])
+
+    # Two concurrent lockless standalone runs never share artifact paths.
+    lens_env2 = dict(os.environ)
+    lens_env2["PATH"] = env.fakebin + os.pathsep + lens_env2["PATH"]
+    procs = [subprocess.Popen(
+        [os.path.join(env.bin, "run-lens"), "--diff", env.diff,
+         "--intent", env.intent, "--lens", "senior-dev",
+         "--scope-tag", "s13"],
+        cwd=env.repo, env=lens_env2,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE) for _ in range(2)]
+    outs = [json.loads(p.communicate(timeout=60)[0] or "{}") for p in procs]
+    paths = {o.get("response_path") for o in outs} | {o.get("input_path") for o in outs}
+    record("debug: two concurrent standalone runs use distinct artifact paths",
+           all(p.returncode == 0 for p in procs) and len(paths) == 4,
+           f"{len(paths)} distinct paths")
 
     # run-lens honors the exit contract with a vanished stdout consumer too.
     lens_env = dict(os.environ)

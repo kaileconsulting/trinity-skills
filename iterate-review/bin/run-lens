@@ -58,9 +58,9 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
 
-    # Same trusted boundary as run-pass: repo root + the inbox handoff area.
+    # Same trusted boundary as run-pass: the invoking repo root only.
     repo_root, _ = rr.shared.resolve_repo_root()
-    boundaries = [repo_root, rr.INBOX]
+    boundaries = [repo_root]
     try:
         diff_path = rr.shared.ensure_trusted_path(args.diff, boundaries, "--diff")
         intent_path = rr.shared.ensure_trusted_path(args.intent, boundaries, "--intent")

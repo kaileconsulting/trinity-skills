@@ -199,11 +199,12 @@ def ensure_trusted_path(path, boundaries, label: str) -> Path:
     network-backed codex process with no human gate. So every file input
     (--diff, --intent, the pass log it reads for PRIOR PASSES) must resolve —
     symlinks and traversal included, via realpath — to somewhere inside the
-    invoking repo root or the skill's inbox handoff area (NOT the whole state
-    root: other scopes' artifacts belong to other repositories' reviews, and
-    the boundary must not let one repo's review read another's). Reading
-    in-repo content is the review's whole job; reading arbitrary host files
-    is exfiltration."""
+    invoking repo root. Nothing else: even a dedicated shared handoff area
+    would let one repository's review read files staged for another's.
+    Reading in-repo content is the review's whole job; reading anything
+    outside it is exfiltration. Conventional in-boundary location for
+    model-written inputs: <repo>/.git/iterate-review/ (inside the boundary,
+    invisible to git, uncommittable)."""
     real = Path(os.path.realpath(str(path)))
     for boundary in boundaries:
         b = Path(os.path.realpath(str(boundary)))
@@ -215,8 +216,8 @@ def ensure_trusted_path(path, boundaries, label: str) -> Path:
     raise TrustedPathError(
         f"{label} {path} resolves to {real}, outside the trusted boundaries "
         f"({', '.join(str(b) for b in boundaries)}). The pre-approved runner "
-        f"only reads inside the invoking repo root and the skill's "
-        f"state/inbox/ handoff area."
+        f"only reads inside the invoking repo root (conventional input "
+        f"location: <repo>/.git/iterate-review/)."
     )
 
 

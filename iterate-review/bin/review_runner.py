@@ -47,9 +47,6 @@ import runner_shared as shared  # noqa: E402
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 STATE_ROOT = SKILL_ROOT / "state"
-# Conventional handoff area for model-written diff/intent files: inside the
-# trusted boundary, outside any scope's lock-guarded directory.
-INBOX = STATE_ROOT / "inbox"
 REVIEWER_PROMPT = SKILL_ROOT / "reviewer-prompt.md"
 SCHEMA_PATH = SKILL_ROOT / "reviewer-output.schema.json"
 LENS_DIR = SKILL_ROOT / "lenses"
