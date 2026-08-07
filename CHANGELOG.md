@@ -24,11 +24,13 @@ Ports the pattern to `iterate-plan` in the final phase.
   race-safe stale reclaim (`run.lock.reclaim` + byte-identity), atomic
   tmp+`os.replace` publication, conditional release, and an isolated `debug/`
   namespace for standalone `run-lens`.
-- `tools/check-runners.py` — 31 fixtures covering composition goldens, both
-  exit-contract boundaries, pass-log resolution (docs/reviews default from a
-  subdirectory, override, non-git warning, existing logs untouched), and the
-  adversarial lifecycle cases; wired into `check-all.sh`, teeth-tested in
-  `test-checkers.py` (53 → 55 self-tests).
+- `tools/check-runners.py` — the runner fixture suite: composition goldens,
+  both exit-contract boundaries, pass-log resolution (docs/reviews default
+  from a subdirectory, override, non-git warning, existing logs untouched),
+  the adversarial lifecycle cases, and the trusted-boundary refusals; wired
+  into `check-all.sh`, teeth-tested in `test-checkers.py`. (Counts live in
+  the suite output, deliberately not restated here — they grew with every
+  self-hosted review pass.)
 - `iterate-review/SKILL.md` steps 9–11 rewired to one `run-pass` invocation
   per pass; pass-log default moved to `docs/reviews/`; HISTORICAL appends via
   the Edit/Write tools; runner contract added to Hard rules. `--once`,

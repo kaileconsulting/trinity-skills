@@ -190,3 +190,30 @@ Diff captured at 2026-08-06 18:33; head SHA pass-5 fold commit.
 - **Cross-vendor second opinion (Gemini, `gemini-2.5-flash`, paid tier, headless, first live use of the Axis-1-style vote):** `uphold_dispute`, confidence `high` — "PEP 604 union syntax is syntactically valid in Python 3.9 … `from __future__ import annotations` compiles hints as unevaluated string references … no runtime TypeError occurs; the codebase runs successfully on the Python 3.9 floor interpreter, making the finding incorrect." Independent of, and in agreement with, the dispute's executed evidence.
 - **Human ruling (Kyle):** dispute accepted — change nothing. The finding is recorded as erroneous.
 - Calibration note for the parked Axis 1 plan: first real disputed HIGH, first live cross-vendor vote; vote agreed with the disputing editor and the executable evidence.
+
+## Pass 7 — 2026-08-07 [HISTORICAL]
+
+**Scope:** branch · **Diff size:** ~4500 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Lenses:** senior-dev, security, qa
+
+Manual continue after the pass-6 dispute arbitration. Inputs handed off through `.git/iterate-review/` (the pass-6 convention, now made mandatory by this pass's fold).
+
+### Findings
+
+1. **Repo-root boundary still permits exfiltration of unrelated in-repo secrets** — HIGH · lens: security: `--diff`/`--intent` were accepted from anywhere in the repo, so an invocation-only attacker under the standing allowlist could feed an untracked `.env`, private fixtures, or `.git/config` to codex; the handoff dir was conventional, not enforced.
+   → Opus: incorporated — the handoff dir is now the *enforced* input boundary: `resolve_handoff_dir()` (worktree-aware via `git rev-parse --absolute-git-dir`; non-git fallback `<cwd>/.iterate-review/`), and `--diff`/`--intent` must realpath-resolve inside it. The pass log keeps its separate repo-root boundary. Fixtures: in-repo `.env` refused; `.git/config` refused (inside `.git`, outside the handoff dir); non-git fixture moved to its own handoff dir.
+
+### Code corrections applied
+
+- `CHANGELOG.md` Phase-1 entry — stale fixture/self-test counts contradicted the tested state → counts removed in favor of coverage description, per the repo's own "counts live in the suite output" philosophy (qa).
+
+### New questions Codex raised
+
+(none)
+
+### Lens run summary
+
+- senior-dev: APPROVE · security: REVISE · qa: APPROVE
+
+### Diff snapshot reference
+
+Diff captured 2026-08-07; head SHA pass-6 arbitration commit.

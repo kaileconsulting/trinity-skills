@@ -196,15 +196,13 @@ def ensure_trusted_path(path, boundaries, label: str) -> Path:
 
     The runner is pre-approved by a standing allowlist rule, which makes it a
     trusted deputy: whatever it reads ends up in a prompt to the
-    network-backed codex process with no human gate. So every file input
-    (--diff, --intent, the pass log it reads for PRIOR PASSES) must resolve —
-    symlinks and traversal included, via realpath — to somewhere inside the
-    invoking repo root. Nothing else: even a dedicated shared handoff area
-    would let one repository's review read files staged for another's.
-    Reading in-repo content is the review's whole job; reading anything
-    outside it is exfiltration. Conventional in-boundary location for
-    model-written inputs: <repo>/.git/iterate-review/ (inside the boundary,
-    invisible to git, uncommittable)."""
+    network-backed codex process with no human gate. So every runner-readable
+    path must resolve — symlinks and traversal included, via realpath — to
+    its declared boundary: --diff/--intent to the per-repository handoff dir
+    (resolve_handoff_dir — enforced, so even unrelated *in-repo* files like
+    an untracked .env or .git/config can't be named as inputs), and the pass
+    log to the invoking repo root. No shared cross-repo area exists at all:
+    one repository's review must never read files staged for another's."""
     real = Path(os.path.realpath(str(path)))
     for boundary in boundaries:
         b = Path(os.path.realpath(str(boundary)))
@@ -216,8 +214,9 @@ def ensure_trusted_path(path, boundaries, label: str) -> Path:
     raise TrustedPathError(
         f"{label} {path} resolves to {real}, outside the trusted boundaries "
         f"({', '.join(str(b) for b in boundaries)}). The pre-approved runner "
-        f"only reads inside the invoking repo root (conventional input "
-        f"location: <repo>/.git/iterate-review/)."
+        f"reads --diff/--intent only from the per-repo handoff dir "
+        f"(<git-dir>/iterate-review/) and the pass log only from inside the "
+        f"invoking repo root."
     )
 
 
@@ -538,6 +537,33 @@ def publish_summary(lock: ScopeLock, state_dir: Path, pass_num: int,
 # --------------------------------------------------------------------------
 # Invoking-repo root resolution (distinct from skill-root resolution)
 # --------------------------------------------------------------------------
+
+def resolve_handoff_dir(cwd=None):
+    """Return (handoff_dir, warnings) — the ONLY directory the runner will
+    read --diff/--intent from: `<git-dir>/iterate-review/` (worktree-aware
+    via `git rev-parse --absolute-git-dir`; inside the repo but invisible to
+    git and uncommittable), falling back to `<cwd>/.iterate-review/` with a
+    warning outside a git repo. Enforced, not conventional: the standing
+    allowlist rule must not let an invocation-only attacker feed unrelated
+    in-repo files (an untracked .env, .git/config) to the network-backed
+    codex process — inputs must have been deliberately staged here by an
+    actor with write access."""
+    cwd = Path(cwd) if cwd is not None else Path.cwd()
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "--absolute-git-dir"],
+            cwd=str(cwd), capture_output=True, text=True,
+        )
+    except OSError as exc:
+        return cwd / ".iterate-review", [
+            f"git unavailable ({exc}); input handoff falls back to "
+            f"<cwd>/.iterate-review"]
+    if proc.returncode != 0:
+        return cwd / ".iterate-review", [
+            "not inside a git repository; input handoff falls back to "
+            "<cwd>/.iterate-review"]
+    return Path(proc.stdout.strip()) / "iterate-review", []
+
 
 def resolve_repo_root(cwd=None):
     """Return (root_path, warnings). `git rev-parse --show-toplevel` from the

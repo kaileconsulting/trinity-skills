@@ -86,12 +86,15 @@ class Env:
         os.makedirs(os.path.join(self.repo, "sub"))
         subprocess.run(["git", "init", "-q", self.repo], check=True,
                        stdout=subprocess.DEVNULL)
-        self.diff = os.path.join(self.repo, "diff.txt")
+        # Inputs live in the ENFORCED per-repo handoff dir.
+        self.handoff = os.path.join(self.repo, ".git", "iterate-review")
+        os.makedirs(self.handoff)
+        self.diff = os.path.join(self.handoff, "diff.txt")
         with open(self.diff, "w") as fh:
             fh.write("diff --git a/lib/plain.py b/lib/plain.py\n"
                      "--- a/lib/plain.py\n+++ b/lib/plain.py\n"
                      "@@ -1,1 +1,1 @@\n-x = 1\n+x = 2\n")
-        self.intent = os.path.join(self.repo, "intent.txt")
+        self.intent = os.path.join(self.handoff, "intent.txt")
         with open(self.intent, "w") as fh:
             fh.write("Standalone code review of working-tree changes.\n")
 
@@ -240,12 +243,15 @@ def test_contracts(env: Env) -> None:
            read(root_log) == "legacy root log\n")
 
     # Non-git cwd: fallback to cwd with a warning in the summary. The inputs
-    # must live inside THAT boundary (the fallback root is the cwd).
+    # must live in THAT boundary's handoff dir (<cwd>/.iterate-review/).
     nongit = tempfile.mkdtemp(dir=env.root)
-    shutil.copy(env.diff, os.path.join(nongit, "diff.txt"))
-    shutil.copy(env.intent, os.path.join(nongit, "intent.txt"))
-    proc = env.run("run-pass", "--diff", os.path.join(nongit, "diff.txt"),
-                   "--intent", os.path.join(nongit, "intent.txt"),
+    nongit_handoff = os.path.join(nongit, ".iterate-review")
+    os.makedirs(nongit_handoff)
+    shutil.copy(env.diff, os.path.join(nongit_handoff, "diff.txt"))
+    shutil.copy(env.intent, os.path.join(nongit_handoff, "intent.txt"))
+    proc = env.run("run-pass", "--diff",
+                   os.path.join(nongit_handoff, "diff.txt"),
+                   "--intent", os.path.join(nongit_handoff, "intent.txt"),
                    "--scope-tag", "t3", "--pass-num", "1", cwd=nongit)
     summary = json.loads(proc.stdout or "{}") if proc.returncode == 0 else {}
     record("pass-log: non-git invocation reports the cwd-fallback warning",
@@ -671,15 +677,27 @@ def test_pass2_fold(env: Env, shared) -> None:
                    "--intent", env.intent, "--scope-tag", "s11")
     record("boundary: a shared state/inbox file is refused (repo-root only)",
            proc.returncode == 1 and "trusted boundaries" in proc.stderr)
-    gitdir_inputs = os.path.join(env.repo, ".git", "iterate-review")
-    os.makedirs(gitdir_inputs, exist_ok=True)
-    shutil.copy(env.diff, os.path.join(gitdir_inputs, "diff.txt"))
-    proc = env.run("run-pass", "--diff",
-                   os.path.join(gitdir_inputs, "diff.txt"),
+    proc = env.run("run-pass", "--diff", env.diff,
                    "--intent", env.intent, "--scope-tag", "s11b",
                    "--pass-num", "1")
     record("boundary: .git/iterate-review/ handoff accepted",
            proc.returncode == 0, proc.stderr.strip()[-140:])
+
+    # In-repo files OUTSIDE the handoff dir are refused too: the standing
+    # allowlist must not read an untracked .env or .git/config into a
+    # codex prompt.
+    dotenv = os.path.join(env.repo, ".env")
+    with open(dotenv, "w") as fh:
+        fh.write("SECRET=hunter2\n")
+    proc = env.run("run-pass", "--diff", dotenv, "--intent", env.intent,
+                   "--scope-tag", "s14")
+    record("boundary: in-repo file outside the handoff dir refused (.env)",
+           proc.returncode == 1 and "trusted boundaries" in proc.stderr)
+    proc = env.run("run-pass", "--diff",
+                   os.path.join(env.repo, ".git", "config"),
+                   "--intent", env.intent, "--scope-tag", "s15")
+    record("boundary: .git/config refused (inside .git, outside handoff)",
+           proc.returncode == 1 and "trusted boundaries" in proc.stderr)
 
     # Two concurrent lockless standalone runs never share artifact paths.
     lens_env2 = dict(os.environ)

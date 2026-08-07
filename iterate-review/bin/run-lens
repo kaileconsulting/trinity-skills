@@ -58,12 +58,13 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
 
-    # Same trusted boundary as run-pass: the invoking repo root only.
+    # Same trusted boundaries as run-pass: inputs from the per-repo handoff
+    # dir only; the pass log from inside the invoking repo root.
     repo_root, _ = rr.shared.resolve_repo_root()
-    boundaries = [repo_root]
+    handoff, _ = rr.shared.resolve_handoff_dir()
     try:
-        diff_path = rr.shared.ensure_trusted_path(args.diff, boundaries, "--diff")
-        intent_path = rr.shared.ensure_trusted_path(args.intent, boundaries, "--intent")
+        diff_path = rr.shared.ensure_trusted_path(args.diff, [handoff], "--diff")
+        intent_path = rr.shared.ensure_trusted_path(args.intent, [handoff], "--intent")
         if args.log_path is not None:
             rr.shared.ensure_trusted_path(args.log_path, [repo_root], "--log-path")
     except rr.shared.TrustedPathError as exc:

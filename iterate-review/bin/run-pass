@@ -90,15 +90,14 @@ def select_lenses(diff_text: str, override):
 def main(argv=None):
     args = build_parser().parse_args(argv)
 
-    # The pre-approved runner only reads inside the invoking repo root —
-    # nothing else. A shared handoff area (even a dedicated inbox) crosses
-    # repository confidentiality boundaries; the conventional in-boundary
-    # location for model-written inputs is <repo>/.git/iterate-review/.
+    # --diff/--intent must come from the per-repo handoff dir (enforced, so
+    # even unrelated in-repo files can't be fed to codex); the pass log may
+    # live anywhere inside the invoking repo root.
     repo_root, _ = shared.resolve_repo_root()
-    boundaries = [repo_root]
+    handoff, _ = shared.resolve_handoff_dir()
     try:
-        diff_path = shared.ensure_trusted_path(args.diff, boundaries, "--diff")
-        intent_path = shared.ensure_trusted_path(args.intent, boundaries, "--intent")
+        diff_path = shared.ensure_trusted_path(args.diff, [handoff], "--diff")
+        intent_path = shared.ensure_trusted_path(args.intent, [handoff], "--intent")
         if args.log_path is not None:
             shared.ensure_trusted_path(args.log_path, [repo_root], "--log-path")
     except shared.TrustedPathError as exc:
