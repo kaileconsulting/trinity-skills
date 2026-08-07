@@ -93,3 +93,30 @@ Inputs handed off through the new `state/inbox/` boundary introduced by the pass
 ### Diff snapshot reference
 
 Diff captured at 2026-08-06 18:04; head SHA `6df0a27` (pass-2 fold commit).
+
+## Pass 4 — 2026-08-06 18:20 [HISTORICAL]
+
+**Scope:** branch · **Diff size:** 4316 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+1. **Committed summary can still exit non-zero when stdout emission fails** — HIGH · lens: senior-dev: a broken stdout consumer (e.g. a pipe whose reader exited) raises `BrokenPipeError` from the post-commit `print`, so a published pass read as aborted — the third and final corner of the exit-0 ⇔ summary-published contract.
+   → Opus: incorporated — the post-commit stdout emission is wrapped (`BrokenPipeError`/`OSError` swallowed, stdout pointed at devnull to avoid a shutdown re-raise); the summary on disk is the source of truth. Fixture: `run-pass` with its stdout pipe pre-closed still exits 0.
+2. **Standalone-overlap fixture didn't create the overlap it claimed to test** — MEDIUM · lens: qa: the fixture held a lock on scope `livescope` while running `run-lens` against scope `t9` — different directories, no live `run-pass` — so it could pass even if standalone handling regressed.
+   → Opus: incorporated — fixture rewritten: a sleeping `run-pass` holds the lock on scope `live1`, standalone `run-lens` runs against the *same* scope mid-flight, asserting exit 0, debug/-only artifacts in that same scope dir (realpath-compared), and a byte-stable published `pass-N.*` set.
+
+### Code corrections applied
+
+(none filed this pass)
+
+### New questions Codex raised
+
+(none — all three lenses returned empty `new_questions`)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: APPROVE · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-06 18:13; head SHA `670d6c5` (pass-3 fold commit).

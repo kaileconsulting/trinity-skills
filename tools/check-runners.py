@@ -448,20 +448,44 @@ def test_lifecycle(env: Env, shared) -> None:
            "abandoned reclaim marker" in msg and "--force-unlock" in msg,
            msg[:120])
 
-    # Standalone run-lens during a live run-pass leaves published state alone.
-    scope4_lock = shared.ScopeLock(
-        os.path.join(state_root, "livescope"), role="run-pass")
-    scope4_lock.acquire()
-    env.set_mode("ok")
+    # Standalone run-lens during a live run-pass on the SAME scope: the
+    # standalone invocation must succeed without the lock and must leave
+    # that scope's published pass-N.* set untouched (debug/ only).
+    env.set_mode("sleep")
+    live = subprocess.Popen(
+        [os.path.join(env.bin, "run-pass"), "--diff", env.diff,
+         "--intent", env.intent, "--scope-tag", "live1", "--pass-num", "1"],
+        cwd=env.repo, env=env_path,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    deadline = time.time() + 10
+    live_dir = None
+    while time.time() < deadline and live_dir is None:
+        for d in env.state_dirs():
+            if os.path.exists(os.path.join(d, "run.lock")) and d != t9_dir:
+                live_dir = d
+        time.sleep(0.05)
+    published_before = sorted(
+        f for f in os.listdir(live_dir) if f.startswith("pass-")
+        and not f.endswith(".tmp"))
+    env.set_mode("ok")  # the sleeping codex already read its mode
     proc = env.run("run-lens", "--diff", env.diff, "--intent", env.intent,
-                   "--lens", "senior-dev", "--scope-tag", "t9")
-    published_before = sorted(os.listdir(t9_dir))
-    record("lifecycle: standalone run-lens during a live run-pass succeeds "
-           "and touches no published state",
-           proc.returncode == 0 and sorted(
-               f for f in os.listdir(t9_dir) if f.startswith("pass-"))
-           == [f for f in published_before if f.startswith("pass-")])
-    scope4_lock.release()
+                   "--lens", "senior-dev", "--scope-tag", "live1")
+    out = json.loads(proc.stdout or "{}")
+    published_after = sorted(
+        f for f in os.listdir(live_dir) if f.startswith("pass-")
+        and not f.endswith(".tmp"))
+    record("lifecycle: standalone run-lens during a live same-scope run-pass "
+           "succeeds and touches no published state",
+           proc.returncode == 0
+           and f"{os.sep}debug{os.sep}" in out.get("response_path", "")
+           and os.path.realpath(os.path.dirname(os.path.dirname(
+               out["response_path"]))) == os.path.realpath(live_dir)
+           and published_after == published_before,
+           f"exit={proc.returncode} resp={out.get('response_path')} "
+           f"before={published_before} after={published_after}")
+    live.send_signal(signal.SIGKILL)
+    live.wait(timeout=10)
+    os.unlink(os.path.join(live_dir, "run.lock"))
 
 
 def test_immutability(env: Env, shared) -> None:
@@ -663,6 +687,23 @@ def test_pass2_fold(env: Env, shared) -> None:
     record("fencing: post-revocation release leaves the revoked lock intact",
            os.path.exists(lock.lock_path))
     os.unlink(lock.lock_path)
+
+    # exit 0 iff summary published — even when the stdout consumer is gone
+    # (broken pipe after the commit point must not read as an aborted pass).
+    env.set_mode("ok")
+    env_path = dict(os.environ)
+    env_path["PATH"] = env.fakebin + os.pathsep + env_path["PATH"]
+    read_end, write_end = os.pipe()
+    os.close(read_end)
+    proc = subprocess.run(
+        [os.path.join(env.bin, "run-pass"), "--diff", env.diff,
+         "--intent", env.intent, "--scope-tag", "s9", "--pass-num", "1"],
+        cwd=env.repo, env=env_path, stdout=write_end,
+        stderr=subprocess.PIPE, timeout=60)
+    os.close(write_end)
+    record("contract: broken stdout pipe after commit still exits 0",
+           proc.returncode == 0, f"exit={proc.returncode} "
+           f"stderr={proc.stderr.decode()[-120:]}")
 
 
 def spawn_dead_pid() -> int:

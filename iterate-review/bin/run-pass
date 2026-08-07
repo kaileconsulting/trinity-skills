@@ -29,6 +29,7 @@ if sys.version_info < MIN_PYTHON:
 import argparse
 import concurrent.futures
 import json
+import os
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -198,7 +199,17 @@ def main(argv=None):
     finally:
         lock.release()
 
-    print(summary_text, end="")
+    try:
+        print(summary_text, end="")
+        sys.stdout.flush()
+    except (BrokenPipeError, OSError):
+        # The summary is already committed — a broken stdout consumer must
+        # not turn a published pass into an "aborted" exit. Point stdout at
+        # devnull so interpreter shutdown can't raise a second time.
+        try:
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        except OSError:
+            pass
     return EXIT_OK
 
 
