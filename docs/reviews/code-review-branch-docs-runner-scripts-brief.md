@@ -184,3 +184,9 @@ Diff captured at 2026-08-06 18:23; head SHA pass-4 fold commit.
 Diff captured at 2026-08-06 18:33; head SHA pass-5 fold commit.
 
 **Loop halt:** the disputed HIGH (finding 1) is a not-incorporated HIGH — the fold-needs-human-judgment guardrail stops loop mode here for the human's call.
+
+### Dispute arbitration (2026-08-07, addendum)
+
+- **Cross-vendor second opinion (Gemini, `gemini-2.5-flash`, paid tier, headless, first live use of the Axis-1-style vote):** `uphold_dispute`, confidence `high` — "PEP 604 union syntax is syntactically valid in Python 3.9 … `from __future__ import annotations` compiles hints as unevaluated string references … no runtime TypeError occurs; the codebase runs successfully on the Python 3.9 floor interpreter, making the finding incorrect." Independent of, and in agreement with, the dispute's executed evidence.
+- **Human ruling (Kyle):** dispute accepted — change nothing. The finding is recorded as erroneous.
+- Calibration note for the parked Axis 1 plan: first real disputed HIGH, first live cross-vendor vote; vote agreed with the disputing editor and the executable evidence.
