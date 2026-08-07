@@ -226,6 +226,15 @@ In v2, steps 2 and 4 collapse to a single `iterate-review --plan=<path> --phase=
   `examples/merge/` holds merge/verdict goldens. Validate with `tools/check-examples.py`.
 - `state/<scope-hash>/pass-N.response.json` — per-pass raw Codex responses, kept for inspection.
 - `state/<scope-hash>.json` — per-invocation final state, written at convergence/abort.
+- `bin/` — runner scripts (`run-lens`, `run-pass`, `prune-state`); Phase 0 stubs today,
+  implementations land per `docs/runner-scripts-artifact-hygiene-2026-08-06.md`. Once
+  Phase 1 rewires steps 9–11, the per-scope state dir additionally holds
+  `pass-N.<lensid>.input.txt` (composed lens inputs — moved here from `/tmp` so they're
+  prunable and golden-file-comparable), `pass-N.summary.json` (the pass's single commit
+  point: a pass exists iff its summary exists), `run.lock` (+ transient
+  `run.lock.reclaim`) for exclusive scope ownership, and a `debug/` namespace for
+  standalone `run-lens` output. Until that rewire, this SKILL's steps below remain the
+  operative procedure and the stubs are inert.
 
 Sibling skills:
 - `~/.claude/skills/iterate-plan/SKILL.md` — architectural model.

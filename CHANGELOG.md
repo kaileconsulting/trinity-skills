@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased — runner scripts + artifact hygiene (in progress)
+
+Plan: `docs/runner-scripts-artifact-hygiene-2026-08-06.md` (converged after 9
+iterate-plan passes). Replaces per-pass improvised shell with stdlib-only Python
+runners under `iterate-review/bin/` so one documented allowlist rule covers an
+entire review; moves the pass-log default to `docs/reviews/`; adds state pruning.
+Ports the pattern to `iterate-plan` in the final phase.
+
+### Added (Phase 0 — foundations)
+
+- `iterate-review/bin/{run-lens,run-pass,prune-state}` — inert stubs pinning the
+  argument surface, exit contracts, skill-root resolution, and the Python ≥ 3.9
+  fail-fast check. Implementations land in Phases 1–2; SKILL.md steps are not yet
+  rewired, so current review behavior is unchanged.
+- README: the one-rule permission model (allowlist snippet for both install
+  layouts), `python3 ≥ 3.9` prerequisite, and the upcoming `docs/reviews/`
+  pass-log default with its existing-logs-untouched migration note.
+- `iterate-review/SKILL.md` Pointers: the extended state-dir layout the runners
+  will use (composed inputs, `pass-N.summary.json` as the pass's commit point,
+  `run.lock` ownership, `debug/` namespace).
+
 ## 2.1.1 — 2026-07-28 — bound the content-regex match span
 
 Fixes [#5](https://github.com/kaileconsulting/trinity-skills/issues/5), found while

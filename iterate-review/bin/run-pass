@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""run-pass — select lenses, fan out run-lens concurrently, publish the pass summary.
+
+Part of the iterate-review runner set (stdlib-only, Python >= 3.9).
+Exit contract: 0 = pass-N.summary.json was published (per-lens failure or
+rejection is *data* inside the summary, not an orchestration error);
+non-zero / absent summary = the pass aborted and must be treated as
+never-ran. Lens selection is deterministic per lenses/README.md, promoted
+from examples/selection/check-selection.py; --lenses overrides it.
+
+Phase 0 stub: argument surface + path resolution only. The implementation
+lands in Phase 1 of docs/runner-scripts-artifact-hygiene-2026-08-06.md.
+"""
+import sys
+
+MIN_PYTHON = (3, 9)
+if sys.version_info < MIN_PYTHON:
+    sys.stderr.write(
+        "run-pass: Python %d.%d+ required, found %d.%d — see README (Prerequisites)\n"
+        % (MIN_PYTHON + sys.version_info[:2])
+    )
+    sys.exit(1)
+
+import argparse
+from pathlib import Path
+
+# bin/ -> skill root; resolves through the ~/.claude/skills symlink or a plain copy.
+SKILL_ROOT = Path(__file__).resolve().parent.parent
+STATE_ROOT = SKILL_ROOT / "state"
+
+
+def build_parser():
+    p = argparse.ArgumentParser(
+        prog="run-pass",
+        description="Select lenses deterministically, fan out one Codex call per lens, publish the pass summary.",
+    )
+    p.add_argument("--diff", required=True, type=Path, help="path to the scope diff file")
+    p.add_argument("--intent", required=True, type=Path, help="path to the intent file")
+    p.add_argument("--pass-num", type=int, default=None, metavar="N",
+                   help="pass number; default allocates max+1 under the run lock")
+    p.add_argument("--scope-tag", required=True, help="scope tag (with --log-path, keys the state dir)")
+    p.add_argument("--log-path", type=Path, default=None,
+                   help="pass-log override; default is <repo-root>/docs/reviews/code-review-<scope-tag>.md")
+    p.add_argument("--lenses", default=None,
+                   help="comma-separated lens ids to force, overriding deterministic selection")
+    return p
+
+
+def main(argv=None):
+    build_parser().parse_args(argv)
+    sys.stderr.write(
+        "run-pass: not implemented yet — Phase 1 of the runner-scripts plan "
+        "(docs/runner-scripts-artifact-hygiene-2026-08-06.md) delivers this.\n"
+    )
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

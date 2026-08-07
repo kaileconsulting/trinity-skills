@@ -160,7 +160,7 @@ Everything the runner does (state-dir writes, codex invocation, validation) happ
 - No behavior change to either skill yet — stubs are inert until Phase 1 rewires SKILL.md.
 
 **Iterate-review:** NO (rationale: setup/docs only — bin/ scaffolding, state-dir layout, docs/reviews/ default, README allowlist snippet)
-**Status:** not started
+**Status:** shipped (2026-08-06; NO-marked phases ship straight to shipped when commits land)
 
 ### Phase 1 — iterate-review runners (run-lens, run-pass) + SKILL.md rewire (~1.5 days)
 **Deliverables:**

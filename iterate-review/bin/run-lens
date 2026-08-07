@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+"""run-lens — compose one lens input, invoke Codex, validate the response.
+
+Part of the iterate-review runner set (stdlib-only, Python >= 3.9).
+Exit contract (standalone): 0 = valid response published; 2 = response
+rejected (patch markers / structural failure); 1 = invocation or
+orchestration error. Standalone invocations write only to the isolated
+debug/ namespace — never to published pass-N.* state.
+
+Phase 0 stub: argument surface + path resolution only. The implementation
+lands in Phase 1 of docs/runner-scripts-artifact-hygiene-2026-08-06.md.
+"""
+import sys
+
+MIN_PYTHON = (3, 9)
+if sys.version_info < MIN_PYTHON:
+    sys.stderr.write(
+        "run-lens: Python %d.%d+ required, found %d.%d — see README (Prerequisites)\n"
+        % (MIN_PYTHON + sys.version_info[:2])
+    )
+    sys.exit(1)
+
+import argparse
+from pathlib import Path
+
+# bin/ -> skill root; resolves through the ~/.claude/skills symlink or a plain copy.
+SKILL_ROOT = Path(__file__).resolve().parent.parent
+STATE_ROOT = SKILL_ROOT / "state"
+
+
+def build_parser():
+    p = argparse.ArgumentParser(
+        prog="run-lens",
+        description="Compose one lens input, invoke Codex read-only, validate the response.",
+    )
+    p.add_argument("--diff", required=True, type=Path, help="path to the scope diff file")
+    p.add_argument("--intent", required=True, type=Path, help="path to the intent file")
+    p.add_argument("--pass-num", required=True, type=int, metavar="N", help="pass number")
+    p.add_argument("--lens", required=True, help="lens id (senior-dev | security | qa)")
+    p.add_argument("--scope-tag", required=True, help="scope tag (with --log-path, keys the state dir)")
+    p.add_argument("--log-path", type=Path, default=None,
+                   help="pass-log override; default is <repo-root>/docs/reviews/code-review-<scope-tag>.md")
+    return p
+
+
+def main(argv=None):
+    build_parser().parse_args(argv)
+    sys.stderr.write(
+        "run-lens: not implemented yet — Phase 1 of the runner-scripts plan "
+        "(docs/runner-scripts-artifact-hygiene-2026-08-06.md) delivers this.\n"
+    )
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -79,6 +79,7 @@ Without this, the guardrail read "a question Opus can't answer from the plan + r
 
 - [Claude Code](https://claude.com/claude-code) (the skills run inside it)
 - [Codex CLI](https://github.com/openai/codex) — tested against `codex-cli 0.125.0+`. The skills shell out via `codex -a never exec ... --output-schema ...`.
+- `python3` ≥ **3.9** — required by the `bin/` runner scripts (stdlib only, no pip installs). macOS ships no interpreter by default; the Xcode Command Line Tools' 3.9.6 clears the floor, as does any Homebrew or distro python3. Runners fail fast with a clear message below the floor.
 - `git`, `bash`, and `gh` (only needed for `iterate-review --scope=pr:<n>`).
 
 ## Install
@@ -126,6 +127,24 @@ runs the same loop against `git diff $(git merge-base HEAD main)...HEAD`. Pass l
 - `--once` — single-pass review, no loop
 - `--loop` — auto-continue REVISE passes, stop at APPROVE (see [Loop mode](#loop-mode))
 
+## Runner scripts & the one-rule permission model
+
+> **Status:** landing in phases — see `docs/runner-scripts-artifact-hygiene-2026-08-06.md`. Phase 0 ships the `bin/` stubs and this documentation; Phase 1 makes them operative for `iterate-review`.
+
+Historically each review pass improvised unique shell to compose lens inputs and invoke Codex — commands that could never be pre-approved, so a 10-pass review meant dozens of opaque permission prompts and a settings file full of dead one-shot rules. The runner scripts replace that with three stable executables under `iterate-review/bin/` (`run-lens`, `run-pass`, `prune-state`; stdlib-only Python ≥ 3.9). A stable script accepts *arguments*, so one documented allowlist rule covers every invocation:
+
+```json
+// .claude/settings.json → permissions.allow — adjust the path to YOUR install:
+// symlink install (default ./install.sh):
+"Bash(~/.claude/skills/iterate-review/bin/* *)"
+// copied-directory install: use the directory you copied to, e.g.
+"Bash(/path/to/your/skills/iterate-review/bin/* *)"
+```
+
+With that one rule in place, the review machinery generates **zero further Bash permission prompts** end to end. What remains is deliberate: scope selection at the start, the skills' mandated human checkpoints, and pass-log appends via Claude Code's normal file-edit permissions. The runner composes and invokes; it never folds, never writes pass logs, never decides.
+
+**Pass-log default is moving off the repo root.** Once Phase 1 lands, new pass logs default to `<repo-root>/docs/reviews/code-review-<scope-tag>.md` (created on demand); `--log-path` still overrides. **Existing logs are untouched** — no migration, no renames; move old root-level `code-review-*.md` files yourself if and when you want them gathered.
+
 ## Directory layout
 
 ```
@@ -142,6 +161,7 @@ trinity-skills/
 │   └── state/                      # gitignored at runtime; only example.json tracked
 ├── iterate-review/
 │   ├── SKILL.md
+│   ├── bin/                        # runner scripts: run-lens, run-pass, prune-state
 │   ├── reviewer-prompt.md
 │   ├── reviewer-output.schema.json
 │   ├── lenses/                     # senior-dev, security, qa + selection rules

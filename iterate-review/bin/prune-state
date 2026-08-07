@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""prune-state — clean up state directories for converged or abandoned runs.
+
+Part of the iterate-review runner set (stdlib-only, Python >= 3.9).
+Dry-run by default; all destructive cleanup requires --yes. Targeted
+convergence cleanup uses --scope (invoked by the model at the convergence
+checkpoint — this tool never infers convergence itself); abandoned-run
+cleanup additionally requires an explicit --older-than. Never touches pass
+logs, anything outside state/, or a scope holding a live run lock.
+--force-unlock is the explicit manual recovery path for ambiguous locks.
+
+Phase 0 stub: argument surface + path resolution only. The implementation
+lands in Phase 2 of docs/runner-scripts-artifact-hygiene-2026-08-06.md.
+"""
+import sys
+
+MIN_PYTHON = (3, 9)
+if sys.version_info < MIN_PYTHON:
+    sys.stderr.write(
+        "prune-state: Python %d.%d+ required, found %d.%d — see README (Prerequisites)\n"
+        % (MIN_PYTHON + sys.version_info[:2])
+    )
+    sys.exit(1)
+
+import argparse
+from pathlib import Path
+
+# bin/ -> skill root; resolves through the ~/.claude/skills symlink or a plain copy.
+SKILL_ROOT = Path(__file__).resolve().parent.parent
+STATE_ROOT = SKILL_ROOT / "state"
+
+
+def build_parser():
+    p = argparse.ArgumentParser(
+        prog="prune-state",
+        description="Prune state dirs for converged (--scope) or abandoned (--older-than) runs. Dry-run unless --yes.",
+    )
+    p.add_argument("--scope", default=None, metavar="HASH",
+                   help="targeted cleanup of one scope's state dir (convergence-checkpoint flow)")
+    p.add_argument("--older-than", type=int, default=None, metavar="DAYS",
+                   help="age threshold for abandoned-run cleanup; required for age-based deletion")
+    p.add_argument("--yes", action="store_true",
+                   help="actually delete; without it, every mode is a dry run")
+    p.add_argument("--force-unlock", default=None, metavar="SCOPE",
+                   help="manual recovery: clear an ambiguous run.lock (+ reclaim marker) for SCOPE")
+    return p
+
+
+def main(argv=None):
+    build_parser().parse_args(argv)
+    sys.stderr.write(
+        "prune-state: not implemented yet — Phase 2 of the runner-scripts plan "
+        "(docs/runner-scripts-artifact-hygiene-2026-08-06.md) delivers this.\n"
+    )
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
