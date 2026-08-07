@@ -8,6 +8,33 @@ runners under `iterate-review/bin/` so one documented allowlist rule covers an
 entire review; moves the pass-log default to `docs/reviews/`; adds state pruning.
 Ports the pattern to `iterate-plan` in the final phase.
 
+### Added (Phase 1 — iterate-review runners + SKILL.md rewire)
+
+- `bin/run-pass` and `bin/run-lens` implemented: deterministic lens-input
+  composition (byte-identical, golden-pinned in `examples/composition/`),
+  concurrent per-lens Codex fan-out with the exact read-only sandbox flags,
+  patch-marker rejection + structural validation **in code**, and the
+  `pass-N.summary.json` result contract (exit 0 ⇔ summary published; a pass
+  exists iff its summary exists).
+- Lens selection **promoted to runtime**: the engine moved to
+  `bin/selection_engine.py`; `run-pass` calls it and
+  `examples/selection/check-selection.py` is now a thin goldens CLI over the
+  same module — exactly one implementation, all 14 routing fixtures repointed.
+- Run lifecycle: exclusive per-scope `run.lock` with ownership tokens,
+  race-safe stale reclaim (`run.lock.reclaim` + byte-identity), atomic
+  tmp+`os.replace` publication, conditional release, and an isolated `debug/`
+  namespace for standalone `run-lens`.
+- `tools/check-runners.py` — 31 fixtures covering composition goldens, both
+  exit-contract boundaries, pass-log resolution (docs/reviews default from a
+  subdirectory, override, non-git warning, existing logs untouched), and the
+  adversarial lifecycle cases; wired into `check-all.sh`, teeth-tested in
+  `test-checkers.py` (53 → 55 self-tests).
+- `iterate-review/SKILL.md` steps 9–11 rewired to one `run-pass` invocation
+  per pass; pass-log default moved to `docs/reviews/`; HISTORICAL appends via
+  the Edit/Write tools; runner contract added to Hard rules. `--once`,
+  `--loop`, `--max-passes`, `--log-path`, the state-file format, and the
+  pass-log HISTORICAL format are unchanged. Parity: 36/36.
+
 ### Added (Phase 0 — foundations)
 
 - `iterate-review/bin/{run-lens,run-pass,prune-state}` — inert stubs pinning the

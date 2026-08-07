@@ -1,0 +1,1 @@
+The diff, intent, and prior passes, framed synthetically for the golden.

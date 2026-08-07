@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
-"""run-pass — select lenses, fan out run-lens concurrently, publish the pass summary.
+"""run-pass — select lenses, fan out concurrently, publish the pass summary.
 
-Part of the iterate-review runner set (stdlib-only, Python >= 3.9).
-Exit contract: 0 = pass-N.summary.json was published (per-lens failure or
-rejection is *data* inside the summary, not an orchestration error);
-non-zero / absent summary = the pass aborted and must be treated as
-never-ran. Lens selection is deterministic per lenses/README.md, promoted
-from examples/selection/check-selection.py; --lenses overrides it.
+Part of the iterate-review runner set (stdlib-only, Python >= 3.9); see
+docs/runner-scripts-artifact-hygiene-2026-08-06.md. The runner composes and
+invokes; it never folds, never writes pass logs, never decides.
 
-Phase 0 stub: argument surface + path resolution only. The implementation
-lands in Phase 1 of docs/runner-scripts-artifact-hygiene-2026-08-06.md.
+Exit contract: exit 0 means exactly "pass-N.summary.json was published" —
+per-lens failure or rejection is DATA inside the summary, which the model
+folds under its existing FAILED rules. Non-zero exit / absent summary means
+the pass ABORTED and must be treated as never-ran. A pass exists iff its
+summary exists.
+
+Lens selection is deterministic per lenses/README.md (single implementation:
+bin/selection_engine.py, golden-pinned); --lenses overrides it. The scope's
+run.lock is held for the duration of the invocation; a concurrent run of the
+same scope fails fast.
 """
 import sys
 
@@ -22,23 +27,33 @@ if sys.version_info < MIN_PYTHON:
     sys.exit(1)
 
 import argparse
+import concurrent.futures
+import json
 from pathlib import Path
 
-# bin/ -> skill root; resolves through the ~/.claude/skills symlink or a plain copy.
-SKILL_ROOT = Path(__file__).resolve().parent.parent
-STATE_ROOT = SKILL_ROOT / "state"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import review_runner as rr        # noqa: E402
+import runner_shared as shared    # noqa: E402
+import selection_engine as sel    # noqa: E402
+
+EXIT_OK = 0
+EXIT_ERROR = 1
 
 
 def build_parser():
     p = argparse.ArgumentParser(
         prog="run-pass",
-        description="Select lenses deterministically, fan out one Codex call per lens, publish the pass summary.",
+        description=(
+            "Select lenses deterministically, fan out one Codex call per "
+            "lens, publish pass-N.summary.json. Exit 0 iff the summary was "
+            "published; per-lens failure/rejection is data in the summary."
+        ),
     )
     p.add_argument("--diff", required=True, type=Path, help="path to the scope diff file")
     p.add_argument("--intent", required=True, type=Path, help="path to the intent file")
     p.add_argument("--pass-num", type=int, default=None, metavar="N",
                    help="pass number; default allocates max+1 under the run lock")
-    p.add_argument("--scope-tag", required=True, help="scope tag (with --log-path, keys the state dir)")
+    p.add_argument("--scope-tag", required=True, help="scope tag (with the resolved log path, keys the state dir)")
     p.add_argument("--log-path", type=Path, default=None,
                    help="pass-log override; default is <repo-root>/docs/reviews/code-review-<scope-tag>.md")
     p.add_argument("--lenses", default=None,
@@ -46,13 +61,104 @@ def build_parser():
     return p
 
 
+def select_lenses(diff_text: str, override):
+    if override:
+        forced = [x.strip() for x in override.split(",") if x.strip()]
+        if not forced:
+            raise sel.RuleDataError("--lenses was given but named no lenses")
+        known = {lens["id"] for lens in sel.load_lenses()}
+        unknown = [x for x in forced if x not in known]
+        if unknown:
+            raise sel.RuleDataError(
+                f"--lenses names unknown lens id(s): {', '.join(unknown)} "
+                f"(known: {', '.join(sorted(known))})"
+            )
+        return sorted(set(forced)), {x: ["forced via --lenses"] for x in forced}
+    return sel.select(diff_text, sel.load_lenses(), sel.load_readme_config())
+
+
 def main(argv=None):
-    build_parser().parse_args(argv)
-    sys.stderr.write(
-        "run-pass: not implemented yet — Phase 1 of the runner-scripts plan "
-        "(docs/runner-scripts-artifact-hygiene-2026-08-06.md) delivers this.\n"
-    )
-    return 1
+    args = build_parser().parse_args(argv)
+    try:
+        diff_text = args.diff.read_text(encoding="utf-8")
+        intent_text = args.intent.read_text(encoding="utf-8")
+    except OSError as exc:
+        sys.stderr.write(f"run-pass: {exc}\n")
+        return EXIT_ERROR
+    if not diff_text.strip():
+        sys.stderr.write("run-pass: the diff is empty — nothing to review\n")
+        return EXIT_ERROR
+
+    log_path, warnings = rr.resolve_log_path(args.scope_tag, args.log_path)
+    shash = rr.scope_hash(args.scope_tag, log_path)
+    state_dir = rr.STATE_ROOT / shash
+
+    try:
+        lens_ids, reasons = select_lenses(diff_text, args.lenses)
+        prior = rr.read_prior_passes(log_path)
+    except (sel.RuleDataError, rr.CompositionError) as exc:
+        sys.stderr.write(f"run-pass: {exc}\n")
+        return EXIT_ERROR
+
+    lock = shared.ScopeLock(state_dir, role="run-pass")
+    try:
+        lock.acquire()
+    except shared.LockError as exc:
+        sys.stderr.write(f"run-pass: {exc}\n")
+        return EXIT_ERROR
+
+    try:
+        pass_num = args.pass_num
+        if pass_num is None:
+            pass_num = shared.allocate_pass_number(state_dir)
+
+        def one(lens_id):
+            input_path = state_dir / f"pass-{pass_num}.{lens_id}.input.txt"
+            response_path = state_dir / f"pass-{pass_num}.{lens_id}.response.json"
+            return rr.run_one_lens(lens_id, intent_text, diff_text, prior,
+                                   input_path, response_path,
+                                   verify=lock.verify)
+
+        # All lens futures are awaited; one lens failing never cancels its
+        # siblings. A LockError means ownership was revoked mid-run — the
+        # whole pass aborts with NO summary (orphan artifacts stay inert:
+        # a pass exists iff its summary exists).
+        entries = {}
+        revoked = None
+        with concurrent.futures.ThreadPoolExecutor(
+                max_workers=max(1, len(lens_ids))) as pool:
+            futures = {pool.submit(one, lid): lid for lid in lens_ids}
+            for fut in concurrent.futures.as_completed(futures):
+                lid = futures[fut]
+                try:
+                    entries[lid] = fut.result()
+                except shared.LockError as exc:
+                    revoked = exc
+                except Exception as exc:  # noqa: BLE001 — per-lens data, not a crash
+                    entries[lid] = {
+                        "status": "failed",
+                        "response_path": str(
+                            state_dir / f"pass-{pass_num}.{lid}.response.json"),
+                        "exit_code": None,
+                        "stderr_tail": f"runner exception: {exc!r}",
+                    }
+        if revoked is not None:
+            sys.stderr.write(f"run-pass: {revoked}\n")
+            return EXIT_ERROR
+
+        for lid in entries:
+            entries[lid]["selection_reasons"] = reasons.get(lid, [])
+
+        summary_file = shared.publish_summary(
+            lock, state_dir, pass_num, shash, log_path, warnings, entries)
+    except shared.LockError as exc:
+        sys.stderr.write(f"run-pass: {exc}\n")
+        return EXIT_ERROR
+    finally:
+        lock.release()
+
+    print(summary_file.read_text(encoding="utf-8"), end="")
+    return EXIT_OK
 
 
 if __name__ == "__main__":

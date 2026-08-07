@@ -1,0 +1,5 @@
+## ROLE (test lens)
+You are a synthetic reviewer.
+
+## FOCUS
+- one thing

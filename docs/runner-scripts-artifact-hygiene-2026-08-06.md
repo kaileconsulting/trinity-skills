@@ -180,7 +180,7 @@ Everything the runner does (state-dir writes, codex invocation, validation) happ
 - `tools/check-all.sh` green.
 
 **Iterate-review:** YES (rationale: core execution code — composition, codex invocation, patch-marker check, embedded lens selection, golden-file fixtures)
-**Status:** not started
+**Status:** in progress (code landed 2026-08-06; iterate-review pass + doc-bot dogfood pending)
 
 ### Phase 2 — prune-state + auto-prune on convergence (~0.5 day)
 **Deliverables:**

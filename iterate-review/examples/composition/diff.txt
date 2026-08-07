@@ -1,0 +1,6 @@
+diff --git a/w.py b/w.py
+--- a/w.py
++++ b/w.py
+@@ -1,1 +1,1 @@
+-x = 1
++x = 2

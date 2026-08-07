@@ -29,6 +29,8 @@ TOOLS = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(TOOLS)
 SELECTION = os.path.join(
     REPO, "iterate-review", "examples", "selection", "check-selection.py")
+SELECTION_ENGINE = os.path.join(
+    REPO, "iterate-review", "bin", "selection_engine.py")
 
 results: list[tuple[str, bool, str]] = []
 
@@ -73,10 +75,15 @@ def raises(fn, exc) -> bool:
 # ---------------------------------------------------------------------------
 
 def test_selection() -> None:
-    cs = load(SELECTION, "cs")
+    # The engine (promoted to runtime in bin/) carries the parsing/matching
+    # internals these tests exercise; the CLI in examples/selection/ carries
+    # the golden harness (run_goldens + EXPECTED). One implementation, two
+    # entry points — see the runner-scripts plan.
+    cs = load(SELECTION_ENGINE, "cs")
+    cli = load(SELECTION, "cscli")
     tmp = tempfile.mkdtemp()
 
-    record("selection: baseline passes", quiet(cs.run_goldens) == 0)
+    record("selection: baseline passes", quiet(cli.run_goldens) == 0)
 
     # --- diff parsing: each side classified by its OWN path ----------------
     # Regression guard for the Phase 4 review's HIGH finding: attributing a
@@ -233,7 +240,8 @@ def test_selection() -> None:
            list(cs.match_windows("short", span, overlap)) == ["short"])
 
     # Rule data that cannot be parsed must raise, never default to empty.
-    real_readme, real_lensdir, real_expected = cs.README, cs.LENS_DIR, cs.EXPECTED
+    real_readme, real_lensdir = cs.README, cs.LENS_DIR
+    real_expected = cli.EXPECTED
 
     p = os.path.join(tmp, "bad_overlap.md")
     open(p, "w").write(
@@ -314,15 +322,15 @@ def test_selection() -> None:
     # A wrong golden must be reported, not tolerated.
     p = os.path.join(tmp, "wrong.tsv")
     open(p, "w").write("01-local-rename.diff\tqa,security,senior-dev\twrong on purpose\n")
-    cs.EXPECTED = p
-    record("selection: wrong golden -> exit 1", quiet(cs.run_goldens) == 1)
-    cs.EXPECTED = real_expected
+    cli.EXPECTED = p
+    record("selection: wrong golden -> exit 1", quiet(cli.run_goldens) == 1)
+    cli.EXPECTED = real_expected
 
     p = os.path.join(tmp, "missing.tsv")
     open(p, "w").write("nope.diff\tsenior-dev\t\n")
-    cs.EXPECTED = p
-    record("selection: missing fixture -> exit 1", quiet(cs.run_goldens) == 1)
-    cs.EXPECTED = real_expected
+    cli.EXPECTED = p
+    record("selection: missing fixture -> exit 1", quiet(cli.run_goldens) == 1)
+    cli.EXPECTED = real_expected
 
 
 # ---------------------------------------------------------------------------
@@ -470,10 +478,46 @@ def test_examples() -> None:
                bool(list(v.iter_errors(no_why))))
 
 
+def test_runners() -> None:
+    """check-runners.py has teeth: a wrong composition golden must FAIL.
+
+    The full checker spawns processes and takes seconds; this teeth-test
+    exercises only the composition-golden path with a corrupted golden, which
+    is enough to prove the byte comparison actually compares."""
+    cr = load(os.path.join(TOOLS, "check-runners.py"), "cr")
+    rr = load(os.path.join(REPO, "iterate-review", "bin", "review_runner.py"),
+              "rr_teeth")
+
+    tmp = tempfile.mkdtemp()
+    import shutil as _shutil
+    for name in os.listdir(cr.COMPOSITION):
+        src = os.path.join(cr.COMPOSITION, name)
+        if os.path.isfile(src):
+            _shutil.copy(src, os.path.join(tmp, name))
+    with open(os.path.join(tmp, "golden-first-pass.txt"), "a") as fh:
+        fh.write("CORRUPTED TRAILER\n")
+
+    real_comp = cr.COMPOSITION
+    cr.results.clear()
+    cr.COMPOSITION = tmp
+    quiet(cr.test_composition, rr)
+    cr.COMPOSITION = real_comp
+    record("runners: corrupted composition golden -> checker fails",
+           any(not ok for _n, ok, _d in cr.results),
+           f"{sum(1 for _n, ok, _d in cr.results if not ok)} failures recorded")
+
+    cr.results.clear()
+    quiet(cr.test_composition, rr)
+    record("runners: intact composition goldens -> checker passes",
+           all(ok for _n, ok, _d in cr.results))
+    cr.results.clear()
+
+
 def main() -> int:
     test_selection()
     test_parity()
     test_examples()
+    test_runners()
 
     print("checker self-tests\n")
     width = max(len(n) for n, _, _ in results)
