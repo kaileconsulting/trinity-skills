@@ -46,6 +46,9 @@ import runner_shared as shared  # noqa: E402
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 STATE_ROOT = SKILL_ROOT / "state"
+# Conventional handoff area for model-written diff/intent files: inside the
+# trusted boundary, outside any scope's lock-guarded directory.
+INBOX = STATE_ROOT / "inbox"
 REVIEWER_PROMPT = SKILL_ROOT / "reviewer-prompt.md"
 SCHEMA_PATH = SKILL_ROOT / "reviewer-output.schema.json"
 LENS_DIR = SKILL_ROOT / "lenses"
@@ -182,27 +185,31 @@ def read_prior_passes(log_path: Path) -> str:
 
 def run_one_lens(lens_id: str, intent: str, diff: str,
                  prior: str, input_path: Path, response_path: Path,
-                 verify=None) -> dict:
+                 lock=None) -> dict:
     """Compose, publish the input, invoke codex, validate the response.
 
-    `verify` is called immediately before each publication (the scope lock's
-    token check under run-pass; None for standalone/debug runs, which write
-    only to the isolated debug/ namespace).
+    `lock` is the owning ScopeLock under run-pass — every publication goes
+    through its token-fenced critical section (verify_and), so a revocation
+    cannot interleave the ownership check and the filesystem mutation. None
+    for standalone/debug runs, which write only to the isolated debug/
+    namespace.
 
     Returns the per-lens summary entry:
       {status: ok|failed|rejected, response_path, exit_code, stderr_tail,
        reject_reasons?}   — failure/rejection is data, not an exception.
     """
     composed = compose_for_lens(lens_id, intent, diff, prior)
-    if verify is not None:
-        verify()
-    shared.atomic_publish(input_path, composed)
+    if lock is not None:
+        lock.verify()  # abort-before-work; the real gate is verify_and below
+        lock.verify_and(lambda: shared.atomic_publish(input_path, composed))
+    else:
+        shared.atomic_publish(input_path, composed)
 
     # Codex writes to a run-unique STAGING path, never the final one: a
     # killed codex leaves only an ignorable staging file, and a displaced
     # run's still-writing child cannot touch a successor's artifacts. The
     # staged response is published atomically only after codex completed
-    # AND ownership was re-verified.
+    # AND inside the token-fenced critical section.
     staging = shared.staging_path_for(response_path)
     result = shared.invoke_codex(composed, SCHEMA_PATH, staging)
     entry = {
@@ -218,9 +225,10 @@ def run_one_lens(lens_id: str, intent: str, diff: str,
         except OSError:
             pass
         return entry
-    if verify is not None:
-        verify()
-    os.replace(staging, response_path)
+    if lock is not None:
+        lock.verify_and(lambda: os.replace(staging, response_path))
+    else:
+        os.replace(staging, response_path)
     problems = shared.validate_response_file(SCHEMA_PATH, response_path)
     if problems:
         entry["status"] = "rejected"

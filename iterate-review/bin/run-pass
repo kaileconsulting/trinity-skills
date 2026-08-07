@@ -88,9 +88,23 @@ def select_lenses(diff_text: str, override):
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+
+    # The pre-approved runner only reads inside the trusted boundary: the
+    # invoking repo root + the skill state root (see ensure_trusted_path).
+    repo_root, _ = shared.resolve_repo_root()
+    boundaries = [repo_root, rr.STATE_ROOT]
     try:
-        diff_text = args.diff.read_text(encoding="utf-8")
-        intent_text = args.intent.read_text(encoding="utf-8")
+        diff_path = shared.ensure_trusted_path(args.diff, boundaries, "--diff")
+        intent_path = shared.ensure_trusted_path(args.intent, boundaries, "--intent")
+        if args.log_path is not None:
+            shared.ensure_trusted_path(args.log_path, [repo_root], "--log-path")
+    except shared.TrustedPathError as exc:
+        sys.stderr.write(f"run-pass: {exc}\n")
+        return EXIT_ERROR
+
+    try:
+        diff_text = diff_path.read_text(encoding="utf-8")
+        intent_text = intent_path.read_text(encoding="utf-8")
     except OSError as exc:
         sys.stderr.write(f"run-pass: {exc}\n")
         return EXIT_ERROR
@@ -132,8 +146,7 @@ def main(argv=None):
             input_path = state_dir / f"pass-{pass_num}.{lens_id}.input.txt"
             response_path = state_dir / f"pass-{pass_num}.{lens_id}.response.json"
             return rr.run_one_lens(lens_id, intent_text, diff_text, prior,
-                                   input_path, response_path,
-                                   verify=lock.verify)
+                                   input_path, response_path, lock=lock)
 
         # All lens futures are awaited; one lens failing never cancels its
         # siblings. A LockError means ownership was revoked mid-run — the

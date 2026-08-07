@@ -33,3 +33,32 @@ First review executed through the Phase 1 runners themselves: one `run-pass` inv
 ### Diff snapshot reference
 
 Diff captured at 2026-08-06 17:45; head SHA `bd98f4666e4b48f9ea42f1ad792f2887f57d20a8`.
+
+## Pass 2 — 2026-08-06 18:02 [HISTORICAL]
+
+**Scope:** branch · **Diff size:** 3961 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+1. **Ownership verification separated from mutation by TOCTOU windows** — HIGH · lens: senior-dev: token fencing was read-check-then-mutate — a `--force-unlock` landing between `release()`'s token check and its `os.unlink` could delete a successor's lock, and a revocation between `verify()` and `atomic_publish`/`os.replace` still let a displaced run commit a summary or response.
+   → Opus: incorporated — every conditional lock mutation now runs inside one critical section: `_locked_mutation()` takes an `fcntl.flock` on the lock file's inode, confirms the path still names that inode (unlink+recreate = different inode), re-reads content, and mutates only if the predicate accepts — all under the flock. `release()`, stale-reclaim's unlink, marker removal, and `verify_and()` (which fences the actual publication callback) all go through it; `revoke_token()` (the force-unlock primitive prune-state will use) takes the same flock, so revocation either lands before a fenced publication (refused) or blocks until it completes (publish-before-revoke linearization). Fixtures: revocation blocks until the fenced publication completes; post-revocation publication refuses; post-revocation release leaves the revoked lock intact.
+2. **Pre-approved runner usable to exfiltrate arbitrary local files** — HIGH · lens: security: `--diff`/`--intent`/`--log-path` accepted any host path; since the runner is covered by a standing allowlist rule and feeds file contents to the network-backed codex process, an injected invocation could read sensitive files with no human gate.
+   → Opus: incorporated — `ensure_trusted_path()`: every runner-readable path must realpath-resolve (symlinks and traversal included) inside the invoking repo root or the skill state root; `--log-path` overrides must stay inside the repo root. `state/inbox/` added as the conventional model→runner handoff area; SKILL.md step 9 documents the boundary and its rationale. Fixtures: outside-path refused, symlink escape from inside the repo refused, outside `--log-path` refused, `run-lens` enforces identically.
+3. **Structural-rejection path unexercised** — MEDIUM · lens: qa: only the patch-marker rejection mode had fixtures; a regression could restore pass 1's misreporting undetected.
+   → Opus: incorporated — new `structural` fake-codex mode (valid JSON, missing required arrays); fixtures assert `run-lens` exit 2 with a structural (not patch-marker) reason and `run-pass` carrying structural `reject_reasons` as data with exit 0.
+
+### Code corrections applied
+
+(none filed this pass)
+
+### New questions Codex raised
+
+(none — all three lenses returned empty `new_questions`)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: REVISE · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-06 17:57; head SHA `59641af` (pass-1 fold commit).

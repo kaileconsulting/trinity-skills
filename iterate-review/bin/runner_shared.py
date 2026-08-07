@@ -32,6 +32,7 @@ Stdlib-only, Python >= 3.9.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
@@ -170,6 +171,36 @@ class LockError(Exception):
     """Scope ownership could not be acquired/verified. Message is user-facing."""
 
 
+class TrustedPathError(Exception):
+    """A runner-readable path escapes the trusted boundary. Message is
+    user-facing."""
+
+
+def ensure_trusted_path(path, boundaries, label: str) -> Path:
+    """Refuse any runner-readable path outside the trusted boundaries.
+
+    The runner is pre-approved by a standing allowlist rule, which makes it a
+    trusted deputy: whatever it reads ends up in a prompt to the
+    network-backed codex process with no human gate. So every file input
+    (--diff, --intent, the pass log it reads for PRIOR PASSES) must resolve —
+    symlinks and traversal included, via realpath — to somewhere inside the
+    invoking repo root or the skill's state root. Reading in-repo content is
+    the review's whole job; reading arbitrary host files is exfiltration."""
+    real = Path(os.path.realpath(str(path)))
+    for boundary in boundaries:
+        b = Path(os.path.realpath(str(boundary)))
+        try:
+            real.relative_to(b)
+            return real
+        except ValueError:
+            continue
+    raise TrustedPathError(
+        f"{label} {path} resolves to {real}, outside the trusted boundaries "
+        f"({', '.join(str(b) for b in boundaries)}). The pre-approved runner "
+        f"only reads inside the invoking repo root and the skill state root."
+    )
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -197,6 +228,61 @@ def _read_lock(path: Path):
     except (ValueError, UnicodeDecodeError):
         parsed = None
     return raw, parsed
+
+
+def _locked_mutation(path: Path, predicate, mutate):
+    """The fencing critical section: flock the lock file's inode, confirm the
+    path still names that inode (an unlink+recreate is a different inode),
+    re-read its content, and run `mutate(fd_content)` only if `predicate`
+    accepts it — all under the flock, so verification and mutation cannot be
+    interleaved by force-unlock or a successor. Every actor that mutates or
+    revokes a lock MUST go through this helper (prune-state's force-unlock
+    included) — the serialization only holds if everyone takes the flock.
+
+    Returns True if `mutate` ran, False if the file vanished/changed first.
+    Raises nothing on the refuse path — callers decide what refusal means."""
+    try:
+        fd = os.open(path, os.O_RDWR)
+    except FileNotFoundError:
+        return False
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        st_fd = os.fstat(fd)
+        try:
+            st_path = os.stat(path)
+        except FileNotFoundError:
+            return False
+        if (st_fd.st_dev, st_fd.st_ino) != (st_path.st_dev, st_path.st_ino):
+            return False
+        raw = os.read(fd, 65536)
+        if not predicate(raw):
+            return False
+        mutate(fd)
+        return True
+    finally:
+        os.close(fd)
+
+
+def revoke_token(lock_path: Path) -> bool:
+    """Revoke a lock's ownership token in place (the force-unlock primitive):
+    under the same flock discipline as every other mutation, rewrite the lock
+    with a fresh record whose token nobody holds. A displaced owner's next
+    verification fails; an in-flight verified publication completes first
+    (it holds the flock), which linearizes publish-before-revoke."""
+    def rewrite(fd):
+        record = {
+            "pid": os.getpid(),
+            "timestamp": _utc_now(),
+            "role": "revoked",
+            "token": secrets.token_hex(16),
+            "owner_name": "revoke",
+        }
+        data = (json.dumps(record, sort_keys=True) + "\n").encode("utf-8")
+        os.lseek(fd, 0, os.SEEK_SET)
+        os.truncate(fd, 0)
+        os.write(fd, data)
+
+    return _locked_mutation(lock_path, lambda raw: True, rewrite)
 
 
 class ScopeLock:
@@ -289,32 +375,41 @@ class ScopeLock:
             )
         self._reclaim(raw)
 
+    def _is_mine(self, raw: bytes) -> bool:
+        try:
+            return json.loads(raw.decode("utf-8")).get("token") == self.token
+        except (ValueError, UnicodeDecodeError, AttributeError):
+            return False
+
     def _reclaim(self, observed_raw: bytes) -> None:
         """Race-safe reclaim of a dead-pid lock: win the reclaim marker,
         re-verify the lock is byte-identical to what we observed (a successor's
-        fresh lock differs and is never touched), unlink, then attempt our own
-        O_EXCL creation. Losing that creation race is a clean back-off."""
+        fresh lock differs and is never touched) and unlink it inside the
+        flock+inode critical section, then attempt our own O_EXCL creation.
+        Losing that creation race is a clean back-off."""
         if not self._try_create(self.reclaim_path):
             self._refuse("another reclaim of this scope is in progress")
         try:
-            current_raw, _ = _read_lock(self.lock_path)
-            if current_raw != observed_raw:
+            removed = _locked_mutation(
+                self.lock_path,
+                lambda raw: raw == observed_raw,
+                lambda fd: os.unlink(self.lock_path))
+            if not removed:
                 self._refuse("the scope lock changed while reclaiming — a "
                              "successor owns it")
-            os.unlink(self.lock_path)
             if not self._try_create(self.lock_path):
                 self._refuse("lost the lock-creation race to a newly starting run")
             self._held = True
         finally:
             # Conditional removal of OUR marker only — same rule as the lock.
-            marker_raw, marker = _read_lock(self.reclaim_path)
-            if marker is not None and marker.get("token") == self.token:
-                os.unlink(self.reclaim_path)
+            _locked_mutation(self.reclaim_path, self._is_mine,
+                             lambda fd: os.unlink(self.reclaim_path))
 
     def verify(self) -> None:
-        """Re-verify ownership immediately before publishing an artifact.
-        A displaced run (force-unlock revoked our token) must abort without
-        publishing anything further — in particular, never a summary."""
+        """Cheap early ownership check (no flock) for abort-before-work.
+        The authoritative gate is verify_and(), which fences the actual
+        mutation; this exists so a displaced run stops composing/invoking as
+        soon as it notices rather than at its next publication."""
         _raw, parsed = _read_lock(self.lock_path)
         if parsed is None or parsed.get("token") != self.token:
             raise LockError(
@@ -322,14 +417,28 @@ class ScopeLock:
                 "aborting without publishing"
             )
 
+    def verify_and(self, publish) -> None:
+        """Fenced publication: run `publish()` inside the flock+inode critical
+        section, only if the lock still carries OUR token. Verification and
+        mutation cannot be interleaved by a revocation — a concurrent
+        revoke_token() either lands before (we refuse) or blocks until the
+        publication completes (publish-before-revoke linearization)."""
+        ran = _locked_mutation(self.lock_path, self._is_mine,
+                               lambda fd: publish())
+        if not ran:
+            raise LockError(
+                "scope ownership was revoked (force-unlock or displacement) — "
+                "aborting without publishing"
+            )
+
     def release(self) -> None:
-        """Conditional on token match, never unconditional: a displaced run
-        must not unlink a successor's lock."""
+        """Conditional on token match inside the flock+inode critical section,
+        never unconditional: a displaced run must not unlink a successor's
+        lock, even when the revocation lands mid-release."""
         if not self._held:
             return
-        _raw, parsed = _read_lock(self.lock_path)
-        if parsed is not None and parsed.get("token") == self.token:
-            os.unlink(self.lock_path)
+        _locked_mutation(self.lock_path, self._is_mine,
+                         lambda fd: os.unlink(self.lock_path))
         self._held = False
 
 
@@ -369,8 +478,8 @@ def pass_number_in_use(state_dir: Path, pass_num: int) -> bool:
     return any(n.startswith(prefix) for n in names)
 
 
-def summary_path(state_dir: Path, pass_num: int) -> Path:
-    return state_dir / f"pass-{pass_num}.summary.json"
+def summary_path(state_dir, pass_num: int) -> Path:
+    return Path(state_dir) / f"pass-{pass_num}.summary.json"
 
 
 def publish_summary(lock: ScopeLock, state_dir: Path, pass_num: int,
@@ -378,8 +487,9 @@ def publish_summary(lock: ScopeLock, state_dir: Path, pass_num: int,
                     lenses: dict) -> Path:
     """Publish pass-N.summary.json — the pass's single commit point. A pass
     exists iff its summary exists; readers discover passes only through
-    summaries. Published atomically, last, under a verified token."""
-    lock.verify()
+    summaries. Published atomically, last, inside the token-fenced critical
+    section (verify_and), so a revocation cannot interleave the check and
+    the commit."""
     payload = {
         "pass": pass_num,
         "scope_hash": scope_hash,
@@ -389,7 +499,8 @@ def publish_summary(lock: ScopeLock, state_dir: Path, pass_num: int,
         "complete": True,
     }
     path = summary_path(state_dir, pass_num)
-    atomic_publish(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    lock.verify_and(lambda: atomic_publish(
+        path, json.dumps(payload, indent=2, sort_keys=True) + "\n"))
     return path
 
 

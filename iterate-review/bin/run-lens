@@ -56,9 +56,22 @@ def build_parser():
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+
+    # Same trusted boundary as run-pass: repo root + skill state root.
+    repo_root, _ = rr.shared.resolve_repo_root()
+    boundaries = [repo_root, rr.STATE_ROOT]
     try:
-        diff_text = args.diff.read_text(encoding="utf-8")
-        intent_text = args.intent.read_text(encoding="utf-8")
+        diff_path = rr.shared.ensure_trusted_path(args.diff, boundaries, "--diff")
+        intent_path = rr.shared.ensure_trusted_path(args.intent, boundaries, "--intent")
+        if args.log_path is not None:
+            rr.shared.ensure_trusted_path(args.log_path, [repo_root], "--log-path")
+    except rr.shared.TrustedPathError as exc:
+        sys.stderr.write(f"run-lens: {exc}\n")
+        return EXIT_ERROR
+
+    try:
+        diff_text = diff_path.read_text(encoding="utf-8")
+        intent_text = intent_path.read_text(encoding="utf-8")
     except OSError as exc:
         sys.stderr.write(f"run-lens: {exc}\n")
         return EXIT_ERROR

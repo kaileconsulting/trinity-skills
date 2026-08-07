@@ -123,6 +123,10 @@ if mode == "partial":
         fh.write('{{"verdict": "APPRO')
         fh.flush()
         time.sleep(30)
+if mode == "structural":
+    with open(out, "w") as fh:
+        fh.write('{{"verdict": "APPROVE", "findings": []}}')
+    sys.exit(0)
 if mode == "patchmarkers":
     with open({BAD_RESPONSE!r}) as fh:
         body = fh.read()
@@ -235,9 +239,13 @@ def test_contracts(env: Env) -> None:
     record("pass-log: pre-existing root logs untouched — no migration, no rename",
            read(root_log) == "legacy root log\n")
 
-    # Non-git cwd: fallback to cwd with a warning in the summary.
+    # Non-git cwd: fallback to cwd with a warning in the summary. The inputs
+    # must live inside THAT boundary (the fallback root is the cwd).
     nongit = tempfile.mkdtemp(dir=env.root)
-    proc = env.run("run-pass", "--diff", env.diff, "--intent", env.intent,
+    shutil.copy(env.diff, os.path.join(nongit, "diff.txt"))
+    shutil.copy(env.intent, os.path.join(nongit, "intent.txt"))
+    proc = env.run("run-pass", "--diff", os.path.join(nongit, "diff.txt"),
+                   "--intent", os.path.join(nongit, "intent.txt"),
                    "--scope-tag", "t3", "--pass-num", "1", cwd=nongit)
     summary = json.loads(proc.stdout or "{}") if proc.returncode == 0 else {}
     record("pass-log: non-git invocation reports the cwd-fallback warning",
@@ -548,6 +556,97 @@ def test_immutability(env: Env, shared) -> None:
     os.unlink(lock_file)
 
 
+def test_pass2_fold(env: Env, shared) -> None:
+    """Pass-2 review fold: structural rejection exercised at both command
+    boundaries, the trusted-path boundary, and flock-fenced publication."""
+    # Structural-only rejection (valid JSON, off-schema): run-lens exit 2
+    # with a structural reason, run-pass rejected-as-data with the reason.
+    env.set_mode("structural")
+    proc = env.run("run-lens", "--diff", env.diff, "--intent", env.intent,
+                   "--lens", "senior-dev", "--scope-tag", "s1")
+    record("structural: run-lens off-schema response -> exit 2 with structural reason",
+           proc.returncode == 2 and "missing required key" in proc.stdout
+           and "patch marker" not in proc.stdout,
+           f"exit={proc.returncode}")
+    proc = env.run("run-pass", "--diff", env.diff, "--intent", env.intent,
+                   "--scope-tag", "s2", "--pass-num", "1")
+    summary = json.loads(proc.stdout or "{}") if proc.returncode == 0 else {}
+    entry = summary.get("lenses", {}).get("senior-dev", {})
+    record("structural: run-pass reports structural reject_reasons, exit 0",
+           proc.returncode == 0 and entry.get("status") == "rejected"
+           and any("missing required key" in r
+                   for r in entry.get("reject_reasons", [])),
+           str(entry.get("reject_reasons")))
+
+    # Trusted boundary: inputs outside repo root + state root are refused,
+    # symlink escapes included; --log-path must stay inside the repo.
+    env.set_mode("ok")
+    outside = os.path.join(env.root, "outside.diff")
+    with open(outside, "w") as fh:
+        fh.write("diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n")
+    proc = env.run("run-pass", "--diff", outside, "--intent", env.intent,
+                   "--scope-tag", "s3")
+    record("boundary: --diff outside repo/state roots refused",
+           proc.returncode == 1 and "trusted boundaries" in proc.stderr)
+    secret = os.path.join(env.root, "secret.txt")
+    with open(secret, "w") as fh:
+        fh.write("hunter2\n")
+    link = os.path.join(env.repo, "evil.diff")
+    os.symlink(secret, link)
+    proc = env.run("run-pass", "--diff", link, "--intent", env.intent,
+                   "--scope-tag", "s4")
+    record("boundary: symlink escape from inside the repo refused",
+           proc.returncode == 1 and "trusted boundaries" in proc.stderr)
+    proc = env.run("run-pass", "--diff", env.diff, "--intent", env.intent,
+                   "--scope-tag", "s5",
+                   "--log-path", os.path.join(env.root, "elsewhere.md"))
+    record("boundary: --log-path outside the repo root refused",
+           proc.returncode == 1 and "trusted boundaries" in proc.stderr)
+    record("boundary: run-lens enforces the same refusal",
+           env.run("run-lens", "--diff", outside, "--intent", env.intent,
+                   "--lens", "senior-dev", "--scope-tag", "s6").returncode == 1)
+
+    # Fencing: a revocation during a fenced publication blocks until the
+    # publication completes (publish-before-revoke), then ownership is gone.
+    scope = os.path.join(env.skill, "state", "fenced")
+    lock = shared.ScopeLock(scope, role="run-pass")
+    lock.acquire()
+    times = {}
+
+    def slow_publish():
+        time.sleep(0.5)
+        times["publish_done"] = time.monotonic()
+
+    def publisher():
+        lock.verify_and(slow_publish)
+
+    def revoker():
+        time.sleep(0.15)  # let the publisher take the flock first
+        shared.revoke_token(lock.lock_path)
+        times["revoke_done"] = time.monotonic()
+
+    threads = [threading.Thread(target=publisher),
+               threading.Thread(target=revoker)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=15)
+    record("fencing: revocation blocks until the fenced publication completes",
+           "publish_done" in times and "revoke_done" in times
+           and times["revoke_done"] >= times["publish_done"],
+           str(times))
+    revoked_raises = False
+    try:
+        lock.verify_and(lambda: None)
+    except shared.LockError:
+        revoked_raises = True
+    record("fencing: post-revocation fenced publication refuses", revoked_raises)
+    lock.release()
+    record("fencing: post-revocation release leaves the revoked lock intact",
+           os.path.exists(lock.lock_path))
+    os.unlink(lock.lock_path)
+
+
 def spawn_dead_pid() -> int:
     proc = subprocess.Popen(["true"])
     proc.wait()
@@ -573,6 +672,7 @@ def main() -> int:
         test_contracts(env)
         test_lifecycle(env, shared)
         test_immutability(env, shared)
+        test_pass2_fold(env, shared)
     except Exception as exc:  # noqa: BLE001
         import traceback
         traceback.print_exc()
