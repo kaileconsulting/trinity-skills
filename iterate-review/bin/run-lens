@@ -58,9 +58,9 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
 
-    # Same trusted boundary as run-pass: repo root + skill state root.
+    # Same trusted boundary as run-pass: repo root + the inbox handoff area.
     repo_root, _ = rr.shared.resolve_repo_root()
-    boundaries = [repo_root, rr.STATE_ROOT]
+    boundaries = [repo_root, rr.INBOX]
     try:
         diff_path = rr.shared.ensure_trusted_path(args.diff, boundaries, "--diff")
         intent_path = rr.shared.ensure_trusted_path(args.intent, boundaries, "--intent")
@@ -112,7 +112,8 @@ def main(argv=None):
         "input_path": str(input_path),
         **entry,
     }
-    print(json.dumps(result, indent=2, sort_keys=True))
+    # Committed — a vanished stdout consumer must not flip the exit code.
+    rr.shared.emit_stdout(json.dumps(result, indent=2, sort_keys=True) + "\n")
     if entry["status"] == "ok":
         return EXIT_OK
     if entry["status"] == "rejected":

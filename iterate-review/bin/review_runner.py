@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import secrets
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -245,9 +246,13 @@ def run_one_lens(lens_id: str, intent: str, diff: str,
 
 def debug_paths(state_dir: Path, lens_id: str):
     """Artifact paths for a standalone run-lens invocation: the isolated
-    debug/ namespace, timestamped, never pass-N.* — a standalone run during a
-    live run-pass cannot overwrite or interleave published state."""
+    debug/ namespace, never pass-N.* — a standalone run during a live
+    run-pass cannot overwrite or interleave published state. Names carry
+    pid + random besides the timestamp: standalone runs take no lock, so
+    two concurrent invocations for the same scope+lens must not share
+    publication paths."""
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    unique = f"{os.getpid()}-{secrets.token_hex(4)}"
     debug_dir = state_dir / "debug"
-    return (debug_dir / f"{stamp}-{lens_id}.input.txt",
-            debug_dir / f"{stamp}-{lens_id}.response.json")
+    return (debug_dir / f"{stamp}-{unique}-{lens_id}.input.txt",
+            debug_dir / f"{stamp}-{unique}-{lens_id}.response.json")

@@ -154,6 +154,21 @@ def validate_response_file(schema_path: Path, response_path: Path) -> list:
 # Atomic publication
 # --------------------------------------------------------------------------
 
+def emit_stdout(text: str) -> None:
+    """Emit a committed result to stdout, tolerating a vanished consumer.
+    Once the artifact is committed, a BrokenPipeError from the caller's side
+    must not turn a published result into a non-zero exit; stdout is pointed
+    at devnull afterwards so interpreter shutdown can't raise a second time."""
+    try:
+        sys.stdout.write(text)
+        sys.stdout.flush()
+    except (BrokenPipeError, OSError):
+        try:
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        except OSError:
+            pass
+
+
 def atomic_publish(path: Path, data: str) -> None:
     """Write to `<name>.tmp`, then os.replace() into place. Readers never see
     a partial artifact; a crash leaves only a `.tmp` that readers ignore and
@@ -184,8 +199,11 @@ def ensure_trusted_path(path, boundaries, label: str) -> Path:
     network-backed codex process with no human gate. So every file input
     (--diff, --intent, the pass log it reads for PRIOR PASSES) must resolve —
     symlinks and traversal included, via realpath — to somewhere inside the
-    invoking repo root or the skill's state root. Reading in-repo content is
-    the review's whole job; reading arbitrary host files is exfiltration."""
+    invoking repo root or the skill's inbox handoff area (NOT the whole state
+    root: other scopes' artifacts belong to other repositories' reviews, and
+    the boundary must not let one repo's review read another's). Reading
+    in-repo content is the review's whole job; reading arbitrary host files
+    is exfiltration."""
     real = Path(os.path.realpath(str(path)))
     for boundary in boundaries:
         b = Path(os.path.realpath(str(boundary)))
@@ -197,7 +215,8 @@ def ensure_trusted_path(path, boundaries, label: str) -> Path:
     raise TrustedPathError(
         f"{label} {path} resolves to {real}, outside the trusted boundaries "
         f"({', '.join(str(b) for b in boundaries)}). The pre-approved runner "
-        f"only reads inside the invoking repo root and the skill state root."
+        f"only reads inside the invoking repo root and the skill's "
+        f"state/inbox/ handoff area."
     )
 
 
@@ -434,11 +453,19 @@ class ScopeLock:
     def release(self) -> None:
         """Conditional on token match inside the flock+inode critical section,
         never unconditional: a displaced run must not unlink a successor's
-        lock, even when the revocation lands mid-release."""
+        lock, even when the revocation lands mid-release.
+
+        Never raises: release runs in finally blocks after the commit point,
+        and an OSError here must not turn a committed pass into a non-zero
+        exit. A lock left behind by a failed release is exactly a dead-pid
+        stale lock — the reclaim path is its documented recovery."""
         if not self._held:
             return
-        _locked_mutation(self.lock_path, self._is_mine,
-                         lambda fd: os.unlink(self.lock_path))
+        try:
+            _locked_mutation(self.lock_path, self._is_mine,
+                             lambda fd: os.unlink(self.lock_path))
+        except OSError:
+            pass
         self._held = False
 
 
@@ -484,7 +511,7 @@ def summary_path(state_dir, pass_num: int) -> Path:
 
 def publish_summary(lock: ScopeLock, state_dir: Path, pass_num: int,
                     scope_hash: str, log_path: Path, warnings: list,
-                    lenses: dict) -> Path:
+                    lenses: dict) -> "tuple[Path, str]":
     """Publish pass-N.summary.json — the pass's single commit point. A pass
     exists iff its summary exists; readers discover passes only through
     summaries. Published atomically, last, inside the token-fenced critical

@@ -648,6 +648,46 @@ def test_pass2_fold(env: Env, shared) -> None:
     record("boundary: traversal --lens id refused by run-lens",
            proc.returncode == 1 and "unknown lens id" in proc.stderr)
 
+    # The state-root allowance is inbox/ ONLY: another scope's artifacts are
+    # other repositories' review material and must not be readable as inputs.
+    foreign = None
+    for d in env.state_dirs():
+        for f in os.listdir(d):
+            if f.endswith(".input.txt"):
+                foreign = os.path.join(d, f)
+                break
+        if foreign:
+            break
+    proc = env.run("run-pass", "--diff", foreign, "--intent", env.intent,
+                   "--scope-tag", "s10")
+    record("boundary: another scope's artifact refused as input (inbox-only)",
+           foreign is not None and proc.returncode == 1
+           and "trusted boundaries" in proc.stderr)
+    inbox = os.path.join(env.skill, "state", "inbox")
+    os.makedirs(inbox, exist_ok=True)
+    shutil.copy(env.diff, os.path.join(inbox, "diff.txt"))
+    proc = env.run("run-pass", "--diff", os.path.join(inbox, "diff.txt"),
+                   "--intent", env.intent, "--scope-tag", "s11",
+                   "--pass-num", "1")
+    record("boundary: inbox handoff accepted",
+           proc.returncode == 0)
+
+    # run-lens honors the exit contract with a vanished stdout consumer too.
+    lens_env = dict(os.environ)
+    lens_env["PATH"] = env.fakebin + os.pathsep + lens_env["PATH"]
+    read_end, write_end = os.pipe()
+    os.close(read_end)
+    lens_proc = subprocess.run(
+        [os.path.join(env.bin, "run-lens"), "--diff", env.diff,
+         "--intent", env.intent, "--lens", "senior-dev",
+         "--scope-tag", "s12"],
+        cwd=env.repo, env=lens_env, stdout=write_end,
+        stderr=subprocess.PIPE, timeout=60)
+    os.close(write_end)
+    record("contract: run-lens broken stdout pipe after commit still exits 0",
+           lens_proc.returncode == 0,
+           f"exit={lens_proc.returncode}")
+
     # Fencing: a revocation during a fenced publication blocks until the
     # publication completes (publish-before-revoke), then ownership is gone.
     scope = os.path.join(env.skill, "state", "fenced")

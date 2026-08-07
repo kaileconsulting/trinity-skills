@@ -120,3 +120,36 @@ Diff captured at 2026-08-06 18:04; head SHA `6df0a27` (pass-2 fold commit).
 ### Diff snapshot reference
 
 Diff captured at 2026-08-06 18:13; head SHA `670d6c5` (pass-3 fold commit).
+
+## Pass 5 — 2026-08-06 18:30 [HISTORICAL]
+
+**Scope:** branch · **Diff size:** 4316 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Lenses:** senior-dev, security, qa
+
+Note: merged HIGH+MEDIUM count rose 2 → 4 (first non-decreasing transition; the loop halts if the next pass doesn't strictly decrease). All four findings are prior fixes generalized to sibling locations.
+
+### Findings
+
+1. **Standalone `run-lens` violates its exit contract when stdout is closed** — HIGH · lens: qa: the pass-4 broken-pipe guard was applied only to `run-pass`; `run-lens` had the identical gap after publishing its debug response.
+   → Opus: incorporated — the guard is now a shared helper (`emit_stdout()` in `runner_shared.py`) used by both CLIs. Fixture: `run-lens` with a pre-closed stdout pipe exits 0.
+2. **Global state-root allowance crosses repository confidentiality boundaries** — HIGH · lens: security: allowing reads anywhere under `state/` let one repo's review name another scope's artifacts (other repositories' prompts/diffs/responses) as inputs.
+   → Opus: incorporated — the trusted boundary is now repo root + `state/inbox/` only; SKILL step 9 and the refusal message updated. Fixtures: another scope's artifact refused as input; inbox handoff accepted.
+3. **Post-commit lock-release failure still violates the exit contract** — HIGH · lens: senior-dev: `lock.release()` in the `finally` could raise `OSError` after the summary committed, flipping the exit code.
+   → Opus: incorporated — `release()` never raises (OSError swallowed, documented): a lock left behind by a failed release is exactly a dead-pid stale lock, whose recovery path already exists (reclaim).
+4. **Concurrent standalone runs can collide in the debug namespace** — MEDIUM · lens: senior-dev: debug artifact names were timestamp+lens only; two lockless standalone invocations could share publication paths.
+   → Opus: incorporated — debug names now carry pid + random hex besides the timestamp.
+
+### Code corrections applied
+
+- `runner_shared.py:publish_summary` return annotation corrected to the `(path, text)` tuple it actually returns (senior-dev).
+
+### New questions Codex raised
+
+(none — all three lenses returned empty `new_questions`)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: REVISE · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-06 18:23; head SHA pass-4 fold commit.

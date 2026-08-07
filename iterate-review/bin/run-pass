@@ -91,9 +91,10 @@ def main(argv=None):
     args = build_parser().parse_args(argv)
 
     # The pre-approved runner only reads inside the trusted boundary: the
-    # invoking repo root + the skill state root (see ensure_trusted_path).
+    # invoking repo root + the inbox handoff area (NOT the whole state root —
+    # other scopes' artifacts belong to other repositories' reviews).
     repo_root, _ = shared.resolve_repo_root()
-    boundaries = [repo_root, rr.STATE_ROOT]
+    boundaries = [repo_root, rr.INBOX]
     try:
         diff_path = shared.ensure_trusted_path(args.diff, boundaries, "--diff")
         intent_path = shared.ensure_trusted_path(args.intent, boundaries, "--intent")
@@ -199,17 +200,8 @@ def main(argv=None):
     finally:
         lock.release()
 
-    try:
-        print(summary_text, end="")
-        sys.stdout.flush()
-    except (BrokenPipeError, OSError):
-        # The summary is already committed — a broken stdout consumer must
-        # not turn a published pass into an "aborted" exit. Point stdout at
-        # devnull so interpreter shutdown can't raise a second time.
-        try:
-            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
-        except OSError:
-            pass
+    # Committed — nothing after this point may flip the exit code.
+    shared.emit_stdout(summary_text)
     return EXIT_OK
 
 
