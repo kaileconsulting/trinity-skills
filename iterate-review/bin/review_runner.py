@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import secrets
 import sys
 from datetime import datetime, timezone
@@ -57,6 +58,21 @@ NO_PRIOR_PASSES = "(none — this is pass 1)"
 
 class CompositionError(Exception):
     """A composition input could not be read/parsed. Message is user-facing."""
+
+
+SCOPE_TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def validate_scope_tag(scope_tag: str) -> str:
+    """Scope tags flow into filenames, state-dir hashes, and the pass-log
+    header capability — constrain them to a boring charset so a crafted tag
+    can't smuggle path components or masquerade as arbitrary document
+    headings."""
+    if not SCOPE_TAG_RE.match(scope_tag):
+        raise CompositionError(
+            f"invalid scope tag {scope_tag!r}: use letters, digits, dot, "
+            f"underscore, hyphen (must start alphanumeric)")
+    return scope_tag
 
 
 # --------------------------------------------------------------------------
@@ -179,11 +195,15 @@ def read_prior_passes(log_path: Path, scope_tag: str) -> str:
 
     The log's own format is the read capability: a pass log created by this
     skill always opens with `# Code Review — <scope-tag>`, so an existing
-    file is read ONLY if its first line is exactly that header for THIS
-    invocation's scope tag. That is what proves the file was deliberately
-    designated as this review's history — an unrelated in-repo .md (design
-    notes, a secrets.md) can never be pulled into the codex prompt via
-    --log-path. A missing file is simply pass 1."""
+    file is read ONLY if its first line is exactly that header (no
+    whitespace tolerance) for THIS invocation's scope tag. Scope of the
+    guarantee, stated precisely: no file lacking a pass-log header can ever
+    enter the codex prompt via --log-path. Because the tag is
+    caller-supplied, a caller could adopt ANOTHER review's tag and read
+    that review's log — but only by also adopting its identity (same tag →
+    same scope hash → same state dir), and same-repo pass logs are review
+    history of this same repository, already inside the confidentiality
+    boundary. A missing file is simply pass 1."""
     try:
         text = log_path.read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -191,7 +211,7 @@ def read_prior_passes(log_path: Path, scope_tag: str) -> str:
     except OSError as exc:
         raise CompositionError(f"pass log unreadable: {exc}") from None
     expected = f"# Code Review — {scope_tag}"
-    first = text.splitlines()[0].strip() if text.strip() else ""
+    first = text.splitlines()[0] if text else ""
     if first != expected:
         raise CompositionError(
             f"{log_path} exists but is not this review's pass log (first "

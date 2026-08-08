@@ -85,6 +85,11 @@ def main(argv=None):
             f"(known: {', '.join(sorted(known))})\n")
         return EXIT_ERROR
 
+    try:
+        rr.validate_scope_tag(args.scope_tag)
+    except rr.CompositionError as exc:
+        sys.stderr.write(f"run-lens: {exc}\n")
+        return EXIT_ERROR
     log_path, warnings = rr.resolve_log_path(args.scope_tag, args.log_path)
     try:
         # Same boundary + .md requirement as run-pass — the default included.

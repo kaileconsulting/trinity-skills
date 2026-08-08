@@ -246,3 +246,32 @@ Reviewed state included the pre-pass `.md`-suffix guard (Kyle-approved preemptiv
 ### Diff snapshot reference
 
 Diff captured 2026-08-07; head SHA `dbcf1cc` (.md-guard commit).
+
+## Pass 9 — 2026-08-07 [HISTORICAL]
+
+**Scope:** branch · **Diff size:** ~4700 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Lenses:** senior-dev, security, qa
+
+**security: APPROVE** — its six-pass boundary thread is closed.
+
+### Findings
+
+1. **Caller-controlled scope tag weakens the pass-log header capability** — HIGH · lens: senior-dev: `--scope-tag` is caller-chosen, so a crafted tag could satisfy the header check against a file whose first line reads `# Code Review — <that tag>` — contradicting pass 8's "unrelated `.md` can never enter" claim as worded.
+   → Opus: incorporated — scope tags are now charset-validated (`[A-Za-z0-9][A-Za-z0-9._-]*`; they flow into filenames and hashes anyway), and the guarantee is restated precisely: no file *lacking a pass-log header* can ever enter the prompt; adopting another review's tag reads only that same-repo review's log by also adopting its identity (same tag → same scope hash) — same-repo review history is already inside the confidentiality boundary. Fixtures: crafted tag refused; the overstated claim corrected in docstrings/SKILL implicitly via the precise wording.
+2. **Sleep-mode fixtures race the fake codex reading its mode** — MEDIUM · lens: qa: the suite flipped the shared mode after seeing `run.lock`, which exists before the fake codex reads the mode file — the "live" run could finish early, making concurrency fixtures vacuous or flaky.
+   → Opus: incorporated — readiness handshake: sleeping modes drop a `.sleeping-<pid>` marker only after reading their mode and committing to block; all three racing fixtures (t9 concurrent, live1 overlap, imm4 revocation) wait for it before proceeding, each recording the handshake as its own fixture.
+
+### Code corrections applied
+
+- `review_runner.py:read_prior_passes` — header comparison silently `.strip()`ed while claiming exactness → compares the raw first line, terminator only removed; padded-header fixture added (senior-dev).
+
+### New questions Codex raised
+
+(none)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: APPROVE · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured 2026-08-07; head SHA `4c1b26a` (pass-8 fold commit).

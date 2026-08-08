@@ -26,6 +26,7 @@ Usage:
 
 from __future__ import annotations
 
+import glob
 import importlib.util
 import json
 import os
@@ -115,6 +116,12 @@ try:
         mode = fh.read().strip()
 except OSError:
     pass
+if mode in ("sleep", "sleep3"):
+    # Readiness handshake: the marker appears only after this process has
+    # READ its mode and committed to the blocking path — fixtures wait for
+    # it before flipping the shared mode or racing a competitor.
+    with open({self.mode_file!r} + ".sleeping-" + str(os.getpid()), "w"):
+        pass
 if mode == "sleep":
     time.sleep(30)
 if mode == "sleep3":
@@ -146,6 +153,20 @@ with open(out, "w") as fh:
     def set_mode(self, mode: str) -> None:
         with open(self.mode_file, "w") as fh:
             fh.write(mode)
+
+    def clear_sleep_markers(self) -> None:
+        for p in glob.glob(self.mode_file + ".sleeping-*"):
+            os.remove(p)
+
+    def wait_sleeper(self, timeout: float = 10) -> bool:
+        """Wait for the fake codex's readiness marker — proof it read a
+        sleep mode and entered the blocking path."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if glob.glob(self.mode_file + ".sleeping-*"):
+                return True
+            time.sleep(0.02)
+        return False
 
     def run(self, script: str, *args, cwd=None, timeout=60):
         env = dict(os.environ)
@@ -318,6 +339,7 @@ def test_lifecycle(env: Env, shared) -> None:
     state_root = os.path.join(env.skill, "state")
 
     # Concurrent second run of the same scope fails fast.
+    env.clear_sleep_markers()
     env.set_mode("sleep")
     env_path = dict(os.environ)
     env_path["PATH"] = env.fakebin + os.pathsep + env_path["PATH"]
@@ -326,6 +348,10 @@ def test_lifecycle(env: Env, shared) -> None:
          "--intent", env.intent, "--scope-tag", "t9", "--pass-num", "1"],
         cwd=env.repo, env=env_path,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # Readiness handshake: only flip the shared mode once the fake codex has
+    # READ "sleep" and committed to blocking — otherwise the "live" run could
+    # finish before the competitor starts and the fixture would be vacuous.
+    record("lifecycle: sleeping codex signalled readiness", env.wait_sleeper())
     # t9 is the only scope with a live run at this point in the suite, so any
     # present lock is its lock.
     deadline = time.time() + 10
@@ -457,12 +483,15 @@ def test_lifecycle(env: Env, shared) -> None:
     # Standalone run-lens during a live run-pass on the SAME scope: the
     # standalone invocation must succeed without the lock and must leave
     # that scope's published pass-N.* set untouched (debug/ only).
+    env.clear_sleep_markers()
     env.set_mode("sleep")
     live = subprocess.Popen(
         [os.path.join(env.bin, "run-pass"), "--diff", env.diff,
          "--intent", env.intent, "--scope-tag", "live1", "--pass-num", "1"],
         cwd=env.repo, env=env_path,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    record("lifecycle: live1 sleeping codex signalled readiness",
+           env.wait_sleeper())
     deadline = time.time() + 10
     live_dir = None
     while time.time() < deadline and live_dir is None:
@@ -473,7 +502,7 @@ def test_lifecycle(env: Env, shared) -> None:
     published_before = sorted(
         f for f in os.listdir(live_dir) if f.startswith("pass-")
         and not f.endswith(".tmp"))
-    env.set_mode("ok")  # the sleeping codex already read its mode
+    env.set_mode("ok")  # safe: the readiness marker proves "sleep" was read
     proc = env.run("run-lens", "--diff", env.diff, "--intent", env.intent,
                    "--lens", "senior-dev", "--scope-tag", "live1")
     out = json.loads(proc.stdout or "{}")
@@ -555,6 +584,7 @@ def test_immutability(env: Env, shared) -> None:
 
     # Ownership revoked while codex runs: the pass aborts with no summary and
     # no final response artifact — the staged bytes never publish.
+    env.clear_sleep_markers()
     env.set_mode("sleep3")
     known = set(env.state_dirs())
     slow = subprocess.Popen(
@@ -562,6 +592,8 @@ def test_immutability(env: Env, shared) -> None:
          "--intent", env.intent, "--scope-tag", "imm4", "--pass-num", "1"],
         cwd=env.repo, env=env_path,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    record("staging: imm4 sleeping codex signalled readiness",
+           env.wait_sleeper())
     deadline = time.time() + 10
     lock_file = None
     while time.time() < deadline and lock_file is None:
@@ -725,6 +757,21 @@ def test_pass2_fold(env: Env, shared) -> None:
                    "--scope-tag", "s18", "--pass-num", "1")
     record("boundary: a genuine pass log (matching header) is read fine",
            proc.returncode == 0, proc.stderr.strip()[-140:])
+
+    # Scope tags are constrained to a boring charset — a crafted tag can't
+    # smuggle path components or masquerade as an arbitrary heading.
+    proc = env.run("run-pass", "--diff", env.diff, "--intent", env.intent,
+                   "--scope-tag", "../weird tag")
+    record("boundary: crafted scope tag refused (charset validation)",
+           proc.returncode == 1 and "invalid scope tag" in proc.stderr)
+    # Header comparison is exact — leading whitespace does not pass.
+    padded = os.path.join(env.repo, "docs", "reviews", "code-review-s19.md")
+    with open(padded, "w") as fh:
+        fh.write("  # Code Review — s19\ncontent\n")
+    proc = env.run("run-pass", "--diff", env.diff, "--intent", env.intent,
+                   "--scope-tag", "s19", "--pass-num", "1")
+    record("boundary: padded pass-log header refused (exact comparison)",
+           proc.returncode == 1 and "not this review's pass log" in proc.stderr)
 
     # Two concurrent lockless standalone runs never share artifact paths.
     lens_env2 = dict(os.environ)
