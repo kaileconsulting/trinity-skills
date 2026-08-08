@@ -136,7 +136,7 @@ def main(argv=None):
 
     try:
         lens_ids, reasons = select_lenses(diff_text, args.lenses)
-        prior = rr.read_prior_passes(log_path)
+        prior = rr.read_prior_passes(log_path, args.scope_tag)
     except (sel.RuleDataError, rr.CompositionError) as exc:
         sys.stderr.write(f"run-pass: {exc}\n")
         return EXIT_ERROR

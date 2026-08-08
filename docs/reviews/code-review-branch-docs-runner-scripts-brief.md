@@ -217,3 +217,32 @@ Manual continue after the pass-6 dispute arbitration. Inputs handed off through 
 ### Diff snapshot reference
 
 Diff captured 2026-08-07; head SHA pass-6 arbitration commit.
+
+## Pass 8 — 2026-08-07 [HISTORICAL]
+
+**Scope:** branch · **Diff size:** ~4600 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Lenses:** senior-dev, security, qa
+
+Reviewed state included the pre-pass `.md`-suffix guard (Kyle-approved preemptive fold).
+
+### Findings
+
+1. **The `.md` suffix check does not establish a pass-log trust boundary** — HIGH · lens: security: `--log-path` could still name any in-repo `.md` (private design notes, a `secrets.md`) and its full contents went to codex as PRIOR PASSES; the suffix check closed only the literal `.env` example.
+   → Opus: incorporated — the pass-log *format* is now the read capability: an existing log is read only when its first line is exactly `# Code Review — <scope-tag>` for **this** invocation's scope tag (the header the skill has always written; SKILL step 12 now marks it load-bearing). An unrelated `.md` can never be pulled into the prompt; `--log-path`'s location freedom is preserved (a plan compatibility constraint). Fixtures: unrelated `.md` refused with "not this review's pass log"; a genuine matching-header log read fine.
+2. **`run-lens`'s `.md` rejection path not fixture-pinned** — MEDIUM · lens: qa: only `run-pass` had the s16 fixture; a regression removing only `run-lens`'s guard would leave the suite green.
+   → Opus: incorporated — run-lens `.md`-guard fixture added.
+
+### Code corrections applied
+
+(none filed this pass)
+
+### New questions Codex raised
+
+(none)
+
+### Lens run summary
+
+- senior-dev: APPROVE · security: REVISE · qa: APPROVE
+
+### Diff snapshot reference
+
+Diff captured 2026-08-07; head SHA `dbcf1cc` (.md-guard commit).

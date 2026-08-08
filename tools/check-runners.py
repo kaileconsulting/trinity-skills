@@ -702,6 +702,29 @@ def test_pass2_fold(env: Env, shared) -> None:
                    "--scope-tag", "s16", "--log-path", dotenv)
     record("boundary: non-.md --log-path refused (prior-pass read guard)",
            proc.returncode == 1 and "must be a .md file" in proc.stderr)
+    proc = env.run("run-lens", "--diff", env.diff, "--intent", env.intent,
+                   "--lens", "senior-dev", "--scope-tag", "s16b",
+                   "--log-path", dotenv)
+    record("boundary: run-lens enforces the .md log guard too",
+           proc.returncode == 1 and "must be a .md file" in proc.stderr)
+
+    # The pass-log header is the read capability: an existing .md that is
+    # not THIS review's log is refused; a genuine log is read fine.
+    notes = os.path.join(env.repo, "design-notes.md")
+    with open(notes, "w") as fh:
+        fh.write("# Private design notes\nvery sensitive prose\n")
+    proc = env.run("run-pass", "--diff", env.diff, "--intent", env.intent,
+                   "--scope-tag", "s17", "--log-path", notes)
+    record("boundary: unrelated in-repo .md refused as pass log (header capability)",
+           proc.returncode == 1 and "not this review's pass log" in proc.stderr)
+    genuine = os.path.join(env.repo, "docs", "reviews", "code-review-s18.md")
+    os.makedirs(os.path.dirname(genuine), exist_ok=True)
+    with open(genuine, "w") as fh:
+        fh.write("# Code Review — s18\n\n## Pass 1 — earlier [HISTORICAL]\nprior content\n")
+    proc = env.run("run-pass", "--diff", env.diff, "--intent", env.intent,
+                   "--scope-tag", "s18", "--pass-num", "1")
+    record("boundary: a genuine pass log (matching header) is read fine",
+           proc.returncode == 0, proc.stderr.strip()[-140:])
 
     # Two concurrent lockless standalone runs never share artifact paths.
     lens_env2 = dict(os.environ)

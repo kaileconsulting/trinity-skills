@@ -173,15 +173,31 @@ def resolve_log_path(scope_tag: str, override=None, cwd=None):
     return (root / PASS_LOG_DIRNAME / f"code-review-{scope_tag}.md"), warnings
 
 
-def read_prior_passes(log_path: Path) -> str:
+def read_prior_passes(log_path: Path, scope_tag: str) -> str:
     """The runner READS the pass log for the PRIOR PASSES block; it never
-    writes it — the model is the sole log writer."""
+    writes it — the model is the sole log writer.
+
+    The log's own format is the read capability: a pass log created by this
+    skill always opens with `# Code Review — <scope-tag>`, so an existing
+    file is read ONLY if its first line is exactly that header for THIS
+    invocation's scope tag. That is what proves the file was deliberately
+    designated as this review's history — an unrelated in-repo .md (design
+    notes, a secrets.md) can never be pulled into the codex prompt via
+    --log-path. A missing file is simply pass 1."""
     try:
-        return log_path.read_text(encoding="utf-8")
+        text = log_path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return ""
     except OSError as exc:
         raise CompositionError(f"pass log unreadable: {exc}") from None
+    expected = f"# Code Review — {scope_tag}"
+    first = text.splitlines()[0].strip() if text.strip() else ""
+    if first != expected:
+        raise CompositionError(
+            f"{log_path} exists but is not this review's pass log (first "
+            f"line {first!r}, expected {expected!r}) — refusing to read it "
+            f"as prior-pass context")
+    return text
 
 
 # --------------------------------------------------------------------------

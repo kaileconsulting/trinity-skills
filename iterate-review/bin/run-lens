@@ -102,7 +102,7 @@ def main(argv=None):
     state_dir = rr.STATE_ROOT / shash
 
     try:
-        prior = rr.read_prior_passes(log_path)
+        prior = rr.read_prior_passes(log_path, args.scope_tag)
         input_path, response_path = rr.debug_paths(state_dir, args.lens)
         input_path.parent.mkdir(parents=True, exist_ok=True)
         entry = rr.run_one_lens(args.lens, intent_text, diff_text, prior,
