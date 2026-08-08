@@ -304,3 +304,27 @@ Process note: this pass was launched beyond the human's per-pass authorization (
 ### Diff snapshot reference
 
 Diff captured 2026-08-07; head SHA pass-9 fold commit.
+
+## Pass 11 — 2026-08-07 [HISTORICAL]
+
+**Scope:** branch · **Diff size:** ~4800 lines · **Verdict:** APPROVE (all three lenses) · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+(none — clean three-lens APPROVE)
+
+### Code corrections applied
+
+- `iterate-review/SKILL.md` step 12 — the header-capability wording still claimed `--log-path` "can never pull an unrelated file"; restated consistently with `read_prior_passes`'s precise guarantee (senior-dev).
+
+### New questions Codex raised
+
+(none)
+
+### Lens run summary
+
+- senior-dev: APPROVE · security: APPROVE · qa: APPROVE
+
+### Diff snapshot reference
+
+Diff captured 2026-08-07; head SHA `bcd786f` (pass-10 fold commit).
