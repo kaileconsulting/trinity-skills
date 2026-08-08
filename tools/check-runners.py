@@ -698,6 +698,10 @@ def test_pass2_fold(env: Env, shared) -> None:
                    "--intent", env.intent, "--scope-tag", "s15")
     record("boundary: .git/config refused (inside .git, outside handoff)",
            proc.returncode == 1 and "trusted boundaries" in proc.stderr)
+    proc = env.run("run-pass", "--diff", env.diff, "--intent", env.intent,
+                   "--scope-tag", "s16", "--log-path", dotenv)
+    record("boundary: non-.md --log-path refused (prior-pass read guard)",
+           proc.returncode == 1 and "must be a .md file" in proc.stderr)
 
     # Two concurrent lockless standalone runs never share artifact paths.
     lens_env2 = dict(os.environ)

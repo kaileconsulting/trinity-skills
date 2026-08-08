@@ -118,8 +118,16 @@ def main(argv=None):
     try:
         # The DEFAULT log path gets the same boundary check as an override:
         # a repo-controlled symlink at docs/reviews/... must not pull
-        # out-of-repo content into the PRIOR PASSES block.
+        # out-of-repo content into the PRIOR PASSES block. And the log must
+        # BE a markdown pass log — a --log-path naming .env or any other
+        # in-repo file would otherwise be read as "prior passes".
         log_path = shared.ensure_trusted_path(log_path, [repo_root], "pass log")
+        if log_path.suffix != ".md":
+            sys.stderr.write(
+                f"run-pass: pass log {log_path} must be a .md file — the "
+                f"runner reads it for prior-pass context and refuses to "
+                f"read anything else under that flag\n")
+            return EXIT_ERROR
     except shared.TrustedPathError as exc:
         sys.stderr.write(f"run-pass: {exc}\n")
         return EXIT_ERROR
