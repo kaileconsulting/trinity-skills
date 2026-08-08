@@ -764,6 +764,10 @@ def test_pass2_fold(env: Env, shared) -> None:
                    "--scope-tag", "../weird tag")
     record("boundary: crafted scope tag refused (charset validation)",
            proc.returncode == 1 and "invalid scope tag" in proc.stderr)
+    proc = env.run("run-lens", "--diff", env.diff, "--intent", env.intent,
+                   "--lens", "senior-dev", "--scope-tag", "../weird tag")
+    record("boundary: run-lens refuses a crafted scope tag too",
+           proc.returncode == 1 and "invalid scope tag" in proc.stderr)
     # Header comparison is exact — leading whitespace does not pass.
     padded = os.path.join(env.repo, "docs", "reviews", "code-review-s19.md")
     with open(padded, "w") as fh:

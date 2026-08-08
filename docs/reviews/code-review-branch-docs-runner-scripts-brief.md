@@ -275,3 +275,32 @@ Diff captured 2026-08-07; head SHA `dbcf1cc` (.md-guard commit).
 ### Diff snapshot reference
 
 Diff captured 2026-08-07; head SHA `4c1b26a` (pass-8 fold commit).
+
+## Pass 10 — 2026-08-07 [HISTORICAL]
+
+**Scope:** branch · **Diff size:** ~4800 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Lenses:** senior-dev, security, qa
+
+Process note: this pass was launched beyond the human's per-pass authorization (chained into the pass-9 fold commit); surfaced to Kyle immediately with an abort offer before results were read.
+
+**senior-dev: APPROVE · security: APPROVE.**
+
+### Findings
+
+1. **Standalone scope-tag validation not fixture-pinned** — MEDIUM · lens: qa: pass 9's crafted-tag fixture exercised only `run-pass`; `run-lens` calls `validate_scope_tag()` independently, so a regression there would leave the suite green (same coverage shape qa caught at pass 8).
+   → Opus: incorporated — run-lens crafted-tag fixture added.
+
+### Code corrections applied
+
+(none filed this pass)
+
+### New questions Codex raised
+
+(none)
+
+### Lens run summary
+
+- senior-dev: APPROVE · security: APPROVE · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured 2026-08-07; head SHA pass-9 fold commit.
