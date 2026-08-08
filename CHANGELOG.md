@@ -37,6 +37,30 @@ Ports the pattern to `iterate-plan` in the final phase.
   `--loop`, `--max-passes`, `--log-path`, the state-file format, and the
   pass-log HISTORICAL format are unchanged. Parity: 36/36.
 
+### Hardened (Phase 1's 11-pass self-hosted review — the runners reviewed their own branch)
+
+Behavior-visible outcomes a user will encounter, all fixture-pinned; full
+trail in `docs/reviews/code-review-branch-docs-runner-scripts-brief.md`:
+
+- **Inputs must live in the per-repo handoff dir** `<git-dir>/iterate-review/`
+  (non-git fallback `<cwd>/.iterate-review/`): the standing allowlist rule
+  can't be used to read arbitrary host files — or even unrelated in-repo
+  files (an untracked `.env`, `.git/config`) — into a codex prompt.
+- **The pass-log header is the read capability**: an existing `--log-path`
+  file is read as prior-pass context only when its first line is exactly
+  `# Code Review — <scope-tag>` for this invocation.
+- **Published pass state is immutable**: an explicit `--pass-num` colliding
+  with any existing `pass-N.*` artifact is refused; codex responses stage at
+  run-unique paths and publish atomically under a verified ownership token;
+  lock mutations are flock+inode-fenced so force-unlock can't race a
+  successor.
+- **exit 0 ⇔ summary published** holds through pruned scopes, post-commit
+  I/O errors, and broken stdout pipes, at both command boundaries.
+- One reviewer HIGH was **disputed and human-arbitrated** (PEP 604
+  annotations on the 3.9 floor — disproven on the floor interpreter, with a
+  Gemini cross-vendor second opinion concurring); the review also included
+  loop mode's first live guardrail halts.
+
 ### Added (Phase 0 — foundations)
 
 - `iterate-review/bin/{run-lens,run-pass,prune-state}` — inert stubs pinning the

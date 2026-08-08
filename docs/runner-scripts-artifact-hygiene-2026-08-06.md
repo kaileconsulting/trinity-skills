@@ -288,15 +288,14 @@ A 3.11-ism in a runner breaks the stated 3.9 floor on someone else's machine.
 
 ## Review checkpoints
 
-<!-- TOOLING-MAINTAINED by iterate-review for multi-phase plans.
+<!-- TOOLING-MAINTAINED by iterate-review for multi-phase plans (v1: by hand). -->
 
 | Phase | Iterate-review | Status | Last pass | Pass log |
 |-------|----------------|--------|-----------|----------|
 | Phase 0 | NO  | n/a | n/a | n/a |
-| Phase 1 | YES | not started | — | — |
+| Phase 1 | YES | reviewed (converged, 3-lens APPROVE) | Pass 11 — 2026-08-07 | [code-review-branch-docs-runner-scripts-brief.md](reviews/code-review-branch-docs-runner-scripts-brief.md) |
 | Phase 2 | YES | not started | — | — |
 | Phase 3 | YES | not started | — | — |
--->
 
 ## Pre-flight review pass (Opus, YYYY-MM-DD) [HISTORICAL]
 
