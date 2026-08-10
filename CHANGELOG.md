@@ -8,6 +8,32 @@ runners under `iterate-review/bin/` so one documented allowlist rule covers an
 entire review; moves the pass-log default to `docs/reviews/`; adds state pruning.
 Ports the pattern to `iterate-plan` in the final phase.
 
+### Added (Phase 2 — prune-state + auto-prune on convergence)
+
+- `bin/prune-state` implemented: `--scope` targeted cleanup (invoked by the
+  model at the Converge checkpoint — the pruner never infers convergence),
+  `--older-than` age-based cleanup for abandoned runs, `--force-unlock` as
+  the explicit recovery path for ambiguous locks, and a read-only overview
+  with no arguments. Every mode is a dry run unless `--yes`. Deletion holds
+  the scope's own `run.lock` (role=prune) for the entire operation; a
+  `run-pass` starting mid-cleanup fails fast on it. Never touched: pass
+  logs, `state/<hash>.json` records, anything outside `state/`, live-locked
+  scopes, and (by any automatic path) reclaim-marker-bearing scopes.
+  Force-unlock removals are flock+inode-fenced and conditional on
+  byte-identity with the inspected content — removal under that fence *is*
+  the token revocation, so a displaced live run aborts without committing a
+  summary and a successor's fresh lock is never touched.
+- `iterate-review/SKILL.md` step 16 wired: Converge prunes the scope
+  (`--keep-state` opts out, new invocation flag); Abort leaves state for the
+  age-based sweep.
+- Phase 2 fixture set in `tools/check-runners.py`: converged-scope removal,
+  dry-run exactness, pass-log + model-state-file safety, scope-name/symlink
+  refusals, live-lock refusal and age-sweep skip (marker-bearing scopes
+  included), run-start vs. prune fail-fast, dead-pid reclaim through a
+  targeted prune, concurrent force-unlock self-serialization, and
+  force-unlock of a genuinely live run (displaced run detects revocation,
+  successor's summary is the only one).
+
 ### Added (Phase 1 — iterate-review runners + SKILL.md rewire)
 
 - `bin/run-pass` and `bin/run-lens` implemented: deterministic lens-input

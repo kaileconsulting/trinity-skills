@@ -1,16 +1,36 @@
 #!/usr/bin/env python3
 """prune-state — clean up state directories for converged or abandoned runs.
 
-Part of the iterate-review runner set (stdlib-only, Python >= 3.9).
-Dry-run by default; all destructive cleanup requires --yes. Targeted
-convergence cleanup uses --scope (invoked by the model at the convergence
-checkpoint — this tool never infers convergence itself); abandoned-run
-cleanup additionally requires an explicit --older-than. Never touches pass
-logs, anything outside state/, or a scope holding a live run lock.
---force-unlock is the explicit manual recovery path for ambiguous locks.
+Part of the iterate-review runner set (stdlib-only, Python >= 3.9); see
+docs/runner-scripts-artifact-hygiene-2026-08-06.md. The runner composes and
+invokes; it never folds, never writes pass logs, never decides — and this
+tool never infers convergence: targeted cleanup (--scope) is invoked by the
+model at the convergence checkpoint, which is the convergence authority.
 
-Phase 0 stub: argument surface + path resolution only. The implementation
-lands in Phase 2 of docs/runner-scripts-artifact-hygiene-2026-08-06.md.
+Modes (mutually exclusive; with no mode, prints a read-only overview):
+
+  --scope HASH        targeted cleanup of one scope's state dir
+  --older-than DAYS   age-based cleanup of abandoned scope dirs
+  --force-unlock HASH manual recovery for an ambiguous lock (live-pid
+                      ambiguity including PID reuse, malformed metadata,
+                      abandoned reclaim marker)
+
+Every mode is a dry run unless --yes is given: it prints exactly what would
+be deleted (or, for --force-unlock, exactly the lock state it inspected) and
+deletes nothing. Deletion takes the scope's own run.lock (role=prune) for
+the entire operation — a dir holding a live run lock is never touched, and a
+run-pass starting mid-cleanup fails fast on the prune's lock.
+
+Guarantees: nothing outside state/ is ever touched; pass logs and the
+model's per-invocation state files (state/<scope-hash>.json) are never
+touched — only scope DIRECTORIES are pruned.
+
+Exit contract (deliberately different from run-pass's published-summary
+contract): 0 = the requested operation completed (dry runs and overviews
+count; an age-based sweep that SKIPPED live-locked dirs still completed —
+skips are reported data). 1 = the operation was refused or failed (live
+lock on a targeted --scope, ownership displaced mid-delete, force-unlock
+byte-identity refusal). 2 = usage error.
 """
 import sys
 
@@ -23,36 +43,390 @@ if sys.version_info < MIN_PYTHON:
     sys.exit(1)
 
 import argparse
+import os
+import time
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import runner_shared as shared  # noqa: E402
 
 # bin/ -> skill root; resolves through the ~/.claude/skills symlink or a plain copy.
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 STATE_ROOT = SKILL_ROOT / "state"
 
+EXIT_OK = 0
+EXIT_REFUSED = 1
+
+LOCK_NAME = shared.ScopeLock.LOCK_NAME
+RECLAIM_NAME = shared.ScopeLock.RECLAIM_NAME
+
+
+class PruneError(Exception):
+    """The requested operation is refused. Message is user-facing."""
+
+
+def out(text: str) -> None:
+    shared.emit_stdout(text + "\n")
+
+
+# ---------------------------------------------------------------------------
+# Scope resolution & inspection
+# ---------------------------------------------------------------------------
+
+def resolve_scope_dir(scope: str) -> Path:
+    """A scope names a directory DIRECTLY under state/ — nothing else is ever
+    addressable. Separator/traversal components and symlinked scope dirs are
+    refused outright: prune-state must not be steerable outside state/, and a
+    symlink's target is some other scope's (or some other thing's) storage."""
+    if (not scope or scope != os.path.basename(scope)
+            or scope in (".", "..")):
+        raise PruneError(
+            f"invalid scope name {scope!r}: expected a bare state-directory "
+            f"name (no path components)")
+    d = STATE_ROOT / scope
+    if os.path.islink(d):
+        raise PruneError(
+            f"{d} is a symlink — refusing; prune-state never follows links "
+            f"out of state/")
+    real = Path(os.path.realpath(str(d)))
+    root = Path(os.path.realpath(str(STATE_ROOT)))
+    if real.parent != root:
+        raise PruneError(
+            f"{d} resolves to {real}, outside {root} — prune-state never "
+            f"touches anything outside state/")
+    return d
+
+
+def scope_contents(state_dir: Path):
+    """(files, dirs) under a scope dir; dirs deepest-first for removal."""
+    files, dirs = [], []
+    for base, dnames, fnames in os.walk(state_dir):
+        for f in fnames:
+            files.append(Path(base) / f)
+        for dn in dnames:
+            dirs.append(Path(base) / dn)
+    dirs.sort(key=lambda p: len(p.parts), reverse=True)
+    return files, dirs
+
+
+def newest_mtime(state_dir: Path) -> float:
+    newest = os.stat(state_dir).st_mtime
+    for base, dnames, fnames in os.walk(state_dir):
+        for name in list(fnames) + list(dnames):
+            try:
+                newest = max(newest, os.stat(os.path.join(base, name)).st_mtime)
+            except OSError:
+                pass  # vanished mid-scan; age is advisory, not ownership
+    return newest
+
+
+def _pid_state(parsed):
+    """'alive' | 'dead' | None (None = metadata unusable, treat as malformed).
+    A JSON lock whose pid isn't an integer must read as malformed, exactly
+    like unparseable bytes — inspection tools crash on nothing."""
+    if parsed is None:
+        return None
+    try:
+        pid = int(parsed["pid"])
+    except (ValueError, TypeError):
+        return None
+    return "alive" if shared._pid_alive(pid) else "dead"
+
+
+def describe_lock(state_dir: Path) -> str:
+    """Human-readable lock state for listings and dry runs."""
+    parts = []
+    raw, parsed = shared._read_lock(state_dir / LOCK_NAME)
+    if raw is not None:
+        state = _pid_state(parsed)
+        if state is None:
+            parts.append("MALFORMED lock")
+        elif state == "alive":
+            parts.append(f"LIVE lock (pid {parsed['pid']}, "
+                         f"role {parsed.get('role', '?')})")
+        else:
+            parts.append(f"stale lock (dead pid {parsed['pid']})")
+    marker_raw, marker = shared._read_lock(state_dir / RECLAIM_NAME)
+    if marker_raw is not None:
+        if _pid_state(marker) == "alive":
+            parts.append(f"reclaim in progress (pid {marker['pid']})")
+        else:
+            parts.append("ABANDONED reclaim marker")
+    return "; ".join(parts) if parts else "unlocked"
+
+
+# ---------------------------------------------------------------------------
+# Deletion — always under the scope's own run.lock (role=prune)
+# ---------------------------------------------------------------------------
+
+def delete_scope(state_dir: Path) -> bool:
+    """Delete one scope dir under its own lock. Raises LockError when the
+    scope can't be owned (live/ambiguous lock, reclaim marker). Returns True
+    when the directory is fully gone; False when contents were removed but
+    the dir survived because a new run snuck into the unlock->rmdir window —
+    reported, never retried (the new run owns the scope now)."""
+    lock = shared.ScopeLock(state_dir, role="prune")
+    lock.acquire()
+    try:
+        files, dirs = scope_contents(state_dir)
+        for path in files:
+            if path == lock.lock_path:
+                continue  # our own lock is released LAST, below
+            # Re-verify ownership before every removal: a force-unlocked
+            # (displaced) prune must stop deleting the moment a successor
+            # can exist. Listed-path deletion can't name a successor's
+            # artifacts anyway (allocation skips orphaned numbers; debug
+            # names are unique) — this is the belt to that suspender.
+            lock.verify()
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                pass
+        for path in dirs:
+            lock.verify()
+            try:
+                os.rmdir(path)
+            except OSError:
+                # New content appeared (e.g. a lockless standalone run-lens
+                # writing debug/ artifacts mid-prune): leave it, report via
+                # the final rmdir below. Never retried.
+                pass
+    finally:
+        lock.release()  # conditional on token; unlinks run.lock last
+    try:
+        os.rmdir(state_dir)
+    except OSError:
+        return False
+    return True
+
+
+def prune_one(scope: str, yes: bool) -> int:
+    state_dir = resolve_scope_dir(scope)
+    if not state_dir.is_dir():
+        out(f"{state_dir}: no state directory — nothing to prune")
+        return EXIT_OK
+    files, dirs = scope_contents(state_dir)
+    out(f"scope {scope} ({describe_lock(state_dir)}):")
+    for path in files:
+        out(f"  would delete: {path.relative_to(STATE_ROOT)}")
+    if not yes:
+        out(f"dry run — nothing deleted ({len(files)} files). "
+            f"Re-run with --yes to delete.")
+        return EXIT_OK
+    try:
+        gone = delete_scope(state_dir)
+    except shared.LockError as exc:
+        out(f"refused: {exc}")
+        return EXIT_REFUSED
+    if gone:
+        out(f"pruned: {len(files)} files, scope directory removed")
+    else:
+        out("contents pruned, but the scope directory was left in place — a "
+            "new run started during cleanup and owns it now (not retried)")
+    return EXIT_OK
+
+
+def prune_aged(older_than_days: int, yes: bool) -> int:
+    if not STATE_ROOT.is_dir():
+        out(f"{STATE_ROOT}: no state root — nothing to prune")
+        return EXIT_OK
+    cutoff = time.time() - older_than_days * 86400
+    candidates = []
+    for entry in sorted(os.scandir(STATE_ROOT), key=lambda e: e.name):
+        if not entry.is_dir(follow_symlinks=False):
+            continue  # scope dirs only; state/<hash>.json files are the
+            # model's per-invocation records and are never touched
+        state_dir = STATE_ROOT / entry.name
+        if newest_mtime(state_dir) <= cutoff:
+            candidates.append(state_dir)
+    if not candidates:
+        out(f"no scope directories older than {older_than_days} days")
+        return EXIT_OK
+    skipped = 0
+    for state_dir in candidates:
+        files, _dirs = scope_contents(state_dir)
+        age_days = (time.time() - newest_mtime(state_dir)) / 86400
+        out(f"scope {state_dir.name} (age {age_days:.1f}d, "
+            f"{describe_lock(state_dir)}):")
+        for path in files:
+            out(f"  would delete: {path.relative_to(STATE_ROOT)}")
+        if not yes:
+            continue
+        try:
+            gone = delete_scope(state_dir)
+        except shared.LockError as exc:
+            out(f"  skipped: {exc}")
+            skipped += 1
+            continue
+        out("  pruned" if gone else
+            "  contents pruned; directory left to the run that just started")
+    if not yes:
+        out(f"dry run — nothing deleted ({len(candidates)} candidate "
+            f"scope(s)). Re-run with --yes to delete.")
+    elif skipped:
+        out(f"done; {skipped} scope(s) skipped (live/ambiguous locks are "
+            f"never touched)")
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
+# Force-unlock — the explicit manual recovery path
+# ---------------------------------------------------------------------------
+
+def force_unlock(scope: str, yes: bool) -> int:
+    state_dir = resolve_scope_dir(scope)
+    lock_path = state_dir / LOCK_NAME
+    marker_path = state_dir / RECLAIM_NAME
+    lock_raw, lock_parsed = shared._read_lock(lock_path)
+    marker_raw, marker_parsed = shared._read_lock(marker_path)
+    if lock_raw is None and marker_raw is None:
+        out(f"scope {scope}: no run.lock and no reclaim marker — nothing to "
+            f"unlock")
+        return EXIT_OK
+
+    # Print exactly what was inspected — the human is about to overrule the
+    # lock protocol and must see precisely what they are overruling.
+    for label, raw, parsed in ((LOCK_NAME, lock_raw, lock_parsed),
+                               (RECLAIM_NAME, marker_raw, marker_parsed)):
+        if raw is None:
+            continue
+        out(f"{label}: {raw.decode('utf-8', 'replace').rstrip()}")
+        state = _pid_state(parsed)
+        if state is None:
+            out("  -> MALFORMED metadata")
+        else:
+            out(f"  -> pid {parsed['pid']} is "
+                f"{'ALIVE — clearing this displaces a possibly-live run' if state == 'alive' else 'dead'}")
+    if not yes:
+        out("dry run — inspected only, nothing cleared. Re-run with --yes "
+            "to clear marker and lock together.")
+        return EXIT_OK
+
+    # Marker first: a crash between the two removals then leaves a plain
+    # dead-pid lock, which the automatic reclaim path already recovers; the
+    # reverse order would strand a marker that only force-unlock can clear.
+    #
+    # Each removal is conditional on byte-identity with what was inspected,
+    # inside the flock+inode critical section — a successor's fresh lock (or
+    # a competing recovery that already acted) never passes, and unique
+    # ownership tokens make content collisions impossible. Removing the lock
+    # under that fence IS the token revocation: the token ceases to exist,
+    # so a displaced-but-live owner's next fenced check (verify/verify_and)
+    # fails and it aborts without publishing — in particular, no summary.
+    refused = []
+    for path, observed in ((marker_path, marker_raw), (lock_path, lock_raw)):
+        if observed is None:
+            continue
+        removed = shared._locked_mutation(
+            path,
+            lambda raw, o=observed: raw == o,
+            lambda fd, p=path: os.unlink(p))
+        if not removed:
+            refused.append(path.name)
+    if refused:
+        out(f"refused: {', '.join(refused)} changed since inspection (a "
+            f"successor or competing recovery acted) — nothing further "
+            f"touched; re-inspect with --force-unlock {scope}")
+        return EXIT_REFUSED
+    out(f"cleared: scope {scope} unlocked")
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
+# Overview (no mode) — read-only listing
+# ---------------------------------------------------------------------------
+
+def overview() -> int:
+    if not STATE_ROOT.is_dir():
+        out(f"{STATE_ROOT}: no state root — nothing to list")
+        return EXIT_OK
+    scopes = sorted(e.name for e in os.scandir(STATE_ROOT)
+                    if e.is_dir(follow_symlinks=False))
+    if not scopes:
+        out("no scope state directories")
+        return EXIT_OK
+    now = time.time()
+    for name in scopes:
+        state_dir = STATE_ROOT / name
+        files, _dirs = scope_contents(state_dir)
+        age_days = (now - newest_mtime(state_dir)) / 86400
+        out(f"{name}  {len(files)} files  age {age_days:.1f}d  "
+            f"{describe_lock(state_dir)}")
+    out("(read-only overview — prune with --scope <hash> --yes at "
+        "convergence, or --older-than <days> --yes for abandoned runs)")
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def nonnegative_int(value):
+    n = int(value)
+    if n < 0:
+        raise argparse.ArgumentTypeError(f"days must be >= 0, got {n}")
+    return n
+
 
 def build_parser():
     p = argparse.ArgumentParser(
         prog="prune-state",
-        description="Prune state dirs for converged (--scope) or abandoned (--older-than) runs. Dry-run unless --yes.",
+        description=(
+            "Prune state dirs for converged (--scope) or abandoned "
+            "(--older-than) runs; --force-unlock recovers ambiguous locks. "
+            "Every mode is a dry run unless --yes. Never touches pass logs, "
+            "state/<hash>.json files, anything outside state/, or a scope "
+            "holding a live run lock."
+        ),
+        epilog=(
+            "exit codes: 0 = requested operation completed (dry runs and "
+            "reported skips included); 1 = refused or failed; 2 = usage "
+            "error. Note this differs from run-pass, whose exit 0 means "
+            "exactly 'a pass summary was published'."
+        ),
     )
     p.add_argument("--scope", default=None, metavar="HASH",
-                   help="targeted cleanup of one scope's state dir (convergence-checkpoint flow)")
-    p.add_argument("--older-than", type=int, default=None, metavar="DAYS",
-                   help="age threshold for abandoned-run cleanup; required for age-based deletion")
+                   help="targeted cleanup of one scope's state dir "
+                        "(convergence-checkpoint flow; the model invokes "
+                        "this — prune-state never infers convergence)")
+    p.add_argument("--older-than", type=nonnegative_int, default=None,
+                   metavar="DAYS",
+                   help="age threshold for abandoned-run cleanup; required "
+                        "for any age-based deletion")
     p.add_argument("--yes", action="store_true",
-                   help="actually delete; without it, every mode is a dry run")
+                   help="actually delete/clear; without it, every mode is a "
+                        "dry run")
     p.add_argument("--force-unlock", default=None, metavar="SCOPE",
-                   help="manual recovery: clear an ambiguous run.lock (+ reclaim marker) for SCOPE")
+                   help="manual recovery: inspect and (with --yes) clear an "
+                        "ambiguous run.lock + reclaim marker for SCOPE")
     return p
 
 
 def main(argv=None):
-    build_parser().parse_args(argv)
-    sys.stderr.write(
-        "prune-state: not implemented yet — Phase 2 of the runner-scripts plan "
-        "(docs/runner-scripts-artifact-hygiene-2026-08-06.md) delivers this.\n"
-    )
-    return 1
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    modes = [m for m in (args.scope, args.older_than, args.force_unlock)
+             if m is not None]
+    if len(modes) > 1:
+        parser.error("--scope, --older-than, and --force-unlock are "
+                     "mutually exclusive")
+    if args.yes and not modes:
+        parser.error("--yes requires a mode: --scope, --older-than, or "
+                     "--force-unlock")
+    try:
+        if args.scope is not None:
+            return prune_one(args.scope, args.yes)
+        if args.older_than is not None:
+            return prune_aged(args.older_than, args.yes)
+        if args.force_unlock is not None:
+            return force_unlock(args.force_unlock, args.yes)
+        return overview()
+    except PruneError as exc:
+        sys.stderr.write(f"prune-state: {exc}\n")
+        return EXIT_REFUSED
+    except shared.LockError as exc:
+        sys.stderr.write(f"prune-state: {exc}\n")
+        return EXIT_REFUSED
 
 
 if __name__ == "__main__":

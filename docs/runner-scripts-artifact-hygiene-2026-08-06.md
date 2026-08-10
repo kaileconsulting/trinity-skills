@@ -180,7 +180,7 @@ Everything the runner does (state-dir writes, codex invocation, validation) happ
 - `tools/check-all.sh` green.
 
 **Iterate-review:** YES (rationale: core execution code — composition, codex invocation, patch-marker check, embedded lens selection, golden-file fixtures)
-**Status:** reviewed (iterate-review converged 2026-08-07 after 11 self-hosted passes, three-lens APPROVE — pass log: `docs/reviews/code-review-branch-docs-runner-scripts-brief.md`; doc-bot dogfood is the remaining acceptance item before shipped)
+**Status:** shipped (2026-08-10 — Kyle's sequencing call: the doc-bot dogfood acceptance item is **deferred, not waived**; it runs opportunistically with the next real doc-bot review instead of gating this project. Code acceptance was met via the 11-pass self-hosted iterate-review, three-lens APPROVE — pass log: `docs/reviews/code-review-branch-docs-runner-scripts-brief.md`. If the dogfood surfaces issues, they fold back as fixes under a fresh iterate-review.)
 
 ### Phase 2 — prune-state + auto-prune on convergence (~0.5 day)
 **Deliverables:**
@@ -193,7 +193,7 @@ Everything the runner does (state-dir writes, codex invocation, validation) happ
 - Dry-run output lists exactly what would be deleted; nothing outside `state/` is ever touched, and a dir with a live run lock is never touched (both fixture-pinned).
 
 **Iterate-review:** YES (rationale: deletion code warrants review)
-**Status:** not started
+**Status:** implemented (2026-08-10 — prune-state, SKILL.md convergence wiring, README cleanup section, and the Phase 2 fixture set all landed; full check suite green. Awaiting iterate-review before `reviewed`.)
 
 ### Phase 3 — iterate-plan port + parity fixtures (~1 day)
 **Deliverables:**

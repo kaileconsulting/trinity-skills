@@ -129,7 +129,7 @@ runs the same loop against `git diff $(git merge-base HEAD main)...HEAD`. Pass l
 
 ## Runner scripts & the one-rule permission model
 
-> **Status:** landing in phases — see `docs/runner-scripts-artifact-hygiene-2026-08-06.md`. Phase 0 ships the `bin/` stubs and this documentation; Phase 1 makes them operative for `iterate-review`.
+> **Status:** landing in phases — see `docs/runner-scripts-artifact-hygiene-2026-08-06.md`. Phases 0–2 have landed: the runners are operative for `iterate-review`, including state pruning. Phase 3 ports the pattern to `iterate-plan`.
 
 Historically each review pass improvised unique shell to compose lens inputs and invoke Codex — commands that could never be pre-approved, so a 10-pass review meant dozens of opaque permission prompts and a settings file full of dead one-shot rules. The runner scripts replace that with three stable executables under `iterate-review/bin/` (`run-lens`, `run-pass`, `prune-state`; stdlib-only Python ≥ 3.9). A stable script accepts *arguments*, so one documented allowlist rule covers every invocation:
 
@@ -143,7 +143,9 @@ Historically each review pass improvised unique shell to compose lens inputs and
 
 With that one rule in place, the review machinery generates **zero further Bash permission prompts** end to end. What remains is deliberate: scope selection at the start, the skills' mandated human checkpoints, and pass-log appends via Claude Code's normal file-edit permissions. The runner composes and invokes; it never folds, never writes pass logs, never decides.
 
-**Pass-log default is moving off the repo root.** Once Phase 1 lands, new pass logs default to `<repo-root>/docs/reviews/code-review-<scope-tag>.md` (created on demand); `--log-path` still overrides. **Existing logs are untouched** — no migration, no renames; move old root-level `code-review-*.md` files yourself if and when you want them gathered.
+**Pass-log default is off the repo root.** New pass logs default to `<repo-root>/docs/reviews/code-review-<scope-tag>.md` (created on demand); `--log-path` still overrides. **Existing logs are untouched** — no migration, no renames; move old root-level `code-review-*.md` files yourself if and when you want them gathered.
+
+**State cleanup is part of the loop.** On Converge the skill prunes the review's state directory (`prune-state --scope <hash> --yes`) — the pass log is the durable record; composed inputs, raw responses, and pass summaries are intermediates. Pass `--keep-state` to keep them for auditing or debugging a bad merge. For runs that were aborted or abandoned, `prune-state` is age-based and dry-run by default: `prune-state --older-than 30 --yes` removes state untouched for 30 days (30 is an example, not policy — pick your own threshold). It never touches pass logs, `state/<hash>.json` records, anything outside `state/`, or a scope holding a live run lock; `prune-state --force-unlock <scope>` is the explicit recovery path for a wedged lock. Bare `prune-state` prints a read-only overview of accumulated state.
 
 ## Directory layout
 

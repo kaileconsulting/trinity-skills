@@ -15,6 +15,11 @@ Pins the behavior the runner-scripts plan promises
   pass-log      — docs/reviews/ default resolved from a subdirectory, --log-path
                   override, non-git cwd fallback warning, existing root logs
                   untouched, runner never creates/writes the log
+  prune         — converged --scope cleanup under the prune lock, dry-run
+                  exactness, pass logs + state/<hash>.json never touched,
+                  live locks refused/skipped, run-start vs. prune fail-fast,
+                  stale-lock reclaim, force-unlock recovery (byte-identity
+                  conditional removal; displaced live run commits no summary)
 
 No network and no real codex: subprocess tests run against a COPY of the
 skill directory (which doubles as the plain-copy install layout check) with a
@@ -866,6 +871,237 @@ def test_pass2_fold(env: Env, shared) -> None:
            f"stderr={proc.stderr.decode()[-120:]}")
 
 
+def test_prune(env: Env, shared) -> None:
+    """Phase 2 fixture set (runner-scripts plan): prune-state."""
+    state_root = os.path.join(env.skill, "state")
+    env_path = dict(os.environ)
+    env_path["PATH"] = env.fakebin + os.pathsep + env_path["PATH"]
+
+    # -- converged-scope flow: dry run first, then --scope --yes ------------
+    env.set_mode("ok")
+    proc = env.run("run-pass", "--diff", env.diff, "--intent", env.intent,
+                   "--scope-tag", "pr1", "--pass-num", "1")
+    shash = json.loads(proc.stdout)["scope_hash"]
+    sdir = os.path.join(state_root, shash)
+    log = os.path.join(env.repo, "docs", "reviews", "code-review-pr1.md")
+    os.makedirs(os.path.dirname(log), exist_ok=True)
+    with open(log, "w") as fh:
+        fh.write("# Code Review — pr1\ndurable audit record\n")
+    model_state = os.path.join(state_root, shash + ".json")
+    with open(model_state, "w") as fh:
+        fh.write("{}\n")
+
+    contents = os.listdir(sdir)
+    proc = env.run("prune-state", "--scope", shash)
+    record("prune: dry run lists every file and deletes nothing",
+           proc.returncode == 0 and "dry run" in proc.stdout
+           and all(name in proc.stdout for name in contents)
+           and sorted(os.listdir(sdir)) == sorted(contents),
+           proc.stdout[-200:])
+    proc = env.run("prune-state", "--scope", shash, "--yes")
+    record("prune: converged scope fully removed (--scope --yes)",
+           proc.returncode == 0 and not os.path.exists(sdir),
+           proc.stdout[-160:])
+    record("prune: pass log untouched",
+           read(log) == "# Code Review — pr1\ndurable audit record\n")
+    record("prune: model state file (state/<hash>.json) untouched",
+           os.path.exists(model_state))
+    proc = env.run("prune-state", "--scope", shash, "--yes")
+    record("prune: re-prune of a gone scope is idempotent success",
+           proc.returncode == 0 and "nothing to prune" in proc.stdout)
+
+    # -- nothing outside state/ is addressable ------------------------------
+    proc = env.run("prune-state", "--scope", "../evil", "--yes")
+    record("prune: path components in a scope name refused",
+           proc.returncode == 1 and "invalid scope name" in proc.stderr)
+    outside = os.path.join(env.root, "outside-dir")
+    os.makedirs(outside, exist_ok=True)
+    canary = os.path.join(outside, "canary.txt")
+    with open(canary, "w") as fh:
+        fh.write("do not delete\n")
+    link = os.path.join(state_root, "linked")
+    os.symlink(outside, link)
+    proc = env.run("prune-state", "--scope", "linked", "--yes")
+    record("prune: symlinked scope dir refused, link target untouched",
+           proc.returncode == 1 and "symlink" in proc.stderr
+           and os.path.exists(canary))
+    os.unlink(link)
+
+    # -- run-pass starting during an in-flight prune fails fast -------------
+    env.set_mode("ok")
+    proc = env.run("run-pass", "--diff", env.diff, "--intent", env.intent,
+                   "--scope-tag", "pr3", "--pass-num", "1")
+    sdir3 = os.path.join(state_root, json.loads(proc.stdout)["scope_hash"])
+    plock = shared.ScopeLock(sdir3, role="prune")
+    plock.acquire()
+    proc = env.run("run-pass", "--diff", env.diff, "--intent", env.intent,
+                   "--scope-tag", "pr3")
+    record("prune: run-pass starting mid-prune fails fast on the prune lock",
+           proc.returncode == 1 and "locked by a live run" in proc.stderr
+           and "role prune" in proc.stderr,
+           proc.stderr.strip()[-160:])
+    plock.release()
+
+    # -- live-locked scopes are never touched -------------------------------
+    env.clear_sleep_markers()
+    env.set_mode("sleep")
+    live = subprocess.Popen(
+        [os.path.join(env.bin, "run-pass"), "--diff", env.diff,
+         "--intent", env.intent, "--scope-tag", "pr2", "--pass-num", "1"],
+        cwd=env.repo, env=env_path,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    record("prune: pr2 sleeping codex signalled readiness", env.wait_sleeper())
+    deadline = time.time() + 10
+    live_dir = None
+    while time.time() < deadline and live_dir is None:
+        for d in env.state_dirs():
+            if os.path.exists(os.path.join(d, "run.lock")):
+                live_dir = d
+        time.sleep(0.05)
+    before = sorted(os.listdir(live_dir))
+    proc = env.run("prune-state", "--scope", os.path.basename(live_dir),
+                   "--yes")
+    record("prune: live-locked scope refused (--scope --yes), state intact",
+           proc.returncode == 1 and "live run" in proc.stdout
+           and sorted(os.listdir(live_dir)) == before,
+           proc.stdout[-160:])
+
+    # Age sweep (threshold 0 = everything): removes every unlocked scope —
+    # earlier suites' leftovers included — but SKIPS the live one AND any
+    # scope bearing a reclaim marker (markers get no automatic cleanup;
+    # force-unlock is their only recovery). First clear test_lifecycle's
+    # orphan-marker scope the documented way, then pin the marker behavior
+    # with a marker-bearing scope of our own.
+    env.run("prune-state", "--force-unlock", "orphanmarker", "--yes")
+    marked = os.path.join(state_root, "prmarker")
+    os.makedirs(marked)
+    marked_marker = os.path.join(marked, "run.lock.reclaim")
+    with open(marked_marker, "w") as fh:
+        fh.write(json.dumps({"pid": spawn_dead_pid(), "timestamp": "t",
+                             "role": "run-pass", "token": "m",
+                             "owner_name": "x"}) + "\n")
+    proc = env.run("prune-state", "--older-than", "0", "--yes")
+    remaining = sorted(d for d in os.listdir(state_root)
+                       if os.path.isdir(os.path.join(state_root, d)))
+    expected = sorted([os.path.basename(live_dir), "prmarker"])
+    record("prune: age sweep removes unlocked scopes, skips live + marked, exit 0",
+           proc.returncode == 0 and "skipped" in proc.stdout
+           and remaining == expected and os.path.exists(marked_marker),
+           f"remaining={remaining}")
+    record("prune: age sweep never touches state/<hash>.json files",
+           os.path.exists(model_state))
+    env.run("prune-state", "--force-unlock", "prmarker", "--yes")
+    os.rmdir(marked)
+
+    # Kill the live run: its lock is now a dead-pid stale lock, which a
+    # targeted prune reclaims and removes in one invocation.
+    live.send_signal(signal.SIGKILL)
+    live.wait(timeout=10)
+    proc = env.run("prune-state", "--scope", os.path.basename(live_dir),
+                   "--yes")
+    record("prune: dead-pid stale lock reclaimed, scope removed",
+           proc.returncode == 0 and not os.path.exists(live_dir),
+           proc.stdout[-160:])
+
+    # -- force-unlock: stale lock + abandoned marker ------------------------
+    fu = os.path.join(state_root, "fu1")
+    os.makedirs(fu)
+    fu_lock = os.path.join(fu, "run.lock")
+    fu_marker = os.path.join(fu, "run.lock.reclaim")
+    dead = spawn_dead_pid()
+    with open(fu_lock, "w") as fh:
+        fh.write(json.dumps({"pid": dead, "timestamp": "t", "role": "run-pass",
+                             "token": "deadbeef", "owner_name": "x"}) + "\n")
+    with open(fu_marker, "w") as fh:
+        fh.write(json.dumps({"pid": dead, "timestamp": "t", "role": "run-pass",
+                             "token": "feed", "owner_name": "x"}) + "\n")
+    proc = env.run("prune-state", "--force-unlock", "fu1")
+    record("force-unlock: dry run prints both files' state, clears nothing",
+           proc.returncode == 0 and "dry run" in proc.stdout
+           and "run.lock:" in proc.stdout and "run.lock.reclaim:" in proc.stdout
+           and "dead" in proc.stdout
+           and os.path.exists(fu_lock) and os.path.exists(fu_marker),
+           proc.stdout[-200:])
+    proc = env.run("prune-state", "--force-unlock", "fu1", "--yes")
+    record("force-unlock: clears marker and lock together",
+           proc.returncode == 0 and "cleared" in proc.stdout
+           and not os.path.exists(fu_lock) and not os.path.exists(fu_marker))
+
+    # Byte-identity primitive: a successor's fresh lock content never passes
+    # a conditional removal predicated on the previously observed bytes.
+    observed = b'{"pid": 1, "token": "old"}\n'
+    with open(fu_lock, "wb") as fh:
+        fh.write(b'{"pid": 2, "token": "successor"}\n')
+    removed = shared._locked_mutation(
+        fu_lock, lambda raw: raw == observed,
+        lambda fd: os.unlink(fu_lock))
+    record("force-unlock: byte-identity refuses a successor's fresh lock",
+           removed is False and os.path.exists(fu_lock))
+
+    # Two concurrent force-unlocks of the same stale lock: at most one
+    # "cleared"; the loser refuses on mismatch/absence — never a crash,
+    # never a second delete.
+    with open(fu_lock, "w") as fh:
+        fh.write(json.dumps({"pid": spawn_dead_pid(), "timestamp": "t",
+                             "role": "run-pass", "token": "stale2",
+                             "owner_name": "x"}) + "\n")
+    procs = [subprocess.Popen(
+        [os.path.join(env.bin, "prune-state"), "--force-unlock", "fu1",
+         "--yes"],
+        cwd=env.repo, env=env_path,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        for _ in range(2)]
+    outs = [p.communicate(timeout=30)[0] for p in procs]
+    cleared = sum("cleared" in o for o in outs)
+    record("force-unlock: concurrent recoveries self-serialize (one winner)",
+           cleared <= 1 and all(p.returncode in (0, 1) for p in procs)
+           and not os.path.exists(fu_lock),
+           f"cleared={cleared} exits={[p.returncode for p in procs]}")
+    os.rmdir(fu)
+
+    # -- force-unlock of a GENUINELY LIVE run (the plan's adversarial case):
+    # the displaced run commits no summary and never unlinks the successor's
+    # lock; the successor completes normally.
+    env.clear_sleep_markers()
+    env.set_mode("sleep3")
+    displaced = subprocess.Popen(
+        [os.path.join(env.bin, "run-pass"), "--diff", env.diff,
+         "--intent", env.intent, "--scope-tag", "pr4", "--pass-num", "1"],
+        cwd=env.repo, env=env_path,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    record("force-unlock: pr4 sleeping codex signalled readiness",
+           env.wait_sleeper())
+    deadline = time.time() + 10
+    pr4_dir = None
+    while time.time() < deadline and pr4_dir is None:
+        for d in env.state_dirs():
+            if os.path.exists(os.path.join(d, "run.lock")):
+                pr4_dir = d
+        time.sleep(0.05)
+    proc = env.run("prune-state", "--force-unlock",
+                   os.path.basename(pr4_dir), "--yes")
+    record("force-unlock: live lock cleared under explicit --yes",
+           proc.returncode == 0 and "ALIVE" in proc.stdout
+           and "cleared" in proc.stdout,
+           proc.stdout[-200:])
+    env.set_mode("ok")  # safe: the readiness marker proves sleep3 was read
+    successor = env.run("run-pass", "--diff", env.diff, "--intent", env.intent,
+                        "--scope-tag", "pr4")
+    _out, derr = displaced.communicate(timeout=30)
+    summaries = sorted(f for f in os.listdir(pr4_dir)
+                       if f.endswith(".summary.json"))
+    succ_pass = json.loads(successor.stdout or "{}").get("pass")
+    record("force-unlock: displaced run aborts — revocation detected, no summary",
+           displaced.returncode != 0 and "revoked" in derr,
+           f"exit={displaced.returncode} stderr={derr.strip()[-160:]}")
+    record("force-unlock: successor completes; the only summary is the successor's",
+           successor.returncode == 0 and succ_pass is not None
+           and summaries == [f"pass-{succ_pass}.summary.json"],
+           f"pass={succ_pass} summaries={summaries}")
+    record("force-unlock: displaced run never unlinked the successor's state",
+           not os.path.exists(os.path.join(pr4_dir, "run.lock")))
+
+
 def spawn_dead_pid() -> int:
     proc = subprocess.Popen(["true"])
     proc.wait()
@@ -892,6 +1128,7 @@ def main() -> int:
         test_lifecycle(env, shared)
         test_immutability(env, shared)
         test_pass2_fold(env, shared)
+        test_prune(env, shared)
     except Exception as exc:  # noqa: BLE001
         import traceback
         traceback.print_exc()

@@ -26,12 +26,13 @@ The skill surfaces in-session via the available-skills list at session start (sl
 - `iterate-review --scope=<...> --log-path=<path>` — custom pass log location
 - `iterate-review --scope=<...> --loop` (alias `--until-approve`) — loop mode: auto-continue REVISE passes, stopping at the first APPROVE for the human's Converge call
 - `iterate-review --scope=<...> --max-passes=N` — loop-mode safety cap (default 6, fresh budget per loop activation)
+- `iterate-review --scope=<...> --keep-state` — on Converge, skip the state-dir prune and keep the per-pass inputs/responses for audit or debugging
 
 If the user invokes without a `--scope` flag, ask them which scope they want before proceeding. Default suggestion: `--scope=working` if there are uncommitted changes (`git status --porcelain` non-empty), `--scope=branch` if the current branch is ahead of main, otherwise prompt for `pr:<n>`.
 
 ## Setup (once per skill invocation)
 
-1. **Parse args.** Extract `--scope=<value>`, `--once` (flag), `--log-path=<path>`, `--loop`/`--until-approve` (flag), `--max-passes=N`. Reject `--plan` / `--phase` flags with a clear "v1 is standalone-only; plan-bound deferred to v2" message and exit. Reject `--once` together with `--loop` (mutually exclusive — one opts out of the loop, the other automates it).
+1. **Parse args.** Extract `--scope=<value>`, `--once` (flag), `--log-path=<path>`, `--loop`/`--until-approve` (flag), `--max-passes=N`, `--keep-state` (flag). Reject `--plan` / `--phase` flags with a clear "v1 is standalone-only; plan-bound deferred to v2" message and exit. Reject `--once` together with `--loop` (mutually exclusive — one opts out of the loop, the other automates it).
 
 2. **Verify Codex CLI is available.** Run `codex --version` via Bash. If the command fails, surface a clear error: "Codex CLI not found — install it before invoking iterate-review." Exit. (Pin: tested against codex-cli 0.125.0+.)
 
@@ -174,7 +175,17 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     }
     ```
 
-    Then exit. Pass log file remains in place; per-lens response files (`pass-N.<lensid>.response.json`) under `state/<scope-hash>/` stay on disk for inspection.
+    **On Converge, additionally prune the scope's state directory** — the pass log is the durable audit record; the per-pass inputs, responses, and summaries under `state/<scope-hash>/` are intermediates:
+
+    ```
+    ~/.claude/skills/iterate-review/bin/prune-state --scope <scope-hash> --yes
+    ```
+
+    Skip the prune when the invocation carried `--keep-state` or the user asks to keep the state at the Converge checkpoint (audit/debug trail — e.g. investigating a bad merge); say so in the wrap-up either way. Convergence is *your* determination confirmed by the human — `prune-state` never infers it. A completed `run-pass` leaves no lock, so this prune is never blocked; if it reports a refusal anyway, surface it rather than retrying.
+
+    **On Abort, leave the state directory in place** — abandoned-run state is cleaned up later, explicitly, with `prune-state --older-than <days> --yes` (dry-run without `--yes`; it never touches a scope holding a live run lock, pass logs, or the `state/<scope-hash>.json` files).
+
+    Then exit. The pass log file always remains in place.
 
 ## Hard rules
 
@@ -210,11 +221,15 @@ In v2, steps 2 and 4 collapse to a single `iterate-review --plan=<path> --phase=
 - `examples/` — fixtures (see `examples/README.md`). `examples/selection/` pins lens
   routing and ships a runnable reference implementation (`check-selection.py`);
   `examples/merge/` holds merge/verdict goldens. Validate with `tools/check-examples.py`.
-- `state/<scope-hash>/pass-N.response.json` — per-pass raw Codex responses, kept for inspection.
-- `state/<scope-hash>.json` — per-invocation final state, written at convergence/abort.
+- `state/<scope-hash>/pass-N.response.json` — per-pass raw Codex responses; pruned at
+  Converge (step 16) unless `--keep-state`, swept later by `prune-state --older-than`
+  for abandoned runs.
+- `state/<scope-hash>.json` — per-invocation final state, written at convergence/abort;
+  never touched by `prune-state`.
 - `bin/` — the runner scripts steps 9–11 invoke: `run-pass` (selection + composition +
   concurrent fan-out + summary), `run-lens` (one lens, standalone/debug), `prune-state`
-  (cleanup; lands in Phase 2 of `docs/runner-scripts-artifact-hygiene-2026-08-06.md`),
+  (state-dir cleanup: `--scope` at Converge, `--older-than` for abandoned runs,
+  `--force-unlock` for ambiguous-lock recovery; dry-run unless `--yes`),
   plus the modules they share (`selection_engine.py`, `review_runner.py`,
   `runner_shared.py`). The per-scope state dir holds `pass-N.<lensid>.input.txt`
   (composed lens inputs — golden-comparable, prunable), `pass-N.summary.json` (the
