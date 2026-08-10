@@ -180,7 +180,7 @@ Everything the runner does (state-dir writes, codex invocation, validation) happ
 - `tools/check-all.sh` green.
 
 **Iterate-review:** YES (rationale: core execution code — composition, codex invocation, patch-marker check, embedded lens selection, golden-file fixtures)
-**Status:** shipped (2026-08-10 — Kyle's sequencing call: the doc-bot dogfood acceptance item is **deferred, not waived**; it runs opportunistically with the next real doc-bot review instead of gating this project. Code acceptance was met via the 11-pass self-hosted iterate-review, three-lens APPROVE — pass log: `docs/reviews/code-review-branch-docs-runner-scripts-brief.md`. If the dogfood surfaces issues, they fold back as fixes under a fresh iterate-review.)
+**Status:** shipped (2026-08-10; code acceptance via the 11-pass self-hosted iterate-review, three-lens APPROVE — pass log: `docs/reviews/code-review-branch-docs-runner-scripts-brief.md`. **Dogfood acceptance met 2026-08-10 (deferred by Kyle's sequencing call, then completed the same day):** a real 5-pass loop-mode review of doc-bot's write-path Phase 1 converged APPROVE×3 — pass log in doc-bot `docs/reviews/`, handoff via `.git/iterate-review/`, cross-repo convergence prune, one Bash prompt total whose cause was an R3-class rule-form mismatch in the *pre-staged rule* (absolute path vs the SKILL template's `~` form — the README's tilde snippet was already correct; doc-bot's rule normalized to tilde form after).)
 
 ### Phase 2 — prune-state + auto-prune on convergence (~0.5 day)
 **Deliverables:**
@@ -210,7 +210,7 @@ Everything the runner does (state-dir writes, codex invocation, validation) happ
 
 ## Acceptance criteria
 
-- [ ] A full multi-pass `iterate-review` on a real repo runs with **one documented allowlist rule and zero other Bash permission prompts** end to end (checkpoints and file-edit approvals excluded by design — see "The single-rule permission model").
+- [x] A full multi-pass `iterate-review` on a real repo runs with **one documented allowlist rule and zero other Bash permission prompts** end to end (checkpoints and file-edit approvals excluded by design — see "The single-rule permission model"). *Met 2026-08-10 on doc-bot's write-path Phase 1 (5 passes, 15 codex calls); the single stray prompt traced to a mis-staged rule form (absolute vs `~`), not the machinery — rule form now standardized to the README's tilde snippet.*
 - [ ] A full `iterate-plan` review runs under its own single allowlist rule with zero other Bash permission prompts (unconditional; mirrors the iterate-review criterion).
 - [ ] Composition golden-file fixtures prove byte-deterministic input assembly.
 - [ ] Patch-marker rejection is exercised by fixtures at both command boundaries: standalone `run-lens` (malformed response → exit 2) and `run-pass` (completed pass, `status: rejected` in the summary, exit 0).
