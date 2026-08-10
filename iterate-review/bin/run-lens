@@ -77,6 +77,10 @@ def main(argv=None):
     except OSError as exc:
         sys.stderr.write(f"run-lens: {exc}\n")
         return EXIT_ERROR
+    if not diff_text.strip():
+        # Same contract at both command boundaries as run-pass.
+        sys.stderr.write("run-lens: the diff is empty — nothing to review\n")
+        return EXIT_ERROR
 
     known = {lens["id"] for lens in sel.load_lenses()}
     if args.lens not in known:
@@ -112,7 +116,10 @@ def main(argv=None):
         input_path.parent.mkdir(parents=True, exist_ok=True)
         entry = rr.run_one_lens(args.lens, intent_text, diff_text, prior,
                                 input_path, response_path)
-    except rr.CompositionError as exc:
+    except (rr.CompositionError, OSError) as exc:
+        # OSError covers orchestration failures the standalone contract owes
+        # a diagnostic for (codex missing from PATH, artifact-publication
+        # errors) — exit 1 with a usable message, never a traceback.
         sys.stderr.write(f"run-lens: {exc}\n")
         return EXIT_ERROR
 

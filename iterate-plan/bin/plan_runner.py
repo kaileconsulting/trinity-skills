@@ -181,7 +181,15 @@ def load_lenses():
 
 
 def _frontmatter_id(path: Path):
-    for raw in path.read_text(encoding="utf-8").splitlines():
+    """The `id:` declared in the FRONTMATTER BLOCK only — scanning stops at
+    the closing `---`, so a body line that happens to look like `id: x` can
+    never satisfy the loud rule-data-drift check in load_lenses()."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    for raw in lines[1:]:
+        if raw.strip() == "---":
+            break
         line = raw.split("#", 1)[0]
         key, _, value = line.partition(":")
         if key.strip() == "id":

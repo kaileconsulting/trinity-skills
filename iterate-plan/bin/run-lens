@@ -89,6 +89,10 @@ def main(argv=None):
     except OSError as exc:
         sys.stderr.write(f"run-lens: {exc}\n")
         return EXIT_ERROR
+    if not plan_text.strip():
+        # Same contract at both command boundaries as run-pass.
+        sys.stderr.write("run-lens: the plan is empty — nothing to review\n")
+        return EXIT_ERROR
 
     try:
         known = {lens["id"] for lens in pr.load_lenses()}
@@ -109,7 +113,10 @@ def main(argv=None):
         input_path.parent.mkdir(parents=True, exist_ok=True)
         entry = pr.run_one_lens(args.lens, plan_text, note_text,
                                 plan_path.parent, input_path, response_path)
-    except pr.CompositionError as exc:
+    except (pr.CompositionError, OSError) as exc:
+        # OSError covers orchestration failures the standalone contract owes
+        # a diagnostic for (codex missing from PATH, artifact-publication
+        # errors) — exit 1 with a usable message, never a traceback.
         sys.stderr.write(f"run-lens: {exc}\n")
         return EXIT_ERROR
 

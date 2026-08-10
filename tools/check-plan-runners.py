@@ -54,6 +54,24 @@ def load(path: str, name: str):
     return mod
 
 
+def run_without_codex(env, script, *args):
+    """Run a bin/ script with a PATH that contains python3 and git but NO
+    codex at all (a shim dir of symlinks — the machine's real codex must not
+    be reachable as a fallback)."""
+    shim = os.path.join(env.root, "shim-no-codex")
+    if not os.path.isdir(shim):
+        os.makedirs(shim)
+        for tool in ("python3", "git"):
+            target = shutil.which(tool)
+            if target:
+                os.symlink(target, os.path.join(shim, tool))
+    e = dict(os.environ)
+    e["PATH"] = shim
+    return subprocess.run([os.path.join(env.bin, script), *args],
+                          cwd=env.repo, env=e, timeout=60,
+                          capture_output=True, text=True)
+
+
 def read(path: str) -> str:
     with open(path, encoding="utf-8") as fh:
         return fh.read()
@@ -120,6 +138,11 @@ class Env:
             fh.write(f'''#!/usr/bin/env python3
 import json, os, sys, time
 args = sys.argv[1:]
+# Record the exact argv (and cwd) of every invocation: the -C contract is
+# part of the runner's promise and must be assertable, not assumed.
+with open(os.path.join({self.root!r},
+                       "codex-argv-%d.json" % os.getpid()), "w") as fh:
+    json.dump({{"argv": args, "cwd": os.getcwd()}}, fh)
 out = None
 for i, a in enumerate(args):
     if a == "--output-last-message":
@@ -160,6 +183,17 @@ with open(out, "w") as fh:
     def set_mode(self, mode: str) -> None:
         with open(self.mode_file, "w") as fh:
             fh.write(mode)
+
+    def clear_argv_records(self) -> None:
+        for p in glob.glob(os.path.join(self.root, "codex-argv-*.json")):
+            os.remove(p)
+
+    def argv_records(self):
+        out = []
+        for p in sorted(glob.glob(os.path.join(self.root, "codex-argv-*.json"))):
+            with open(p, encoding="utf-8") as fh:
+                out.append(json.load(fh))
+        return out
 
     def clear_sleep_markers(self) -> None:
         for p in glob.glob(self.mode_file + ".sleeping-*"):
@@ -315,6 +349,18 @@ def test_rule_data_drift(env: Env) -> None:
            proc.returncode == 1 and "does not match filename" in proc.stderr)
     os.remove(bad)
 
+    # A body line that LOOKS like an id declaration must not satisfy the
+    # drift check — id comes from the frontmatter block only.
+    bad = os.path.join(lens_dir, "bodyid.md")
+    with open(bad, "w") as fh:
+        fh.write("---\nskill: iterate-plan\nrole: t\n"
+                 "selection:\n  always: true\n  requires_sections: []\n"
+                 "matched_context: >\n  x\n---\n## ROLE\nid: bodyid\n")
+    proc = env.run("run-pass", "--plan", env.plan)
+    record("rule data: missing frontmatter id not satisfied by a body line",
+           proc.returncode == 1 and "does not match filename" in proc.stderr)
+    os.remove(bad)
+
 
 # ---------------------------------------------------------------------------
 # Exit contracts, boundaries, wiring (subprocess, fake codex)
@@ -420,11 +466,52 @@ def test_boundaries(env: Env) -> None:
     proc = env.run("run-pass", "--plan", empty)
     record("run-pass: empty plan refused",
            proc.returncode == 1 and "empty" in proc.stderr)
+    proc = env.run("run-lens", "--plan", empty, "--lens", "architect")
+    record("run-lens: empty plan refused (same contract as run-pass)",
+           proc.returncode == 1 and "empty" in proc.stderr)
     os.remove(empty)
 
     proc = env.run("run-lens", "--plan", env.plan, "--lens", "nope")
     record("run-lens: unknown lens id refused",
            proc.returncode == 1 and "unknown lens id" in proc.stderr)
+
+    # Orchestration failure at the standalone boundary: codex missing from
+    # PATH must produce a concise run-lens diagnostic, never a traceback.
+    # PATH is a shim dir holding ONLY python3 + git — simply removing the
+    # fake codex would fall through to the REAL codex on the machine's PATH.
+    proc = run_without_codex(env, "run-lens", "--plan", env.plan,
+                             "--lens", "architect")
+    record("run-lens: codex missing -> exit 1 diagnostic, no traceback",
+           proc.returncode == 1 and "run-lens:" in proc.stderr
+           and "Traceback" not in proc.stderr)
+
+
+def test_codex_invocation_contract(env: Env) -> None:
+    """The -C contract: codex's working root is the PLAN's directory, placed
+    right after `exec` per the SKILL.md invocation shape — asserted from the
+    fake codex's recorded argv, for both command boundaries."""
+    env.set_mode("ok")
+    plan_dir = os.path.dirname(os.path.realpath(env.plan))
+
+    def c_ok(rec):
+        argv = rec["argv"]
+        return ("exec" in argv
+                and argv[argv.index("exec") + 1] == "-C"
+                and argv[argv.index("exec") + 2] == plan_dir)
+
+    env.clear_argv_records()
+    proc = env.run("run-pass", "--plan", env.plan)
+    recs = env.argv_records()
+    record("codex argv: run-pass passes -C <plan-dir> right after exec",
+           proc.returncode == 0 and len(recs) == 2
+           and all(c_ok(r) for r in recs))
+
+    env.clear_argv_records()
+    proc = env.run("run-lens", "--plan", env.plan, "--lens", "architect")
+    recs = env.argv_records()
+    record("codex argv: run-lens passes -C <plan-dir> right after exec",
+           proc.returncode == 0 and len(recs) == 1 and c_ok(recs[0]))
+    env.clear_argv_records()
 
 
 def test_failure_modes(env: Env) -> None:
@@ -542,6 +629,7 @@ def main() -> int:
         test_selection(pr)
         test_rule_data_drift(env)
         test_contracts(env)
+        test_codex_invocation_contract(env)
         test_boundaries(env)
         test_failure_modes(env)
         test_concurrency(env)

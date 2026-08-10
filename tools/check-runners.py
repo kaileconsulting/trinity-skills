@@ -192,6 +192,44 @@ with open(out, "w") as fh:
 
 
 # ---------------------------------------------------------------------------
+# Standalone CLI contract alignment (mirrors the iterate-plan boundary set)
+# ---------------------------------------------------------------------------
+
+def test_cli_alignment(env: Env) -> None:
+    env.set_mode("ok")
+    empty = os.path.join(env.handoff, "empty-diff.txt")
+    with open(empty, "w") as fh:
+        fh.write("\n")
+    proc = env.run("run-lens", "--diff", empty, "--intent", env.intent,
+                   "--lens", "senior-dev", "--scope-tag", "cli-align")
+    record("run-lens: empty diff refused (same contract as run-pass)",
+           proc.returncode == 1 and "empty" in proc.stderr)
+    os.remove(empty)
+
+    # Orchestration failure at the standalone boundary: codex missing from
+    # PATH must produce a concise run-lens diagnostic, never a traceback.
+    # PATH is a shim dir holding ONLY python3 + git — simply removing the
+    # fake codex would fall through to the REAL codex on the machine's PATH.
+    shim = os.path.join(env.root, "shim-no-codex")
+    if not os.path.isdir(shim):
+        os.makedirs(shim)
+        for tool in ("python3", "git"):
+            target = shutil.which(tool)
+            if target:
+                os.symlink(target, os.path.join(shim, tool))
+    e = dict(os.environ)
+    e["PATH"] = shim
+    proc = subprocess.run(
+        [os.path.join(env.bin, "run-lens"), "--diff", env.diff,
+         "--intent", env.intent, "--lens", "senior-dev",
+         "--scope-tag", "cli-align"],
+        cwd=env.repo, env=e, timeout=60, capture_output=True, text=True)
+    record("run-lens: codex missing -> exit 1 diagnostic, no traceback",
+           proc.returncode == 1 and "run-lens:" in proc.stderr
+           and "Traceback" not in proc.stderr)
+
+
+# ---------------------------------------------------------------------------
 # Composition goldens (module-level, pure)
 # ---------------------------------------------------------------------------
 
@@ -1693,6 +1731,7 @@ def main() -> int:
         env = Env(tmp)
         test_composition(rr)
         test_contracts(env)
+        test_cli_alignment(env)
         test_lifecycle(env, shared)
         test_immutability(env, shared)
         test_pass2_fold(env, shared)
