@@ -44,6 +44,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # --------------------------------------------------------------------------
+# Skill identity — derived from this file's location (bin/ -> skill root), so
+# the SAME BYTES behave correctly in whichever skill's bin/ they live in.
+# Never hardcode a skill name in this module: it is duplicated byte-identically
+# between the sibling skills and hash-checked by tools/check-parity.py.
+# --------------------------------------------------------------------------
+
+SKILL_NAME = Path(__file__).resolve().parent.parent.name
+
+
+# --------------------------------------------------------------------------
 # Codex invocation — flags preserved exactly per SKILL.md; the read-only
 # sandbox is a hard rule. One named constant so drift is a one-line diff.
 # --------------------------------------------------------------------------
@@ -57,10 +67,15 @@ CODEX_BASE_ARGS = (
 STDERR_TAIL_CHARS = 2000
 
 
-def codex_command(schema_path: Path, response_path: Path) -> list:
-    """The exact codex argv for one lens invocation; input arrives on stdin."""
+def codex_command(schema_path: Path, response_path: Path, cwd=None) -> list:
+    """The exact codex argv for one lens invocation; input arrives on stdin.
+    `cwd`, when given, becomes codex's working root via `-C` (placed right
+    after `exec`, matching the SKILL.md invocation shape) — iterate-plan
+    points codex at the plan's directory; iterate-review omits it and codex
+    inherits the invoking repo."""
+    c_args = ("-C", str(cwd)) if cwd is not None else ()
     return [
-        "codex", *CODEX_BASE_ARGS,
+        "codex", *CODEX_BASE_ARGS[:3], *c_args, *CODEX_BASE_ARGS[3:],
         "--output-schema", str(schema_path),
         "--json",
         "--output-last-message", str(response_path),
@@ -77,12 +92,14 @@ def staging_path_for(response_path: Path) -> Path:
     return response_path.with_name(response_path.name + suffix)
 
 
-def invoke_codex(input_text: str, schema_path: Path, staging_path: Path) -> dict:
+def invoke_codex(input_text: str, schema_path: Path, staging_path: Path,
+                 cwd=None) -> dict:
     """Run one codex invocation writing to a STAGING path (see
     staging_path_for). Returns {exit_code, stderr_tail}. The caller verifies
-    ownership and atomically publishes the staged response afterwards."""
+    ownership and atomically publishes the staged response afterwards.
+    `cwd` is forwarded to codex_command's `-C` (see there)."""
     proc = subprocess.run(
-        codex_command(schema_path, staging_path),
+        codex_command(schema_path, staging_path, cwd=cwd),
         input=input_text.encode("utf-8"),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
@@ -199,11 +216,12 @@ def ensure_trusted_path(path, boundaries, label: str) -> Path:
     trusted deputy: whatever it reads ends up in a prompt to the
     network-backed codex process with no human gate. So every runner-readable
     path must resolve — symlinks and traversal included, via realpath — to
-    its declared boundary: --diff/--intent to the per-repository handoff dir
+    its declared boundary: staged inputs to the per-repository handoff dir
     (resolve_handoff_dir — enforced, so even unrelated *in-repo* files like
-    an untracked .env or .git/config can't be named as inputs), and the pass
-    log to the invoking repo root. No shared cross-repo area exists at all:
-    one repository's review must never read files staged for another's."""
+    an untracked .env or .git/config can't be named as inputs), and
+    repository documents (the pass log, the plan) to the invoking repo root.
+    No shared cross-repo area exists at all: one repository's review must
+    never read files staged for another's."""
     real = Path(os.path.realpath(str(path)))
     for boundary in boundaries:
         b = Path(os.path.realpath(str(boundary)))
@@ -215,9 +233,9 @@ def ensure_trusted_path(path, boundaries, label: str) -> Path:
     raise TrustedPathError(
         f"{label} {path} resolves to {real}, outside the trusted boundaries "
         f"({', '.join(str(b) for b in boundaries)}). The pre-approved runner "
-        f"reads --diff/--intent only from the per-repo handoff dir "
-        f"(<git-dir>/iterate-review/) and the pass log only from inside the "
-        f"invoking repo root."
+        f"reads staged inputs only from the per-repo handoff dir "
+        f"(<git-dir>/{SKILL_NAME}/) and repository documents only from "
+        f"inside the invoking repo root."
     )
 
 
@@ -624,29 +642,31 @@ def publish_summary(lock: ScopeLock, state_dir: Path, pass_num: int,
 
 def resolve_handoff_dir(cwd=None):
     """Return (handoff_dir, warnings) — the ONLY directory the runner will
-    read --diff/--intent from: `<git-dir>/iterate-review/` (worktree-aware
-    via `git rev-parse --absolute-git-dir`; inside the repo but invisible to
-    git and uncommittable), falling back to `<cwd>/.iterate-review/` with a
-    warning outside a git repo. Enforced, not conventional: the standing
-    allowlist rule must not let an invocation-only attacker feed unrelated
-    in-repo files (an untracked .env, .git/config) to the network-backed
-    codex process — inputs must have been deliberately staged here by an
-    actor with write access."""
+    read staged inputs from: `<git-dir>/<skill-name>/` (worktree-aware via
+    `git rev-parse --absolute-git-dir`; inside the repo but invisible to git
+    and uncommittable), falling back to `<cwd>/.<skill-name>/` with a
+    warning outside a git repo. The name is location-derived (SKILL_NAME),
+    so each skill's byte-identical copy gets its own handoff dir. Enforced,
+    not conventional: the standing allowlist rule must not let an
+    invocation-only attacker feed unrelated in-repo files (an untracked
+    .env, .git/config) to the network-backed codex process — inputs must
+    have been deliberately staged here by an actor with write access."""
     cwd = Path(cwd) if cwd is not None else Path.cwd()
+    fallback = cwd / f".{SKILL_NAME}"
     try:
         proc = subprocess.run(
             ["git", "rev-parse", "--absolute-git-dir"],
             cwd=str(cwd), capture_output=True, text=True,
         )
     except OSError as exc:
-        return cwd / ".iterate-review", [
+        return fallback, [
             f"git unavailable ({exc}); input handoff falls back to "
-            f"<cwd>/.iterate-review"]
+            f"<cwd>/.{SKILL_NAME}"]
     if proc.returncode != 0:
-        return cwd / ".iterate-review", [
-            "not inside a git repository; input handoff falls back to "
-            "<cwd>/.iterate-review"]
-    return Path(proc.stdout.strip()) / "iterate-review", []
+        return fallback, [
+            f"not inside a git repository; input handoff falls back to "
+            f"<cwd>/.{SKILL_NAME}"]
+    return Path(proc.stdout.strip()) / SKILL_NAME, []
 
 
 def resolve_repo_root(cwd=None):

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """prune-state — clean up state directories for converged or abandoned runs.
 
-Part of the iterate-review runner set (stdlib-only, Python >= 3.9); see
+Part of the trinity runner set (stdlib-only, Python >= 3.9; this file is
+duplicated byte-identically between the sibling skills' bin/ — its skill
+root is derived from its own location, never hardcoded); see
 docs/runner-scripts-artifact-hygiene-2026-08-06.md. The runner composes and
 invokes; it never folds, never writes pass logs, never decides — and this
 tool never infers convergence: targeted cleanup (--scope) is invoked by the
