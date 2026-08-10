@@ -31,6 +31,7 @@ Usage:
 
 from __future__ import annotations
 
+import fcntl
 import glob
 import importlib.util
 import json
@@ -1102,6 +1103,120 @@ def test_prune(env: Env, shared) -> None:
            not os.path.exists(os.path.join(pr4_dir, "run.lock")))
 
 
+def test_prune_fold1(env: Env, shared) -> None:
+    """Phase 2 review, pass-1 fold: malformed-metadata classification,
+    terminal-safe inspection output, accurate partial force-unlock
+    reporting, no-follow deletion."""
+    state_root = os.path.join(env.skill, "state")
+    env_path = dict(os.environ)
+    env_path["PATH"] = env.fakebin + os.pathsep + env_path["PATH"]
+
+    # Structurally incomplete or wrongly-typed pid metadata reads as
+    # MALFORMED everywhere — never a crash, never a truncated/coerced pid
+    # (1.9 must not be probed as pid 1; true must not be probed as pid 1).
+    mf = os.path.join(state_root, "mf1")
+    os.makedirs(mf)
+    mf_lock = os.path.join(mf, "run.lock")
+    for content in ('{}', '{"role": "run-pass"}',
+                    '{"pid": 1.9, "token": "x"}',
+                    '{"pid": "123", "token": "x"}',
+                    '{"pid": true, "token": "x"}'):
+        with open(mf_lock, "w") as fh:
+            fh.write(content + "\n")
+        o = env.run("prune-state")
+        s = env.run("prune-state", "--scope", "mf1")
+        f = env.run("prune-state", "--force-unlock", "mf1")
+        if not (o.returncode == s.returncode == f.returncode == 0
+                and "MALFORMED" in o.stdout and "MALFORMED" in s.stdout
+                and "MALFORMED" in f.stdout):
+            record("prune-fold1: incomplete/mistyped lock metadata reads "
+                   "MALFORMED in overview, --scope, --force-unlock",
+                   False, f"content={content} exits="
+                   f"{[o.returncode, s.returncode, f.returncode]}")
+            break
+    else:
+        record("prune-fold1: incomplete/mistyped lock metadata reads "
+               "MALFORMED in overview, --scope, --force-unlock", True)
+
+    # Control characters in lock bytes are escaped on output — a crafted
+    # lock can't drive the operator's terminal during a recovery decision.
+    with open(mf_lock, "w") as fh:
+        fh.write('{"pid": %d, "token": "[31mEVIL]8;;x", '
+                 '"role": "r"}\n' % os.getpid())
+    proc = env.run("prune-state", "--force-unlock", "mf1")
+    record("prune-fold1: inspection output escapes control characters",
+           proc.returncode == 0 and "\x1b" not in proc.stdout
+           and "\\x1b" in proc.stdout,
+           proc.stdout[-160:])
+    os.unlink(mf_lock)
+    os.rmdir(mf)
+
+    # Partial force-unlock under a mid-flight lock change: the marker's
+    # removal is reported, the changed lock refuses, exit 1, and the new
+    # lock content survives untouched.
+    fu2 = os.path.join(state_root, "fu2")
+    os.makedirs(fu2)
+    fu2_lock = os.path.join(fu2, "run.lock")
+    fu2_marker = os.path.join(fu2, "run.lock.reclaim")
+    with open(fu2_marker, "w") as fh:
+        fh.write(json.dumps({"pid": spawn_dead_pid(), "timestamp": "t",
+                             "role": "run-pass", "token": "m2",
+                             "owner_name": "x"}) + "\n")
+    original = json.dumps({"pid": spawn_dead_pid(), "timestamp": "t",
+                           "role": "run-pass", "token": "stale3",
+                           "owner_name": "x"}) + "\n"
+    with open(fu2_lock, "w") as fh:
+        fh.write(original)
+    successor = json.dumps({"pid": os.getpid(), "timestamp": "t",
+                            "role": "run-pass", "token": "successor3",
+                            "owner_name": "x"}) + "\n"
+    hold = os.open(fu2_lock, os.O_RDWR)
+    fcntl.flock(hold, fcntl.LOCK_EX)
+    proc = subprocess.Popen(
+        [os.path.join(env.bin, "prune-state"), "--force-unlock", "fu2",
+         "--yes"],
+        cwd=env.repo, env=env_path,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    deadline = time.time() + 10
+    while time.time() < deadline and os.path.exists(fu2_marker):
+        time.sleep(0.02)  # marker removal = force-unlock reached the lock
+    marker_removed_first = not os.path.exists(fu2_marker)
+    os.lseek(hold, 0, os.SEEK_SET)
+    os.truncate(hold, 0)
+    os.write(hold, successor.encode())
+    fcntl.flock(hold, fcntl.LOCK_UN)
+    os.close(hold)
+    stdout, _ = proc.communicate(timeout=30)
+    record("prune-fold1: partial force-unlock reports the marker removal AND "
+           "the lock refusal, exit 1, successor content intact",
+           marker_removed_first and proc.returncode == 1
+           and "removed: run.lock.reclaim" in stdout
+           and "refused: run.lock" in stdout
+           and read(fu2_lock) == successor,
+           f"exit={proc.returncode} out={stdout.strip()[-200:]}")
+    os.unlink(fu2_lock)
+    os.rmdir(fu2)
+
+    # No-follow deletion: a nested symlink planted inside a scope is
+    # unlinked as a LINK — its out-of-state target is never entered.
+    outside = os.path.join(env.root, "outside-fold1")
+    os.makedirs(outside)
+    canary = os.path.join(outside, "canary.txt")
+    with open(canary, "w") as fh:
+        fh.write("survive\n")
+    sym = os.path.join(state_root, "prsym")
+    os.makedirs(sym)
+    with open(os.path.join(sym, "pass-9.stray.input.txt"), "w") as fh:
+        fh.write("orphan\n")
+    os.symlink(outside, os.path.join(sym, "debug"))
+    proc = env.run("prune-state", "--scope", "prsym", "--yes")
+    record("prune-fold1: nested symlink unlinked as a link; target and its "
+           "contents survive, scope fully removed",
+           proc.returncode == 0 and not os.path.exists(sym)
+           and read(canary) == "survive\n",
+           proc.stdout[-160:])
+
+
 def spawn_dead_pid() -> int:
     proc = subprocess.Popen(["true"])
     proc.wait()
@@ -1129,6 +1244,7 @@ def main() -> int:
         test_immutability(env, shared)
         test_pass2_fold(env, shared)
         test_prune(env, shared)
+        test_prune_fold1(env, shared)
     except Exception as exc:  # noqa: BLE001
         import traceback
         traceback.print_exc()

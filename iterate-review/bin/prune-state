@@ -44,6 +44,7 @@ if sys.version_info < MIN_PYTHON:
 
 import argparse
 import os
+import re
 import time
 from pathlib import Path
 
@@ -67,6 +68,16 @@ class PruneError(Exception):
 
 def out(text: str) -> None:
     shared.emit_stdout(text + "\n")
+
+
+# Lock metadata is untrusted bytes echoed to a human deciding whether to
+# force-unlock — escape control characters so a crafted lock can't smuggle
+# ANSI/OSC sequences into the operator's terminal at exactly that moment.
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+
+
+def sanitize(text: str) -> str:
+    return _CONTROL_CHARS.sub(lambda m: "\\x%02x" % ord(m.group()), text)
 
 
 # ---------------------------------------------------------------------------
@@ -122,13 +133,16 @@ def newest_mtime(state_dir: Path) -> float:
 
 def _pid_state(parsed):
     """'alive' | 'dead' | None (None = metadata unusable, treat as malformed).
-    A JSON lock whose pid isn't an integer must read as malformed, exactly
-    like unparseable bytes — inspection tools crash on nothing."""
+    Self-contained validation: a pid that isn't exactly a positive JSON
+    integer — missing, a numeric string, a float (int() would silently
+    truncate 1.9 to pid 1), a bool — reads as malformed, exactly like
+    unparseable bytes. Inspection tools crash on nothing and never act on a
+    pid the metadata doesn't literally contain. (_read_lock already nullifies
+    pid-less JSON upstream; this doesn't rely on that.)"""
     if parsed is None:
         return None
-    try:
-        pid = int(parsed["pid"])
-    except (ValueError, TypeError):
+    pid = parsed.get("pid") if isinstance(parsed, dict) else None
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
         return None
     return "alive" if shared._pid_alive(pid) else "dead"
 
@@ -142,8 +156,8 @@ def describe_lock(state_dir: Path) -> str:
         if state is None:
             parts.append("MALFORMED lock")
         elif state == "alive":
-            parts.append(f"LIVE lock (pid {parsed['pid']}, "
-                         f"role {parsed.get('role', '?')})")
+            role = sanitize(str(parsed.get("role", "?")))
+            parts.append(f"LIVE lock (pid {parsed['pid']}, role {role})")
         else:
             parts.append(f"stale lock (dead pid {parsed['pid']})")
     marker_raw, marker = shared._read_lock(state_dir / RECLAIM_NAME)
@@ -159,38 +173,71 @@ def describe_lock(state_dir: Path) -> str:
 # Deletion — always under the scope's own run.lock (role=prune)
 # ---------------------------------------------------------------------------
 
+def _delete_tree_fd(dir_fd: int, lock, skip: str = None) -> None:
+    """Delete the contents of the directory open at dir_fd, entirely through
+    dir_fd-relative operations that never follow a symlink: child directories
+    are opened O_NOFOLLOW|O_DIRECTORY, everything else (symlinks included —
+    the LINK is unlinked, its target never touched) goes through
+    unlink(dir_fd=). This closes the validate-then-reopen-by-path gap: a
+    component swapped for a symlink mid-deletion cannot redirect the
+    traversal outside state/. (Displacing a whole real directory INTO the
+    walk still requires rename rights inside the skill install — filesystem
+    write access, which no argument to this pre-approved tool grants.)"""
+    with os.scandir(dir_fd) as entries:
+        names = [(e.name, e.is_dir(follow_symlinks=False)) for e in entries]
+    for name, is_dir in names:
+        if skip and name == skip:
+            continue
+        # Re-verify ownership before every removal: a force-unlocked
+        # (displaced) prune must stop deleting the moment a successor can
+        # exist. Name-relative deletion can't reach a successor's artifacts
+        # anyway (allocation skips orphaned numbers; debug names are unique)
+        # — this is the belt to that suspender.
+        lock.verify()
+        if is_dir:
+            try:
+                child = os.open(name, os.O_RDONLY | os.O_DIRECTORY
+                                | os.O_NOFOLLOW, dir_fd=dir_fd)
+            except OSError:
+                continue  # vanished or swapped; the final rmdir reports
+            try:
+                _delete_tree_fd(child, lock)
+            finally:
+                os.close(child)
+            try:
+                os.rmdir(name, dir_fd=dir_fd)
+            except OSError:
+                pass  # new content appeared (e.g. a lockless standalone
+                # run-lens writing debug/ mid-prune): leave it, report via
+                # the final rmdir below. Never retried.
+        else:
+            try:
+                os.unlink(name, dir_fd=dir_fd)
+            except OSError:
+                pass
+
+
 def delete_scope(state_dir: Path) -> bool:
     """Delete one scope dir under its own lock. Raises LockError when the
-    scope can't be owned (live/ambiguous lock, reclaim marker). Returns True
-    when the directory is fully gone; False when contents were removed but
-    the dir survived because a new run snuck into the unlock->rmdir window —
-    reported, never retried (the new run owns the scope now)."""
+    scope can't be owned (live/ambiguous lock, reclaim marker); raises
+    PruneError when the dir can't be opened without following links. Returns
+    True when the directory is fully gone; False when contents were removed
+    but the dir survived because a new run snuck into the unlock->rmdir
+    window — reported, never retried (the new run owns the scope now)."""
     lock = shared.ScopeLock(state_dir, role="prune")
     lock.acquire()
     try:
-        files, dirs = scope_contents(state_dir)
-        for path in files:
-            if path == lock.lock_path:
-                continue  # our own lock is released LAST, below
-            # Re-verify ownership before every removal: a force-unlocked
-            # (displaced) prune must stop deleting the moment a successor
-            # can exist. Listed-path deletion can't name a successor's
-            # artifacts anyway (allocation skips orphaned numbers; debug
-            # names are unique) — this is the belt to that suspender.
-            lock.verify()
-            try:
-                os.unlink(path)
-            except FileNotFoundError:
-                pass
-        for path in dirs:
-            lock.verify()
-            try:
-                os.rmdir(path)
-            except OSError:
-                # New content appeared (e.g. a lockless standalone run-lens
-                # writing debug/ artifacts mid-prune): leave it, report via
-                # the final rmdir below. Never retried.
-                pass
+        try:
+            fd = os.open(state_dir, os.O_RDONLY | os.O_DIRECTORY
+                         | os.O_NOFOLLOW)
+        except OSError as exc:
+            raise PruneError(
+                f"cannot open {state_dir} without following links ({exc}) — "
+                f"refusing to delete") from None
+        try:
+            _delete_tree_fd(fd, lock, skip=LOCK_NAME)
+        finally:
+            os.close(fd)
     finally:
         lock.release()  # conditional on token; unlinks run.lock last
     try:
@@ -215,7 +262,7 @@ def prune_one(scope: str, yes: bool) -> int:
         return EXIT_OK
     try:
         gone = delete_scope(state_dir)
-    except shared.LockError as exc:
+    except (shared.LockError, PruneError) as exc:
         out(f"refused: {exc}")
         return EXIT_REFUSED
     if gone:
@@ -254,7 +301,7 @@ def prune_aged(older_than_days: int, yes: bool) -> int:
             continue
         try:
             gone = delete_scope(state_dir)
-        except shared.LockError as exc:
+        except (shared.LockError, PruneError) as exc:
             out(f"  skipped: {exc}")
             skipped += 1
             continue
@@ -290,7 +337,7 @@ def force_unlock(scope: str, yes: bool) -> int:
                                (RECLAIM_NAME, marker_raw, marker_parsed)):
         if raw is None:
             continue
-        out(f"{label}: {raw.decode('utf-8', 'replace').rstrip()}")
+        out(f"{label}: {sanitize(raw.decode('utf-8', 'replace').rstrip())}")
         state = _pid_state(parsed)
         if state is None:
             out("  -> MALFORMED metadata")
@@ -313,20 +360,24 @@ def force_unlock(scope: str, yes: bool) -> int:
     # under that fence IS the token revocation: the token ceases to exist,
     # so a displaced-but-live owner's next fenced check (verify/verify_and)
     # fails and it aborts without publishing — in particular, no summary.
-    refused = []
+    removed, refused = [], []
     for path, observed in ((marker_path, marker_raw), (lock_path, lock_raw)):
         if observed is None:
             continue
-        removed = shared._locked_mutation(
+        ok = shared._locked_mutation(
             path,
             lambda raw, o=observed: raw == o,
             lambda fd, p=path: os.unlink(p))
-        if not removed:
-            refused.append(path.name)
+        (removed if ok else refused).append(path.name)
+    # Report BOTH outcomes: under a race one file can already be gone while
+    # the other refuses — "nothing touched" would be a lie the operator acts
+    # on. Each removal stands alone (a cleared marker is never re-created).
+    if removed:
+        out(f"removed: {', '.join(removed)}")
     if refused:
         out(f"refused: {', '.join(refused)} changed since inspection (a "
-            f"successor or competing recovery acted) — nothing further "
-            f"touched; re-inspect with --force-unlock {scope}")
+            f"successor or competing recovery acted) — that file was left "
+            f"alone; re-inspect with --force-unlock {scope}")
         return EXIT_REFUSED
     out(f"cleared: scope {scope} unlocked")
     return EXIT_OK
