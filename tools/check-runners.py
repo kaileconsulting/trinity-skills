@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import fcntl
 import glob
+import importlib.machinery
 import importlib.util
 import json
 import os
@@ -1321,6 +1322,113 @@ def test_prune_fold2(env: Env, shared) -> None:
     os.rmdir(sl)
 
 
+def test_prune_fold3(env: Env, shared) -> None:
+    """Phase 2 review, pass-3 fold: under-lock freshness recheck, non-regular
+    lock classification, genuine-failure reporting, name sanitization."""
+    state_root = os.path.join(env.skill, "state")
+
+    # Age-sweep regression trap: a genuinely old scope MUST still be swept —
+    # the under-lock freshness recheck must not be fooled by the mtime bumps
+    # prune's own lock acquisition causes (dir mtime + fresh run.lock).
+    old = os.path.join(state_root, "old1")
+    os.makedirs(old)
+    with open(os.path.join(old, "pass-1.x.input.txt"), "w") as fh:
+        fh.write("x\n")
+    backdate = time.time() - 2 * 86400
+    os.utime(os.path.join(old, "pass-1.x.input.txt"), (backdate, backdate))
+    os.utime(old, (backdate, backdate))
+    proc = env.run("prune-state", "--older-than", "1", "--yes")
+    record("prune-fold3: backdated scope swept — recheck ignores its own "
+           "lock's mtime bumps",
+           proc.returncode == 0 and not os.path.exists(old),
+           proc.stdout[-200:])
+
+    # The under-lock recheck itself: only_if=False under the lock -> scope
+    # untouched, 'skipped', and no lock left behind.
+    loader = importlib.machinery.SourceFileLoader(
+        "ps_mod", os.path.join(env.bin, "prune-state"))
+    spec = importlib.util.spec_from_loader("ps_mod", loader)
+    ps = importlib.util.module_from_spec(spec)
+    loader.exec_module(ps)
+    fresh = os.path.join(state_root, "fresh1")
+    os.makedirs(fresh)
+    keep = os.path.join(fresh, "pass-1.x.input.txt")
+    with open(keep, "w") as fh:
+        fh.write("keep\n")
+    outcome, problems = ps.delete_scope(ps.Path(fresh),
+                                        only_if=lambda: False)
+    record("prune-fold3: only_if=False under the lock skips — nothing "
+           "deleted, lock released",
+           outcome == "skipped" and problems == []
+           and read(keep) == "keep\n"
+           and not os.path.exists(os.path.join(fresh, "run.lock")))
+    os.unlink(keep)
+    os.rmdir(fresh)
+
+    # Non-regular objects at lock names: classified without crashing or
+    # hanging, and destructive modes refuse.
+    for maker, kind in ((os.mkdir, "directory"), (os.mkfifo, "fifo")):
+        nr = os.path.join(state_root, "nr1")
+        os.makedirs(nr)
+        maker(os.path.join(nr, "run.lock"))
+        o = env.run("prune-state")
+        s = env.run("prune-state", "--scope", "nr1")
+        fdry = env.run("prune-state", "--force-unlock", "nr1")
+        fyes = env.run("prune-state", "--force-unlock", "nr1", "--yes")
+        pyes = env.run("prune-state", "--scope", "nr1", "--yes")
+        still = os.path.exists(os.path.join(nr, "run.lock"))
+        record(f"prune-fold3: {kind} at run.lock — inspected without "
+               f"crash/hang, destructive modes refuse, object untouched",
+               o.returncode == 0 and "MALFORMED" in o.stdout
+               and s.returncode == 0
+               and fdry.returncode == 0 and "NOT A REGULAR FILE" in fdry.stdout
+               and fyes.returncode == 1 and pyes.returncode == 1 and still,
+               f"exits={[o.returncode, s.returncode, fdry.returncode, fyes.returncode, pyes.returncode]}")
+        if kind == "directory":
+            os.rmdir(os.path.join(nr, "run.lock"))
+        else:
+            os.unlink(os.path.join(nr, "run.lock"))
+        os.rmdir(nr)
+
+    # Genuine removal failures surface as exit 1 with the failing entry —
+    # never as the benign "a new run owns it now" handoff.
+    fl = os.path.join(state_root, "faildel")
+    os.makedirs(os.path.join(fl, "sub"))
+    with open(os.path.join(fl, "sub", "stuck.txt"), "w") as fh:
+        fh.write("stuck\n")
+    os.chmod(os.path.join(fl, "sub"), 0o555)
+    proc = env.run("prune-state", "--scope", "faildel", "--yes")
+    record("prune-fold3: undeletable entry -> exit 1 naming the entry, no "
+           "false new-run handoff",
+           proc.returncode == 1 and "failed" in proc.stdout
+           and "stuck.txt" in proc.stdout
+           and "new run" not in proc.stdout,
+           proc.stdout[-240:])
+    os.chmod(os.path.join(fl, "sub"), 0o755)
+    proc = env.run("prune-state", "--scope", "faildel", "--yes")
+    record("prune-fold3: after the obstacle clears, the same prune succeeds",
+           proc.returncode == 0 and not os.path.exists(fl))
+
+    # Filesystem-derived names are sanitized: a scope/entry name carrying
+    # ESC or LF cannot forge output records.
+    weird = os.path.join(state_root, "ev\x1bil")
+    os.makedirs(weird)
+    with open(os.path.join(weird, "fi\nle.txt"), "w") as fh:
+        fh.write("x\n")
+    o = env.run("prune-state")
+    s = env.run("prune-state", "--scope", "ev\x1bil")
+    record("prune-fold3: control chars in scope/entry names escaped in "
+           "overview and dry run",
+           o.returncode == 0 and s.returncode == 0
+           and "\x1b" not in o.stdout and "\x1b" not in s.stdout
+           and "\\x1b" in o.stdout and "\\x1b" in s.stdout
+           and "\\x0a" in s.stdout,
+           s.stdout[-200:])
+    proc = env.run("prune-state", "--scope", "ev\x1bil", "--yes")
+    record("prune-fold3: weird-named scope still deletable",
+           proc.returncode == 0 and not os.path.exists(weird))
+
+
 def spawn_dead_pid() -> int:
     proc = subprocess.Popen(["true"])
     proc.wait()
@@ -1350,6 +1458,7 @@ def main() -> int:
         test_prune(env, shared)
         test_prune_fold1(env, shared)
         test_prune_fold2(env, shared)
+        test_prune_fold3(env, shared)
     except Exception as exc:  # noqa: BLE001
         import traceback
         traceback.print_exc()

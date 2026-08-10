@@ -37,6 +37,7 @@ import json
 import os
 import re
 import secrets
+import stat
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -235,11 +236,28 @@ def _pid_alive(pid: int) -> bool:
 
 
 def _read_lock(path: Path):
-    """Return (raw_bytes, parsed_dict_or_None). Missing file -> (None, None)."""
+    """Return (raw_bytes, parsed_dict_or_None). Missing file -> (None, None).
+
+    Opens O_NONBLOCK and verifies the inode is a REGULAR file before reading:
+    a directory, FIFO, or device squatting at a lock name must classify as
+    malformed (b"", None) — never crash the caller, never block inspection
+    waiting for a FIFO writer. Lock names are the recovery path's input;
+    they must be readable-or-refusable under any filesystem state."""
     try:
-        raw = path.read_bytes()
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
     except FileNotFoundError:
         return None, None
+    except OSError:
+        return b"", None
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return b"", None
+        try:
+            raw = os.read(fd, 65536)
+        except OSError:
+            return b"", None
+    finally:
+        os.close(fd)
     try:
         parsed = json.loads(raw.decode("utf-8"))
         if not isinstance(parsed, dict) or "pid" not in parsed or "token" not in parsed:

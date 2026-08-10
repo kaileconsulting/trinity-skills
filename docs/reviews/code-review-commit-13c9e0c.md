@@ -61,3 +61,34 @@ Diff captured at 2026-08-10 09:55; head SHA `13c9e0c` (reviewing that commit's o
 ### Diff snapshot reference
 
 Diff captured at 2026-08-10 10:07; head SHA `d9e6138`.
+
+## Pass 3 — 2026-08-10 10:48 [HISTORICAL]
+
+**Scope:** commit series 13c9e0c^..HEAD (Phase 2 + folds), standalone · **Diff size:** 1326 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+1. **Age sweep can delete a scope that became fresh after candidate selection** — HIGH · lens: senior-dev: candidates were aged before locking; a run starting AND finishing in the scan-to-lock window left fresh, unlocked state the sweep would still delete. Real concurrent-use logic bug, no adversary required.
+   → Opus: incorporated — `delete_scope` gains `only_if`, re-checked after lock acquisition; the sweep passes a freshness recheck via new `newest_content_mtime` (deliberately blind to the mtime bumps prune's own lock creation causes — dir mtime and the fresh `run.lock` — otherwise the sweep becomes a permanent no-op). Fixtures: backdated scope still swept (the no-op regression trap); `only_if=False` under the lock leaves content intact and no lock behind.
+2. **Non-regular lock entries crash or hang every inspection/recovery path** — HIGH · lens: qa (HIGH) + security (MEDIUM), merged: a directory named `run.lock` crashed `_read_lock` (uncaught `IsADirectoryError`); a FIFO blocked inspection indefinitely — the documented recovery path becomes unusable exactly when needed.
+   → Opus: incorporated — `runner_shared._read_lock` now opens `O_NONBLOCK`, verifies `S_ISREG` before reading, and classifies anything else as malformed; `_read_lock_at` does the same fd-relatively and reports `NOT A REGULAR FILE`; destructive modes refuse with the object untouched. Fixtures: directory and FIFO at `run.lock` across overview, targeted prune, and force-unlock — no crash, no hang, refusal pinned.
+3. **Deletion errors misreported as successful new-run handoff** — MEDIUM · lens: senior-dev: `_delete_tree_fd` swallowed every `OSError`, so EACCES/EIO surfaced as "a new run owns it now", exit 0 — violating the exit contract's `1 = failed`.
+   → Opus: incorporated — errno triage (`ENOENT`/`ENOTEMPTY`/`EEXIST` benign; everything else collected as `(entry, error)`); `delete_scope` returns a four-way outcome (`deleted|skipped|survived|failed`); both CLI paths report failing entries and exit 1, and the handoff message appears only when deletion was clean. Fixture: unwritable subdirectory → exit 1 naming the stuck entry, then succeeds once cleared.
+4. **Filesystem-derived and argument-derived names echoed unsanitized** — MEDIUM · lens: security: scope/entry names (and the echoed `--force-unlock` argument) could carry control bytes into diagnostics — the pass-2 forgery vector through a different source.
+   → Opus: incorporated — `sanitize()` applied at every print site interpolating scope names, entry names, or error strings. Fixture: scope named with embedded ESC containing a file with embedded LF — overview and dry run emit escaped forms only, and the scope remains deletable.
+
+### Code corrections applied
+
+- (none filed by any lens)
+
+### New questions Codex raised
+
+- (none)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: REVISE · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-10 10:23; head SHA `8aa5dfb` (pass-2 fold).

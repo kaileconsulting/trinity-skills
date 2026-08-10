@@ -43,9 +43,11 @@ if sys.version_info < MIN_PYTHON:
     sys.exit(1)
 
 import argparse
+import errno
 import json
 import os
 import re
+import stat
 import time
 from pathlib import Path
 
@@ -147,6 +149,24 @@ def newest_mtime(state_dir: Path) -> float:
     return newest
 
 
+def newest_content_mtime(state_dir: Path) -> float:
+    """Freshness recheck run AFTER prune's own lock is acquired — so it must
+    ignore what acquiring changed: the run.lock we just created and the
+    directory mtime our create bumped. Only surviving CONTENT counts. An
+    empty (content-free) scope reports 0.0: nothing fresh, deletable."""
+    newest = 0.0
+    for base, dnames, fnames in os.walk(state_dir):
+        for name in list(fnames) + list(dnames):
+            if base == str(state_dir) and name in (LOCK_NAME, RECLAIM_NAME):
+                continue
+            try:
+                newest = max(newest, os.stat(os.path.join(base, name),
+                                             follow_symlinks=False).st_mtime)
+            except OSError:
+                pass
+    return newest
+
+
 def _pid_state(parsed):
     """'alive' | 'dead' | None (None = metadata unusable, treat as malformed).
     Self-contained validation: a pid that isn't exactly a positive JSON
@@ -189,7 +209,16 @@ def describe_lock(state_dir: Path) -> str:
 # Deletion — always under the scope's own run.lock (role=prune)
 # ---------------------------------------------------------------------------
 
-def _delete_tree_fd(dir_fd: int, lock, skip: str = None) -> None:
+# errnos that mean "the entry vanished or new content raced in" — expected
+# under the documented concurrency model (a lockless standalone run-lens may
+# write debug/ mid-prune), so they are NOT failures. Anything else (EACCES,
+# EIO, ELOOP on a child open, ...) is a genuine failure that must surface as
+# exit 1 — never misreported as the benign new-run handoff.
+_BENIGN_ERRNOS = (errno.ENOENT, errno.ENOTEMPTY, errno.EEXIST)
+
+
+def _delete_tree_fd(dir_fd: int, lock, problems: list, at: str,
+                    skip: str = None) -> None:
     """Delete the contents of the directory open at dir_fd, entirely through
     dir_fd-relative operations that never follow a symlink: child directories
     are opened O_NOFOLLOW|O_DIRECTORY, everything else (symlinks included —
@@ -198,7 +227,10 @@ def _delete_tree_fd(dir_fd: int, lock, skip: str = None) -> None:
     component swapped for a symlink mid-deletion cannot redirect the
     traversal outside state/. (Displacing a whole real directory INTO the
     walk still requires rename rights inside the skill install — filesystem
-    write access, which no argument to this pre-approved tool grants.)"""
+    write access, which no argument to this pre-approved tool grants.)
+
+    Genuine removal failures are appended to `problems` as (relative-name,
+    error) — benign disappearance/new-content races are not."""
     with os.scandir(dir_fd) as entries:
         names = [(e.name, e.is_dir(follow_symlinks=False)) for e in entries]
     for name, is_dir in names:
@@ -210,39 +242,51 @@ def _delete_tree_fd(dir_fd: int, lock, skip: str = None) -> None:
         # anyway (allocation skips orphaned numbers; debug names are unique)
         # — this is the belt to that suspender.
         lock.verify()
+        rel = f"{at}{name}"
         if is_dir:
             try:
                 child = os.open(name, os.O_RDONLY | os.O_DIRECTORY
                                 | os.O_NOFOLLOW, dir_fd=dir_fd)
-            except OSError:
-                continue  # vanished or swapped; the final rmdir reports
+            except OSError as exc:
+                if exc.errno not in _BENIGN_ERRNOS:
+                    problems.append((rel, str(exc)))
+                continue
             try:
-                _delete_tree_fd(child, lock)
+                _delete_tree_fd(child, lock, problems, at=rel + "/")
             finally:
                 os.close(child)
             try:
                 os.rmdir(name, dir_fd=dir_fd)
-            except OSError:
-                pass  # new content appeared (e.g. a lockless standalone
-                # run-lens writing debug/ mid-prune): leave it, report via
-                # the final rmdir below. Never retried.
+            except OSError as exc:
+                if exc.errno not in _BENIGN_ERRNOS:
+                    problems.append((rel, str(exc)))
         else:
             try:
                 os.unlink(name, dir_fd=dir_fd)
-            except OSError:
-                pass
+            except OSError as exc:
+                if exc.errno not in _BENIGN_ERRNOS:
+                    problems.append((rel, str(exc)))
 
 
-def delete_scope(state_dir: Path) -> bool:
+def delete_scope(state_dir: Path, only_if=None):
     """Delete one scope dir under its own lock. Raises LockError when the
     scope can't be owned (live/ambiguous lock, reclaim marker); raises
-    PruneError when the dir can't be opened without following links. Returns
-    True when the directory is fully gone; False when contents were removed
-    but the dir survived because a new run snuck into the unlock->rmdir
-    window — reported, never retried (the new run owns the scope now)."""
+    PruneError when the dir can't be opened without following links.
+
+    `only_if` is re-checked AFTER lock acquisition, closing the scan-to-lock
+    window: a scope selected as deletable earlier may have been used by a
+    completed run in between. Returns (outcome, problems):
+      'deleted'  — directory fully gone
+      'skipped'  — only_if said no under the lock; nothing touched
+      'survived' — contents removed cleanly but the dir refilled: a new run
+                   raced in after unlock (benign handoff, never retried)
+      'failed'   — genuine removal failures; details in problems"""
     lock = shared.ScopeLock(state_dir, role="prune")
     lock.acquire()
+    problems = []
     try:
+        if only_if is not None and not only_if():
+            return "skipped", []
         try:
             fd = os.open(state_dir, os.O_RDONLY | os.O_DIRECTORY
                          | os.O_NOFOLLOW)
@@ -251,39 +295,47 @@ def delete_scope(state_dir: Path) -> bool:
                 f"cannot open {state_dir} without following links ({exc}) — "
                 f"refusing to delete") from None
         try:
-            _delete_tree_fd(fd, lock, skip=LOCK_NAME)
+            _delete_tree_fd(fd, lock, problems, at="", skip=LOCK_NAME)
         finally:
             os.close(fd)
     finally:
         lock.release()  # conditional on token; unlinks run.lock last
+    if problems:
+        return "failed", problems
     try:
         os.rmdir(state_dir)
     except OSError:
-        return False
-    return True
+        return "survived", []
+    return "deleted", []
 
 
 def prune_one(scope: str, yes: bool) -> int:
     state_dir = resolve_scope_dir(scope)
     if not state_dir.is_dir():
-        out(f"{state_dir}: no state directory — nothing to prune")
+        out(f"{sanitize(str(state_dir))}: no state directory — nothing to prune")
         return EXIT_OK
     entries = disclose(state_dir)
-    out(f"scope {scope} ({describe_lock(state_dir)}):")
+    out(f"scope {sanitize(scope)} ({describe_lock(state_dir)}):")
     for entry in entries:
-        out(f"  would delete: {entry}")
+        out(f"  would delete: {sanitize(entry)}")
     if not yes:
         out(f"dry run — nothing deleted ({len(entries)} entries). "
             f"Re-run with --yes to delete.")
         return EXIT_OK
     try:
-        gone = delete_scope(state_dir)
+        outcome, problems = delete_scope(state_dir)
     except (shared.LockError, PruneError) as exc:
         out(f"refused: {exc}")
         return EXIT_REFUSED
-    if gone:
+    if outcome == "deleted":
         out(f"pruned: {len(entries)} entries, scope directory removed")
-    else:
+    elif outcome == "failed":
+        for rel, err in problems:
+            out(f"  failed: {sanitize(rel)} — {sanitize(err)}")
+        out(f"failed: {len(problems)} entries could not be removed — "
+            f"remaining state left in place")
+        return EXIT_REFUSED
+    else:  # survived
         out("contents pruned, but the scope directory was left in place — a "
             "new run started during cleanup and owns it now (not retried)")
     return EXIT_OK
@@ -305,29 +357,51 @@ def prune_aged(older_than_days: int, yes: bool) -> int:
     if not candidates:
         out(f"no scope directories older than {older_than_days} days")
         return EXIT_OK
-    skipped = 0
+    skipped = failures = 0
     for state_dir in candidates:
         age_days = (time.time() - newest_mtime(state_dir)) / 86400
-        out(f"scope {state_dir.name} (age {age_days:.1f}d, "
+        out(f"scope {sanitize(state_dir.name)} (age {age_days:.1f}d, "
             f"{describe_lock(state_dir)}):")
         for entry in disclose(state_dir):
-            out(f"  would delete: {entry}")
+            out(f"  would delete: {sanitize(entry)}")
         if not yes:
             continue
         try:
-            gone = delete_scope(state_dir)
+            # Freshness is re-checked under the prune lock: a run that
+            # started AND finished between candidate scan and lock
+            # acquisition left fresh (unlocked) state — the sweep must not
+            # delete what --older-than no longer describes.
+            outcome, problems = delete_scope(
+                state_dir,
+                only_if=lambda d=state_dir: newest_content_mtime(d) <= cutoff)
         except (shared.LockError, PruneError) as exc:
             out(f"  skipped: {exc}")
             skipped += 1
             continue
-        out("  pruned" if gone else
-            "  contents pruned; directory left to the run that just started")
+        if outcome == "deleted":
+            out("  pruned")
+        elif outcome == "skipped":
+            out("  skipped: fresh state appeared before the lock was "
+                "acquired — no longer older than the threshold")
+            skipped += 1
+        elif outcome == "failed":
+            for rel, err in problems:
+                out(f"  failed: {sanitize(rel)} — {sanitize(err)}")
+            failures += 1
+        else:  # survived
+            out("  contents pruned; directory left to the run that just "
+                "started")
     if not yes:
         out(f"dry run — nothing deleted ({len(candidates)} candidate "
             f"scope(s)). Re-run with --yes to delete.")
-    elif skipped:
-        out(f"done; {skipped} scope(s) skipped (live/ambiguous locks are "
-            f"never touched)")
+        return EXIT_OK
+    if skipped:
+        out(f"done; {skipped} scope(s) skipped (live/ambiguous locks and "
+            f"freshly-reused scopes are never touched)")
+    if failures:
+        out(f"failed: {failures} scope(s) had entries that could not be "
+            f"removed")
+        return EXIT_REFUSED
     return EXIT_OK
 
 
@@ -337,17 +411,27 @@ def prune_aged(older_than_days: int, yes: bool) -> int:
 
 def _read_lock_at(dir_fd: int, name: str):
     """(raw_or_None, parsed_or_None, note) — fd-relative lock read that never
-    re-traverses the validated scope path and never follows a symlink.
-    note is None, or 'symlink' when something link-shaped sits at the name
-    (reported, never read, never followed)."""
+    re-traverses the validated scope path, never follows a symlink, and
+    never blocks on or reads a non-regular file (a FIFO squatting at a lock
+    name must not hang the recovery tool; a directory must not crash it).
+    note is None, 'symlink', or 'special' — both reported, never read,
+    never acted on destructively."""
     try:
-        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dir_fd)
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                     dir_fd=dir_fd)
     except FileNotFoundError:
         return None, None, None
-    except OSError:
-        return None, None, "symlink"
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.EMLINK):
+            return None, None, "symlink"
+        return None, None, "special"
     try:
-        raw = os.read(fd, 65536)
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return None, None, "special"
+        try:
+            raw = os.read(fd, 65536)
+        except OSError:
+            return None, None, "special"
     finally:
         os.close(fd)
     try:
@@ -370,7 +454,7 @@ def force_unlock(scope: str, yes: bool) -> int:
         sfd = os.open(state_dir, os.O_RDONLY | os.O_DIRECTORY
                       | os.O_NOFOLLOW)
     except FileNotFoundError:
-        out(f"scope {scope}: no state directory — nothing to unlock")
+        out(f"scope {sanitize(scope)}: no state directory — nothing to unlock")
         return EXIT_OK
     except OSError as exc:
         out(f"refused: cannot open {state_dir} without following links "
@@ -381,22 +465,24 @@ def force_unlock(scope: str, yes: bool) -> int:
         marker_raw, marker_parsed, marker_note = _read_lock_at(
             sfd, RECLAIM_NAME)
         if (lock_raw, marker_raw, lock_note, marker_note) == (None,) * 4:
-            out(f"scope {scope}: no run.lock and no reclaim marker — "
+            out(f"scope {sanitize(scope)}: no run.lock and no reclaim marker — "
                 f"nothing to unlock")
             return EXIT_OK
 
         # Print exactly what was inspected — the human is about to overrule
         # the lock protocol and must see precisely what they are overruling.
-        symlinked = False
+        blocked = False
         for label, raw, parsed, note in (
                 (LOCK_NAME, lock_raw, lock_parsed, lock_note),
                 (RECLAIM_NAME, marker_raw, marker_parsed, marker_note)):
-            if note == "symlink":
-                symlinked = True
-                out(f"{label}: SYMLINK — never followed or read. A genuine "
-                    f"lock is a regular file; refusing to act on this scope. "
-                    f"Remove the link manually if you understand why it is "
-                    f"there.")
+            if note is not None:
+                blocked = True
+                kind = "SYMLINK" if note == "symlink" else \
+                    "NOT A REGULAR FILE (directory/FIFO/device)"
+                out(f"{label}: {kind} — never followed or read. A genuine "
+                    f"lock is a regular file; refusing to act on this "
+                    f"scope. Remove it manually if you understand why it "
+                    f"is there.")
                 continue
             if raw is None:
                 continue
@@ -411,9 +497,9 @@ def force_unlock(scope: str, yes: bool) -> int:
             out("dry run — inspected only, nothing cleared. Re-run with "
                 "--yes to clear marker and lock together.")
             return EXIT_OK
-        if symlinked:
-            out("refused: a symlink sits where a lock should be — nothing "
-                "touched")
+        if blocked:
+            out("refused: something other than a regular lock file sits at "
+                "a lock name — nothing touched")
             return EXIT_REFUSED
 
         # Marker first: a crash between the two removals then leaves a plain
@@ -449,9 +535,9 @@ def force_unlock(scope: str, yes: bool) -> int:
         if refused:
             out(f"refused: {', '.join(refused)} changed since inspection (a "
                 f"successor or competing recovery acted) — that file was "
-                f"left alone; re-inspect with --force-unlock {scope}")
+                f"left alone; re-inspect with --force-unlock {sanitize(scope)}")
             return EXIT_REFUSED
-        out(f"cleared: scope {scope} unlocked")
+        out(f"cleared: scope {sanitize(scope)} unlocked")
         return EXIT_OK
     finally:
         os.close(sfd)
@@ -475,7 +561,7 @@ def overview() -> int:
         state_dir = STATE_ROOT / name
         files, _dirs = scope_contents(state_dir)
         age_days = (now - newest_mtime(state_dir)) / 86400
-        out(f"{name}  {len(files)} files  age {age_days:.1f}d  "
+        out(f"{sanitize(name)}  {len(files)} files  age {age_days:.1f}d  "
             f"{describe_lock(state_dir)}")
     out("(read-only overview — prune with --scope <hash> --yes at "
         "convergence, or --older-than <days> --yes for abandoned runs)")
