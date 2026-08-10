@@ -32,3 +32,32 @@
 ### Diff snapshot reference
 
 Diff captured at 2026-08-10 09:55; head SHA `13c9e0c` (reviewing that commit's own diff; folds land as follow-up commits on `docs/runner-scripts-brief`).
+
+## Pass 2 — 2026-08-10 10:12 [HISTORICAL]
+
+**Scope:** commit series 13c9e0c^..HEAD (Phase 2 + pass-1 folds), standalone · **Diff size:** 1070 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+1. **Force-unlock still has a scope-directory TOCTOU path escape** — HIGH · lens: senior-dev: pass 1's dir_fd hardening covered `delete_scope` but `force_unlock` still read and removed locks by re-traversed pathname.
+   → Opus: incorporated — force-unlock now anchors to one `O_NOFOLLOW|O_DIRECTORY` descriptor: reads via fd-relative `_read_lock_at` (a symlinked lock is reported as SYMLINK, never followed or read, and `--yes` refuses), removals via `_locked_mutation`'s new `dir_fd` variant (basename-relative, `O_NOFOLLOW`, same flock+inode+byte-identity fences). Fixtures: symlinked `run.lock` → dry-run reports SYMLINK without leaking target content; `--yes` refuses with link and out-of-state target intact; primitive-level `dir_fd` refusal pinned.
+2. **Dry runs omit directories and directory symlinks that `--yes` deletes** — HIGH · lens: qa: only files were printed, violating the "exactly what would be deleted" contract (a planted `debug` dir-symlink would be removed undisclosed).
+   → Opus: incorporated — new `disclose()` lists every removable entry (real dirs marked with `/`, symlinks listed as entries) in both `--scope` and `--older-than` output; counts now say "entries". Fixture compares the disclosed set against what a confirmed prune removes, symlink target surviving.
+3. **Lock metadata can still forge diagnostic lines (LF/tab excluded from sanitize)** — MEDIUM · lens: security, qa (co-filed): `[\x00-\x08\x0b-\x1f\x7f]` deliberately skipped `\n`/`\t`, so raw lock bytes or a JSON-escaped `\n` in `role` could inject fake `removed:`/`cleared:` records at the recovery-decision moment.
+   → Opus: incorporated — sanitize now escapes all of `[\x00-\x1f\x7f]`; every diagnostic record is one unforgeable line, `out()` alone ends it. Fixtures: raw bytes embedding a fake `removed:` record render as one escaped line; a parsed `role` with a decoded newline stays single-line in the overview.
+
+### Code corrections applied
+
+- (none filed by any lens)
+
+### New questions Codex raised
+
+- (none)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: REVISE · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-10 10:07; head SHA `d9e6138`.

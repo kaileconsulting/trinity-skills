@@ -249,7 +249,7 @@ def _read_lock(path: Path):
     return raw, parsed
 
 
-def _locked_mutation(path: Path, predicate, mutate):
+def _locked_mutation(path: Path, predicate, mutate, dir_fd=None):
     """The fencing critical section: flock the lock file's inode, confirm the
     path still names that inode (an unlink+recreate is a different inode),
     re-read its content, and run `mutate(fd_content)` only if `predicate`
@@ -258,17 +258,31 @@ def _locked_mutation(path: Path, predicate, mutate):
     revokes a lock MUST go through this helper (prune-state's force-unlock
     included) — the serialization only holds if everyone takes the flock.
 
+    With `dir_fd`, the file is addressed by BASENAME relative to that open
+    directory descriptor and opened O_NOFOLLOW — the anchored variant for
+    callers (prune-state) that must not re-traverse a validated path, so a
+    directory component swapped for a symlink after validation cannot
+    redirect the mutation. A symlink sitting where the lock should be
+    refuses (ELOOP -> False), same as vanished/changed.
+
     Returns True if `mutate` ran, False if the file vanished/changed first.
     Raises nothing on the refuse path — callers decide what refusal means."""
+    if dir_fd is not None:
+        target, flags = os.path.basename(str(path)), os.O_RDWR | os.O_NOFOLLOW
+    else:
+        target, flags = path, os.O_RDWR
     try:
-        fd = os.open(path, os.O_RDWR)
-    except FileNotFoundError:
+        fd = os.open(target, flags, dir_fd=dir_fd)
+    except (FileNotFoundError, OSError):
         return False
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
         st_fd = os.fstat(fd)
         try:
-            st_path = os.stat(path)
+            if dir_fd is not None:
+                st_path = os.stat(target, dir_fd=dir_fd, follow_symlinks=False)
+            else:
+                st_path = os.stat(path)
         except FileNotFoundError:
             return False
         if (st_fd.st_dev, st_fd.st_ino) != (st_path.st_dev, st_path.st_ino):

@@ -1217,6 +1217,110 @@ def test_prune_fold1(env: Env, shared) -> None:
            proc.stdout[-160:])
 
 
+def test_prune_fold2(env: Env, shared) -> None:
+    """Phase 2 review, pass-2 fold: full dry-run disclosure, line-forgery-
+    proof diagnostics (LF/tab), fd-anchored force-unlock."""
+    state_root = os.path.join(env.skill, "state")
+
+    # Dry run discloses EVERY removable entry — files, empty dirs, and
+    # directory symlinks — and a confirmed prune removes exactly that set
+    # without entering any symlink target.
+    outside = os.path.join(env.root, "outside-fold2")
+    os.makedirs(outside, exist_ok=True)
+    canary = os.path.join(outside, "canary.txt")
+    with open(canary, "w") as fh:
+        fh.write("survive\n")
+    sc = os.path.join(state_root, "disc1")
+    os.makedirs(os.path.join(sc, "emptydir"))
+    with open(os.path.join(sc, "pass-1.x.input.txt"), "w") as fh:
+        fh.write("x\n")
+    os.symlink(outside, os.path.join(sc, "linkdir"))
+    proc = env.run("prune-state", "--scope", "disc1")
+    record("prune-fold2: dry run discloses files, empty dirs, and dir symlinks",
+           proc.returncode == 0
+           and "pass-1.x.input.txt" in proc.stdout
+           and "disc1/emptydir/" in proc.stdout
+           and "disc1/linkdir" in proc.stdout
+           and os.path.exists(os.path.join(sc, "linkdir")),
+           proc.stdout[-240:])
+    proc = env.run("prune-state", "--scope", "disc1", "--yes")
+    record("prune-fold2: confirmed prune removes the disclosed set; symlink "
+           "target untouched",
+           proc.returncode == 0 and not os.path.exists(sc)
+           and read(canary) == "survive\n")
+
+    # LF/tab in untrusted lock bytes cannot forge diagnostic lines: raw
+    # malformed content embedding a fake 'removed:' record renders as ONE
+    # escaped line.
+    fj = os.path.join(state_root, "forge1")
+    os.makedirs(fj)
+    fj_lock = os.path.join(fj, "run.lock")
+    with open(fj_lock, "wb") as fh:
+        fh.write(b'junk\nremoved: run.lock.reclaim\n\tcleared: scope forge1')
+    proc = env.run("prune-state", "--force-unlock", "forge1")
+    lines = proc.stdout.splitlines()
+    record("prune-fold2: embedded LF/tab in raw lock bytes escaped — no "
+           "forged output records",
+           proc.returncode == 0 and "\\x0a" in proc.stdout
+           and "\\x09" in proc.stdout
+           and not any(ln.startswith(("removed:", "cleared:"))
+                       for ln in lines),
+           proc.stdout[-240:])
+    # Same for a PARSED field: a JSON-escaped newline in role decodes to a
+    # real newline before display; overview must keep the record one line.
+    with open(fj_lock, "w") as fh:
+        fh.write(json.dumps({"pid": os.getpid(), "timestamp": "t",
+                             "role": "r\nFAKE-RECORD", "token": "x",
+                             "owner_name": "x"}) + "\n")
+    proc = env.run("prune-state")
+    record("prune-fold2: newline inside a parsed lock field is escaped in "
+           "the overview",
+           proc.returncode == 0 and "\\x0a" in proc.stdout
+           and not any(ln.startswith("FAKE-RECORD")
+                       for ln in proc.stdout.splitlines()),
+           proc.stdout[-200:])
+    os.unlink(fj_lock)
+    os.rmdir(fj)
+
+    # fd-anchored force-unlock: a symlink sitting where run.lock should be
+    # is reported, never followed, never acted on — the out-of-state target
+    # survives with the link intact.
+    real_lock = os.path.join(outside, "run.lock")
+    with open(real_lock, "w") as fh:
+        fh.write(json.dumps({"pid": spawn_dead_pid(), "timestamp": "t",
+                             "role": "run-pass", "token": "victim",
+                             "owner_name": "x"}) + "\n")
+    sl = os.path.join(state_root, "symlock1")
+    os.makedirs(sl)
+    os.symlink(real_lock, os.path.join(sl, "run.lock"))
+    proc = env.run("prune-state", "--force-unlock", "symlock1")
+    record("prune-fold2: symlinked run.lock reported as SYMLINK on dry run, "
+           "not read",
+           proc.returncode == 0 and "SYMLINK" in proc.stdout
+           and "victim" not in proc.stdout,
+           proc.stdout[-200:])
+    proc = env.run("prune-state", "--force-unlock", "symlock1", "--yes")
+    record("prune-fold2: --yes on a symlinked lock refuses; link and target "
+           "both intact",
+           proc.returncode == 1 and "refused" in proc.stdout
+           and os.path.islink(os.path.join(sl, "run.lock"))
+           and os.path.exists(real_lock))
+    # Primitive pin: the fd-anchored fencing helper refuses a symlink at
+    # the lock name outright.
+    sfd = os.open(sl, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        ran = shared._locked_mutation(
+            os.path.join(sl, "run.lock"), lambda raw: True,
+            lambda fd: None, dir_fd=sfd)
+    finally:
+        os.close(sfd)
+    record("prune-fold2: _locked_mutation(dir_fd=...) refuses a symlinked "
+           "lock file",
+           ran is False and os.path.exists(real_lock))
+    os.unlink(os.path.join(sl, "run.lock"))
+    os.rmdir(sl)
+
+
 def spawn_dead_pid() -> int:
     proc = subprocess.Popen(["true"])
     proc.wait()
@@ -1245,6 +1349,7 @@ def main() -> int:
         test_pass2_fold(env, shared)
         test_prune(env, shared)
         test_prune_fold1(env, shared)
+        test_prune_fold2(env, shared)
     except Exception as exc:  # noqa: BLE001
         import traceback
         traceback.print_exc()

@@ -43,6 +43,7 @@ if sys.version_info < MIN_PYTHON:
     sys.exit(1)
 
 import argparse
+import json
 import os
 import re
 import time
@@ -71,9 +72,11 @@ def out(text: str) -> None:
 
 
 # Lock metadata is untrusted bytes echoed to a human deciding whether to
-# force-unlock — escape control characters so a crafted lock can't smuggle
-# ANSI/OSC sequences into the operator's terminal at exactly that moment.
-_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+# force-unlock — escape ALL control characters, LF and tab included, so a
+# crafted lock can neither smuggle ANSI/OSC sequences into the operator's
+# terminal nor forge additional diagnostic lines: every record stays one
+# unforgeable line, and only out() ends it.
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
 
 def sanitize(text: str) -> str:
@@ -118,6 +121,19 @@ def scope_contents(state_dir: Path):
             dirs.append(Path(base) / dn)
     dirs.sort(key=lambda p: len(p.parts), reverse=True)
     return files, dirs
+
+
+def disclose(state_dir: Path):
+    """Every entry a confirmed prune would remove — files AND directories
+    AND symlinks (a directory symlink is disclosed and later unlinked as a
+    link; real directories carry a trailing '/'). The dry-run contract is
+    'exactly what would be deleted', so nothing removable may be omitted."""
+    files, dirs = scope_contents(state_dir)
+    entries = [str(p.relative_to(STATE_ROOT)) for p in files]
+    for p in dirs:
+        marker = "/" if p.is_dir() and not p.is_symlink() else ""
+        entries.append(str(p.relative_to(STATE_ROOT)) + marker)
+    return sorted(entries)
 
 
 def newest_mtime(state_dir: Path) -> float:
@@ -252,12 +268,12 @@ def prune_one(scope: str, yes: bool) -> int:
     if not state_dir.is_dir():
         out(f"{state_dir}: no state directory — nothing to prune")
         return EXIT_OK
-    files, dirs = scope_contents(state_dir)
+    entries = disclose(state_dir)
     out(f"scope {scope} ({describe_lock(state_dir)}):")
-    for path in files:
-        out(f"  would delete: {path.relative_to(STATE_ROOT)}")
+    for entry in entries:
+        out(f"  would delete: {entry}")
     if not yes:
-        out(f"dry run — nothing deleted ({len(files)} files). "
+        out(f"dry run — nothing deleted ({len(entries)} entries). "
             f"Re-run with --yes to delete.")
         return EXIT_OK
     try:
@@ -266,7 +282,7 @@ def prune_one(scope: str, yes: bool) -> int:
         out(f"refused: {exc}")
         return EXIT_REFUSED
     if gone:
-        out(f"pruned: {len(files)} files, scope directory removed")
+        out(f"pruned: {len(entries)} entries, scope directory removed")
     else:
         out("contents pruned, but the scope directory was left in place — a "
             "new run started during cleanup and owns it now (not retried)")
@@ -291,12 +307,11 @@ def prune_aged(older_than_days: int, yes: bool) -> int:
         return EXIT_OK
     skipped = 0
     for state_dir in candidates:
-        files, _dirs = scope_contents(state_dir)
         age_days = (time.time() - newest_mtime(state_dir)) / 86400
         out(f"scope {state_dir.name} (age {age_days:.1f}d, "
             f"{describe_lock(state_dir)}):")
-        for path in files:
-            out(f"  would delete: {path.relative_to(STATE_ROOT)}")
+        for entry in disclose(state_dir):
+            out(f"  would delete: {entry}")
         if not yes:
             continue
         try:
@@ -320,67 +335,126 @@ def prune_aged(older_than_days: int, yes: bool) -> int:
 # Force-unlock — the explicit manual recovery path
 # ---------------------------------------------------------------------------
 
+def _read_lock_at(dir_fd: int, name: str):
+    """(raw_or_None, parsed_or_None, note) — fd-relative lock read that never
+    re-traverses the validated scope path and never follows a symlink.
+    note is None, or 'symlink' when something link-shaped sits at the name
+    (reported, never read, never followed)."""
+    try:
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dir_fd)
+    except FileNotFoundError:
+        return None, None, None
+    except OSError:
+        return None, None, "symlink"
+    try:
+        raw = os.read(fd, 65536)
+    finally:
+        os.close(fd)
+    try:
+        parsed = json.loads(raw.decode("utf-8"))
+        if not isinstance(parsed, dict) or "pid" not in parsed \
+                or "token" not in parsed:
+            parsed = None
+    except (ValueError, UnicodeDecodeError):
+        parsed = None
+    return raw, parsed, None
+
+
 def force_unlock(scope: str, yes: bool) -> int:
     state_dir = resolve_scope_dir(scope)
-    lock_path = state_dir / LOCK_NAME
-    marker_path = state_dir / RECLAIM_NAME
-    lock_raw, lock_parsed = shared._read_lock(lock_path)
-    marker_raw, marker_parsed = shared._read_lock(marker_path)
-    if lock_raw is None and marker_raw is None:
-        out(f"scope {scope}: no run.lock and no reclaim marker — nothing to "
-            f"unlock")
+    # Anchor everything to one O_NOFOLLOW descriptor: after this point no
+    # operation re-traverses the scope path, so a directory swapped for a
+    # symlink post-validation cannot redirect reads or removals outside
+    # state/ (the same fencing delete_scope uses).
+    try:
+        sfd = os.open(state_dir, os.O_RDONLY | os.O_DIRECTORY
+                      | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        out(f"scope {scope}: no state directory — nothing to unlock")
         return EXIT_OK
-
-    # Print exactly what was inspected — the human is about to overrule the
-    # lock protocol and must see precisely what they are overruling.
-    for label, raw, parsed in ((LOCK_NAME, lock_raw, lock_parsed),
-                               (RECLAIM_NAME, marker_raw, marker_parsed)):
-        if raw is None:
-            continue
-        out(f"{label}: {sanitize(raw.decode('utf-8', 'replace').rstrip())}")
-        state = _pid_state(parsed)
-        if state is None:
-            out("  -> MALFORMED metadata")
-        else:
-            out(f"  -> pid {parsed['pid']} is "
-                f"{'ALIVE — clearing this displaces a possibly-live run' if state == 'alive' else 'dead'}")
-    if not yes:
-        out("dry run — inspected only, nothing cleared. Re-run with --yes "
-            "to clear marker and lock together.")
-        return EXIT_OK
-
-    # Marker first: a crash between the two removals then leaves a plain
-    # dead-pid lock, which the automatic reclaim path already recovers; the
-    # reverse order would strand a marker that only force-unlock can clear.
-    #
-    # Each removal is conditional on byte-identity with what was inspected,
-    # inside the flock+inode critical section — a successor's fresh lock (or
-    # a competing recovery that already acted) never passes, and unique
-    # ownership tokens make content collisions impossible. Removing the lock
-    # under that fence IS the token revocation: the token ceases to exist,
-    # so a displaced-but-live owner's next fenced check (verify/verify_and)
-    # fails and it aborts without publishing — in particular, no summary.
-    removed, refused = [], []
-    for path, observed in ((marker_path, marker_raw), (lock_path, lock_raw)):
-        if observed is None:
-            continue
-        ok = shared._locked_mutation(
-            path,
-            lambda raw, o=observed: raw == o,
-            lambda fd, p=path: os.unlink(p))
-        (removed if ok else refused).append(path.name)
-    # Report BOTH outcomes: under a race one file can already be gone while
-    # the other refuses — "nothing touched" would be a lie the operator acts
-    # on. Each removal stands alone (a cleared marker is never re-created).
-    if removed:
-        out(f"removed: {', '.join(removed)}")
-    if refused:
-        out(f"refused: {', '.join(refused)} changed since inspection (a "
-            f"successor or competing recovery acted) — that file was left "
-            f"alone; re-inspect with --force-unlock {scope}")
+    except OSError as exc:
+        out(f"refused: cannot open {state_dir} without following links "
+            f"({exc})")
         return EXIT_REFUSED
-    out(f"cleared: scope {scope} unlocked")
-    return EXIT_OK
+    try:
+        lock_raw, lock_parsed, lock_note = _read_lock_at(sfd, LOCK_NAME)
+        marker_raw, marker_parsed, marker_note = _read_lock_at(
+            sfd, RECLAIM_NAME)
+        if (lock_raw, marker_raw, lock_note, marker_note) == (None,) * 4:
+            out(f"scope {scope}: no run.lock and no reclaim marker — "
+                f"nothing to unlock")
+            return EXIT_OK
+
+        # Print exactly what was inspected — the human is about to overrule
+        # the lock protocol and must see precisely what they are overruling.
+        symlinked = False
+        for label, raw, parsed, note in (
+                (LOCK_NAME, lock_raw, lock_parsed, lock_note),
+                (RECLAIM_NAME, marker_raw, marker_parsed, marker_note)):
+            if note == "symlink":
+                symlinked = True
+                out(f"{label}: SYMLINK — never followed or read. A genuine "
+                    f"lock is a regular file; refusing to act on this scope. "
+                    f"Remove the link manually if you understand why it is "
+                    f"there.")
+                continue
+            if raw is None:
+                continue
+            out(f"{label}: {sanitize(raw.decode('utf-8', 'replace').rstrip())}")
+            state = _pid_state(parsed)
+            if state is None:
+                out("  -> MALFORMED metadata")
+            else:
+                out(f"  -> pid {parsed['pid']} is "
+                    f"{'ALIVE — clearing this displaces a possibly-live run' if state == 'alive' else 'dead'}")
+        if not yes:
+            out("dry run — inspected only, nothing cleared. Re-run with "
+                "--yes to clear marker and lock together.")
+            return EXIT_OK
+        if symlinked:
+            out("refused: a symlink sits where a lock should be — nothing "
+                "touched")
+            return EXIT_REFUSED
+
+        # Marker first: a crash between the two removals then leaves a plain
+        # dead-pid lock, which the automatic reclaim path already recovers;
+        # the reverse order would strand a marker that only force-unlock can
+        # clear.
+        #
+        # Each removal is conditional on byte-identity with what was
+        # inspected, inside the flock+inode critical section, fd-anchored —
+        # a successor's fresh lock (or a competing recovery that already
+        # acted) never passes, and unique ownership tokens make content
+        # collisions impossible. Removing the lock under that fence IS the
+        # token revocation: the token ceases to exist, so a displaced-but-
+        # live owner's next fenced check (verify/verify_and) fails and it
+        # aborts without publishing — in particular, no summary.
+        removed, refused = [], []
+        for name, observed in ((RECLAIM_NAME, marker_raw),
+                               (LOCK_NAME, lock_raw)):
+            if observed is None:
+                continue
+            ok = shared._locked_mutation(
+                state_dir / name,
+                lambda raw, o=observed: raw == o,
+                lambda fd, n=name: os.unlink(n, dir_fd=sfd),
+                dir_fd=sfd)
+            (removed if ok else refused).append(name)
+        # Report BOTH outcomes: under a race one file can already be gone
+        # while the other refuses — "nothing touched" would be a lie the
+        # operator acts on. Each removal stands alone (a cleared marker is
+        # never re-created).
+        if removed:
+            out(f"removed: {', '.join(removed)}")
+        if refused:
+            out(f"refused: {', '.join(refused)} changed since inspection (a "
+                f"successor or competing recovery acted) — that file was "
+                f"left alone; re-inspect with --force-unlock {scope}")
+            return EXIT_REFUSED
+        out(f"cleared: scope {scope} unlocked")
+        return EXIT_OK
+    finally:
+        os.close(sfd)
 
 
 # ---------------------------------------------------------------------------
