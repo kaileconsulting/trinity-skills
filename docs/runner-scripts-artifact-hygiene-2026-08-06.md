@@ -193,7 +193,7 @@ Everything the runner does (state-dir writes, codex invocation, validation) happ
 - Dry-run output lists exactly what would be deleted; nothing outside `state/` is ever touched, and a dir with a live run lock is never touched (both fixture-pinned).
 
 **Iterate-review:** YES (rationale: deletion code warrants review)
-**Status:** implemented (2026-08-10 — prune-state, SKILL.md convergence wiring, README cleanup section, and the Phase 2 fixture set all landed; full check suite green. Awaiting iterate-review before `reviewed`.)
+**Status:** reviewed (2026-08-10 — iterate-review converged after 6 passes in loop mode, Kyle-confirmed at the max-pass guardrail: 23 findings, 21 incorporated across 6 fold commits, 1 folded with corrected premise, 1 disputed HIGH accepted by Kyle (rmdir TOCTOU — ENOTEMPTY makes the window harmless); security lens APPROVE at pass 6. Pass log: `docs/reviews/code-review-commit-13c9e0c.md`. The convergence prune then ran for real on the review's own 42-entry state dir — Phase 2's first live use.)
 
 ### Phase 3 — iterate-plan port + parity fixtures (~1 day)
 **Deliverables:**
@@ -294,7 +294,7 @@ A 3.11-ism in a runner breaks the stated 3.9 floor on someone else's machine.
 |-------|----------------|--------|-----------|----------|
 | Phase 0 | NO  | n/a | n/a | n/a |
 | Phase 1 | YES | reviewed (converged, 3-lens APPROVE) | Pass 11 — 2026-08-07 | [code-review-branch-docs-runner-scripts-brief.md](reviews/code-review-branch-docs-runner-scripts-brief.md) |
-| Phase 2 | YES | not started | — | — |
+| Phase 2 | YES | reviewed (converged at cap, Kyle-confirmed; 1 disputed HIGH accepted) | Pass 6 — 2026-08-10 | [code-review-commit-13c9e0c.md](reviews/code-review-commit-13c9e0c.md) |
 | Phase 3 | YES | not started | — | — |
 
 ## Pre-flight review pass (Opus, YYYY-MM-DD) [HISTORICAL]

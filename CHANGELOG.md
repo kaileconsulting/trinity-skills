@@ -34,6 +34,37 @@ Ports the pattern to `iterate-plan` in the final phase.
   force-unlock of a genuinely live run (displaced run detects revocation,
   successor's summary is the only one).
 
+### Hardened (Phase 2's 6-pass review — run entirely on the new runners, loop mode's first real outing)
+
+Behavior-visible outcomes, all fixture-pinned (suite grew from 90 to 120);
+full trail in `docs/reviews/code-review-commit-13c9e0c.md`:
+
+- **Deletion never re-traverses a validated pathname**: contents, locks, and
+  force-unlock all operate through `O_NOFOLLOW` directory descriptors
+  (`ScopeLock` gained a `dir_fd` mode); a symlink swapped in anywhere is
+  unlinked as a link or refused, never followed.
+- **Dry runs disclose exactly what `--yes` removes** — files, empty dirs,
+  and directory symlinks — and targeted prune refuses if undisclosed
+  entries appear before the lock is taken; the age sweep re-checks
+  freshness *under* the lock (blind to its own mtime bumps).
+- **Recovery tooling survives hostile state**: non-regular files (FIFO,
+  directory) at lock names classify as malformed without hanging or
+  crashing; malformed pids are never coerced on destructive paths (shared
+  `_lock_pid`); concurrent sweeps treat disappearance as benign (APFS
+  quirks included: EINVAL from unlinked-dir openat, `st_nlink=2` after
+  rmdir).
+- **Diagnostics are unforgeable**: every untrusted byte reaching the
+  terminal — lock contents, parsed fields, scope/entry names, refusal
+  text — is control-character-escaped into single-line records.
+- **Honest outcomes**: genuine removal failures exit 1 naming the entry
+  (never misreported as a benign handoff); mid-deletion displacement
+  reports PARTIAL, never "skipped".
+- One reviewer HIGH was **disputed and human-arbitrated** (final-rmdir
+  TOCTOU: the window exists, but POSIX `ENOTEMPTY` means only an *empty*
+  replacement could ever be removed — no state can be lost; verified live,
+  argument recorded in code). Loop mode drove all 6 passes and halted on
+  the max-pass + disputed-HIGH guardrails, as designed.
+
 ### Added (Phase 1 — iterate-review runners + SKILL.md rewire)
 
 - `bin/run-pass` and `bin/run-lens` implemented: deterministic lens-input
