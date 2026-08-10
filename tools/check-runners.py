@@ -1538,6 +1538,115 @@ def test_prune_fold4(env: Env, shared) -> None:
     shutil.rmtree(pd)
 
 
+def test_prune_fold5(env: Env, shared) -> None:
+    """Phase 2 review, pass-5 fold: no pid coercion on destructive paths,
+    prune-vs-prune disappearance, identity-fenced final rmdir, sanitized
+    refusal diagnostics."""
+    state_root = os.path.join(env.skill, "state")
+    env_path = dict(os.environ)
+    env_path["PATH"] = env.fakebin + os.pathsep + env_path["PATH"]
+
+    # Malformed pid variants on the DESTRUCTIVE path: refused as malformed —
+    # never coerced into a probe-able pid, never a traceback.
+    mp = os.path.join(state_root, "mp1")
+    os.makedirs(mp)
+    mp_lock = os.path.join(mp, "run.lock")
+    for content in ('{"pid": "abc", "token": "x"}',
+                    '{"pid": 1.9, "token": "x"}',
+                    '{"pid": true, "token": "x"}'):
+        with open(mp_lock, "w") as fh:
+            fh.write(content + "\n")
+        proc = env.run("prune-state", "--scope", "mp1", "--yes")
+        if not (proc.returncode == 1 and "malformed metadata" in proc.stdout
+                and "Traceback" not in proc.stderr
+                and os.path.exists(mp_lock)):
+            record("prune-fold5: malformed pid on --scope --yes refuses "
+                   "without coercion or traceback", False,
+                   f"content={content} exit={proc.returncode} "
+                   f"{(proc.stdout + proc.stderr).strip()[-160:]}")
+            break
+    else:
+        record("prune-fold5: malformed pid on --scope --yes refuses "
+               "without coercion or traceback", True)
+    os.unlink(mp_lock)
+    # Marker with a malformed pid refuses as abandoned (never probed).
+    with open(os.path.join(mp, "run.lock.reclaim"), "w") as fh:
+        fh.write('{"pid": "abc", "token": "x"}\n')
+    proc = env.run("prune-state", "--scope", "mp1", "--yes")
+    record("prune-fold5: malformed reclaim-marker pid -> abandoned-marker "
+           "refusal on the destructive path",
+           proc.returncode == 1 and "reclaim marker" in proc.stdout
+           and "Traceback" not in proc.stderr)
+    proc = env.run("prune-state", "--force-unlock", "mp1", "--yes")
+    proc = env.run("prune-state", "--scope", "mp1", "--yes")
+    record("prune-fold5: after force-unlock recovery the same scope prunes",
+           proc.returncode == 0 and not os.path.exists(mp))
+
+    # Two concurrent age sweeps over the same candidates: no tracebacks,
+    # both complete, everything old is gone exactly once.
+    backdate = time.time() - 2 * 86400
+    for i in range(12):
+        d = os.path.join(state_root, f"race{i:02d}")
+        os.makedirs(d)
+        f = os.path.join(d, "pass-1.x.input.txt")
+        with open(f, "w") as fh:
+            fh.write("x\n")
+        os.utime(f, (backdate, backdate))
+        os.utime(d, (backdate, backdate))
+    procs = [subprocess.Popen(
+        [os.path.join(env.bin, "prune-state"), "--older-than", "1", "--yes"],
+        cwd=env.repo, env=env_path,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        for _ in range(2)]
+    outs = [p.communicate(timeout=60) for p in procs]
+    leftovers = [d for d in os.listdir(state_root) if d.startswith("race")]
+    record("prune-fold5: two concurrent age sweeps — no tracebacks, all "
+           "candidates swept",
+           all(p.returncode == 0 for p in procs)
+           and not any("Traceback" in e for _, e in outs)
+           and leftovers == [],
+           f"exits={[p.returncode for p in procs]} leftovers={leftovers}")
+
+    # Identity-fenced final rmdir: if the pathname stops naming the anchored
+    # inode mid-deletion, the replacement is NOT removed and the outcome is
+    # 'survived', never 'deleted'.
+    ps = _load_prune_module(env)
+    idf = os.path.join(state_root, "idf1")
+    os.makedirs(idf)
+    moved = os.path.join(state_root, "idf1-moved")
+    orig_tree = ps._delete_tree_fd
+
+    def swap_during_delete(dir_fd, lock, problems, at, skip=None):
+        os.rename(idf, moved)
+        os.makedirs(idf)  # a NEW real directory now sits at the name
+
+    ps._delete_tree_fd = swap_during_delete
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = ps.prune_one("idf1", True)
+    ps._delete_tree_fd = orig_tree
+    record("prune-fold5: swapped-in real directory at the name is never "
+           "rmdir'd — outcome is survival, not deletion",
+           rc == 0 and os.path.isdir(idf)
+           and "not removed" in buf.getvalue()
+           and not os.path.exists(os.path.join(moved, "run.lock")),
+           buf.getvalue().strip()[-160:])
+    os.rmdir(idf)
+    os.rmdir(moved)
+
+    # Refusal diagnostics are sanitized: a control-char scope name that hits
+    # the symlink-refusal path leaks no raw control bytes on stderr.
+    weird = "sym\x1blnk"
+    os.symlink(os.path.join(env.root, "outside-fold4"),
+               os.path.join(state_root, weird))
+    proc = env.run("prune-state", "--scope", weird, "--yes")
+    record("prune-fold5: refusal diagnostics escape control bytes",
+           proc.returncode == 1 and "\x1b" not in proc.stderr
+           and "\\x1b" in proc.stderr,
+           proc.stderr.strip()[-160:])
+    os.unlink(os.path.join(state_root, weird))
+
+
 def spawn_dead_pid() -> int:
     proc = subprocess.Popen(["true"])
     proc.wait()
@@ -1569,6 +1678,7 @@ def main() -> int:
         test_prune_fold2(env, shared)
         test_prune_fold3(env, shared)
         test_prune_fold4(env, shared)
+        test_prune_fold5(env, shared)
     except Exception as exc:  # noqa: BLE001
         import traceback
         traceback.print_exc()

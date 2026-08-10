@@ -121,3 +121,34 @@ Diff captured at 2026-08-10 10:23; head SHA `8aa5dfb` (pass-2 fold).
 ### Diff snapshot reference
 
 Diff captured at 2026-08-10 10:49; head SHA `d19037d` (pass-3 fold).
+
+## Pass 5 — 2026-08-10 12:31 [HISTORICAL]
+
+**Scope:** commit series 13c9e0c^..HEAD (Phase 2 + folds), standalone · **Diff size:** 1891 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+1. **Destructive lock acquisition still coerces malformed pid values** — HIGH · lens: senior-dev: `ScopeLock.acquire` used `int(parsed["pid"])`, so metadata prune-state classifies as malformed was coerced (1.9 → probes pid 1) or crashed (non-numeric string → uncaught ValueError) exactly on the `--yes` path.
+   → Opus: incorporated — shared `_lock_pid()` (exact positive JSON integer, bool excluded) now guards both the lock and reclaim-marker branches of `acquire`; malformed metadata refuses with the recovery pointer, never probes. `prune-state`'s `_pid_state` delegates to it — one validator. Fixtures: string/float/bool pids on `--scope --yes` refuse without coercion or traceback; malformed marker pid refuses as abandoned; force-unlock recovery then prunes clean.
+2. **Concurrent age sweeps crash when a selected scope disappears** — HIGH · lens: qa: two `--older-than --yes` sweeps racing over the same candidates produced uncaught errors (and the fixture then caught what the fold missed twice: `openat` inside an unlinked directory returns EINVAL on APFS, and APFS keeps `st_nlink=2` on removed directories, so neither errno-matching nor link-count disambiguation works).
+   → Opus: incorporated — vanished candidates are benign at every step: `newest_mtime` returns 0.0 for a missing dir, the sweep loop reports "already gone (concurrent cleanup)", `delete_scope` treats open-ENOENT as already-deleted, and an acquire-time OSError is disambiguated by whether the *pathname* still names the anchored inode (gone → deleted; different inode → survived, untouched; same inode → genuine error, raised). Fixture: two concurrent sweeps over 12 backdated scopes — no tracebacks, both exit 0, all swept; verified stable across six suite runs.
+3. **Final scope removal abandons the anchored descriptor** — MEDIUM · lens: senior-dev: the closing `os.rmdir(state_dir)` was pathname-based — a new real directory swapped in at the name could be removed despite never being disclosed.
+   → Opus: incorporated — final removal is identity-fenced while the descriptor is still open: rmdir only if the pathname still names the anchored inode; otherwise the outcome is `survived` and the replacement is left alone. Survived message updated to name both causes (refilled vs displaced). Fixture: rename-plus-replace during deletion — replacement intact, outcome survival.
+4. **Refusal diagnostics emit unsanitized scope paths** — MEDIUM · lens: security: `PruneError`/`LockError` texts and open-failure messages interpolated raw paths, so a control-byte scope name could inject via the refusal path.
+   → Opus: incorporated — `sanitize()` applied at every final output boundary: `refused:`/`skipped:` prints, force-unlock open failures, and both stderr handlers in `main`. Fixture: ESC-bearing symlinked scope refuses with escaped bytes only.
+
+### Code corrections applied
+
+- (none filed by any lens)
+
+### New questions Codex raised
+
+- (none)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: REVISE · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-10 10:57; head SHA `aa99e53` (pass-4 fold).

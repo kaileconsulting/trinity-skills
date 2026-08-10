@@ -225,6 +225,20 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _lock_pid(parsed):
+    """The pid from parsed lock metadata iff it is exactly a positive JSON
+    integer (bool excluded); None otherwise. Malformed metadata must never
+    be coerced (int("1.9"), True->1) or crash (int("abc")) any path — least
+    of all a destructive one: a pid the record doesn't literally contain
+    must never be probed for liveness."""
+    if not isinstance(parsed, dict):
+        return None
+    pid = parsed.get("pid")
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        return None
+    return pid
+
+
 def _pid_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -428,8 +442,11 @@ class ScopeLock:
         marker_raw, marker = _read_lock(self.reclaim_path,
                                         dir_fd=self.dir_fd)
         if marker_raw is not None:
-            if marker is not None and _pid_alive(int(marker["pid"])):
+            mpid = _lock_pid(marker)
+            if mpid is not None and _pid_alive(mpid):
                 self._refuse("a stale-lock reclaim is in progress")
+            # Dead pid OR malformed metadata: both are refuse-and-point —
+            # malformed must never be coerced into a probe-able pid.
             self._refuse("an abandoned reclaim marker exists")
 
         if self._try_create(self.lock_path):
@@ -444,13 +461,16 @@ class ScopeLock:
                 self._held = True
                 return
             self._refuse("the scope is locked by a concurrent run")
-        if parsed is None:
+        pid = _lock_pid(parsed)
+        if pid is None:
+            # Unparseable bytes, missing keys, or a pid that isn't exactly a
+            # positive integer — one malformed class, one refusal.
             self._refuse("the scope lock has malformed metadata")
-        if _pid_alive(int(parsed["pid"])):
+        if _pid_alive(pid):
             # Any live pid — even a name mismatch, which PID reuse can produce —
             # is ambiguous. The recorded name is diagnostic only.
             self._refuse(
-                f"the scope is locked by a live run (pid {parsed['pid']}, "
+                f"the scope is locked by a live run (pid {pid}, "
                 f"role {parsed.get('role', '?')}, since {parsed.get('timestamp', '?')})"
             )
         self._reclaim(raw)

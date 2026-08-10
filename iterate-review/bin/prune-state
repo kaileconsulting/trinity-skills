@@ -139,7 +139,12 @@ def disclose(state_dir: Path):
 
 
 def newest_mtime(state_dir: Path) -> float:
-    newest = os.stat(state_dir).st_mtime
+    """Missing dir -> 0.0: a scope removed by a concurrent cleanup between
+    enumeration and inspection is benign disappearance, never a traceback."""
+    try:
+        newest = os.stat(state_dir).st_mtime
+    except OSError:
+        return 0.0
     for base, dnames, fnames in os.walk(state_dir):
         for name in list(fnames) + list(dnames):
             try:
@@ -175,10 +180,8 @@ def _pid_state(parsed):
     unparseable bytes. Inspection tools crash on nothing and never act on a
     pid the metadata doesn't literally contain. (_read_lock already nullifies
     pid-less JSON upstream; this doesn't rely on that.)"""
-    if parsed is None:
-        return None
-    pid = parsed.get("pid") if isinstance(parsed, dict) else None
-    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+    pid = shared._lock_pid(parsed)
+    if pid is None:
         return None
     return "alive" if shared._pid_alive(pid) else "dead"
 
@@ -300,7 +303,27 @@ def delete_scope(state_dir: Path, only_if=None):
     problems = []
     try:
         lock = shared.ScopeLock(state_dir, role="prune", dir_fd=fd)
-        lock.acquire()  # LockError propagates = true skip, nothing touched
+        try:
+            lock.acquire()  # LockError propagates = true skip, untouched
+        except shared.LockError:
+            raise
+        except OSError:
+            # Creating a lock file inside a directory that a concurrent
+            # cleanup already unlinked fails with filesystem-dependent
+            # errnos (ENOENT, EINVAL on APFS) — and APFS keeps st_nlink=2
+            # on a removed directory, so the link count can't disambiguate
+            # either. Ask the PATHNAME instead: if it no longer names our
+            # anchored inode, the scope we validated is gone (benign) or
+            # displaced (ours to leave alone); same inode -> real error.
+            try:
+                st_path = os.stat(state_dir, follow_symlinks=False)
+            except OSError:
+                return "deleted", []  # concurrent cleanup finished it
+            st_fd = os.fstat(fd)
+            if (st_path.st_dev, st_path.st_ino) != (st_fd.st_dev,
+                                                    st_fd.st_ino):
+                return "survived", []  # something else owns the name now
+            raise
         try:
             if only_if is not None and not only_if():
                 return "skipped", []
@@ -314,15 +337,26 @@ def delete_scope(state_dir: Path, only_if=None):
                 return "failed", problems
         finally:
             lock.release()  # conditional on token; unlinks run.lock last
+        if problems:
+            return "failed", problems
+        # Identity-fenced final removal, still holding the descriptor: rmdir
+        # only if the pathname still names the anchored inode — a NEW real
+        # directory (or anything else) swapped in at the name was never
+        # disclosed and is not ours to remove.
+        try:
+            st_path = os.stat(state_dir, follow_symlinks=False)
+        except OSError:
+            return "survived", []  # renamed away; contents were pruned
+        st_fd = os.fstat(fd)
+        if (st_path.st_dev, st_path.st_ino) != (st_fd.st_dev, st_fd.st_ino):
+            return "survived", []
+        try:
+            os.rmdir(state_dir)
+        except OSError:
+            return "survived", []
+        return "deleted", []
     finally:
         os.close(fd)
-    if problems:
-        return "failed", problems
-    try:
-        os.rmdir(state_dir)
-    except OSError:
-        return "survived", []
-    return "deleted", []
 
 
 def prune_one(scope: str, yes: bool) -> int:
@@ -350,7 +384,7 @@ def prune_one(scope: str, yes: bool) -> int:
             state_dir,
             only_if=lambda: set(disclose(state_dir)) - lockish <= baseline)
     except (shared.LockError, PruneError) as exc:
-        out(f"refused: {exc}")
+        out(f"refused: {sanitize(str(exc))}")
         return EXIT_REFUSED
     if outcome == "skipped":
         out("refused: entries appeared that were not disclosed above (a "
@@ -366,8 +400,9 @@ def prune_one(scope: str, yes: bool) -> int:
             f"remaining state left in place")
         return EXIT_REFUSED
     else:  # survived
-        out("contents pruned, but the scope directory was left in place — a "
-            "new run started during cleanup and owns it now (not retried)")
+        out("contents pruned, but the scope directory was not removed — it "
+            "refilled (a new run owns it) or its pathname was displaced "
+            "during cleanup (not retried)")
     return EXIT_OK
 
 
@@ -389,6 +424,12 @@ def prune_aged(older_than_days: int, yes: bool) -> int:
         return EXIT_OK
     skipped = failures = 0
     for state_dir in candidates:
+        if not state_dir.is_dir():
+            # A concurrent cleanup (another sweep, a converge-time prune)
+            # got here first — benign disappearance, never a traceback.
+            out(f"scope {sanitize(state_dir.name)}: already gone "
+                f"(concurrent cleanup)")
+            continue
         age_days = (time.time() - newest_mtime(state_dir)) / 86400
         out(f"scope {sanitize(state_dir.name)} (age {age_days:.1f}d, "
             f"{describe_lock(state_dir)}):")
@@ -405,7 +446,7 @@ def prune_aged(older_than_days: int, yes: bool) -> int:
                 state_dir,
                 only_if=lambda d=state_dir: newest_content_mtime(d) <= cutoff)
         except (shared.LockError, PruneError) as exc:
-            out(f"  skipped: {exc}")
+            out(f"  skipped: {sanitize(str(exc))}")
             skipped += 1
             continue
         if outcome == "deleted":
@@ -487,8 +528,8 @@ def force_unlock(scope: str, yes: bool) -> int:
         out(f"scope {sanitize(scope)}: no state directory — nothing to unlock")
         return EXIT_OK
     except OSError as exc:
-        out(f"refused: cannot open {state_dir} without following links "
-            f"({exc})")
+        out(f"refused: cannot open {sanitize(str(state_dir))} without "
+            f"following links ({sanitize(str(exc))})")
         return EXIT_REFUSED
     try:
         lock_raw, lock_parsed, lock_note = _read_lock_at(sfd, LOCK_NAME)
@@ -663,10 +704,10 @@ def main(argv=None):
             return force_unlock(args.force_unlock, args.yes)
         return overview()
     except PruneError as exc:
-        sys.stderr.write(f"prune-state: {exc}\n")
+        sys.stderr.write(f"prune-state: {sanitize(str(exc))}\n")
         return EXIT_REFUSED
     except shared.LockError as exc:
-        sys.stderr.write(f"prune-state: {exc}\n")
+        sys.stderr.write(f"prune-state: {sanitize(str(exc))}\n")
         return EXIT_REFUSED
 
 
