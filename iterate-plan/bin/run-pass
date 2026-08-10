@@ -80,27 +80,24 @@ def main(argv=None):
     repo_root, warnings = shared.resolve_repo_root()
     handoff, _ = shared.resolve_handoff_dir()
     try:
-        plan_path = shared.ensure_trusted_path(args.plan, [repo_root],
-                                               "--plan")
-        note_path = None
+        # Identity-anchored reads: content comes from a descriptor whose
+        # inode is re-verified in-boundary after the open, so a pathname
+        # swapped between validation and read can't reach the codex prompt.
+        plan_path, plan_text = shared.read_trusted_text(
+            args.plan, [repo_root], "--plan")
+        note_text = ""
         if args.note is not None:
-            note_path = shared.ensure_trusted_path(args.note, [handoff],
-                                                   "--note")
+            _note_path, note_text = shared.read_trusted_text(
+                args.note, [handoff], "--note")
     except shared.TrustedPathError as exc:
         sys.stderr.write(f"run-pass: {exc}\n")
         return EXIT_ERROR
     if plan_path.suffix != ".md":
+        # Checked on the VERIFIED identity read_trusted_text returned.
         sys.stderr.write(
             f"run-pass: plan {plan_path} must be a .md file — the runner "
             f"reads it into the codex prompt and refuses to read anything "
             f"else under that flag\n")
-        return EXIT_ERROR
-
-    try:
-        plan_text = plan_path.read_text(encoding="utf-8")
-        note_text = note_path.read_text(encoding="utf-8") if note_path else ""
-    except OSError as exc:
-        sys.stderr.write(f"run-pass: {exc}\n")
         return EXIT_ERROR
     if not plan_text.strip():
         sys.stderr.write("run-pass: the plan is empty — nothing to review\n")

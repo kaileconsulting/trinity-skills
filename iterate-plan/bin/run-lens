@@ -67,27 +67,22 @@ def main(argv=None):
     repo_root, warnings = pr.shared.resolve_repo_root()
     handoff, _ = pr.shared.resolve_handoff_dir()
     try:
-        plan_path = pr.shared.ensure_trusted_path(args.plan, [repo_root],
-                                                  "--plan")
-        note_path = None
+        # Identity-anchored reads — same rationale as run-pass.
+        plan_path, plan_text = pr.shared.read_trusted_text(
+            args.plan, [repo_root], "--plan")
+        note_text = ""
         if args.note is not None:
-            note_path = pr.shared.ensure_trusted_path(args.note, [handoff],
-                                                      "--note")
+            _note_path, note_text = pr.shared.read_trusted_text(
+                args.note, [handoff], "--note")
     except pr.shared.TrustedPathError as exc:
         sys.stderr.write(f"run-lens: {exc}\n")
         return EXIT_ERROR
     if plan_path.suffix != ".md":
+        # Checked on the VERIFIED identity read_trusted_text returned.
         sys.stderr.write(
             f"run-lens: plan {plan_path} must be a .md file — the runner "
             f"reads it into the codex prompt and refuses to read anything "
             f"else under that flag\n")
-        return EXIT_ERROR
-
-    try:
-        plan_text = plan_path.read_text(encoding="utf-8")
-        note_text = note_path.read_text(encoding="utf-8") if note_path else ""
-    except OSError as exc:
-        sys.stderr.write(f"run-lens: {exc}\n")
         return EXIT_ERROR
     if not plan_text.strip():
         # Same contract at both command boundaries as run-pass.

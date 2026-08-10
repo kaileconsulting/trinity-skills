@@ -239,6 +239,71 @@ def ensure_trusted_path(path, boundaries, label: str) -> Path:
     )
 
 
+def read_trusted_text(path, boundaries, label: str, missing_ok: bool = False):
+    """Validate, open, RE-verify, and read as one identity-anchored
+    operation. Returns (real_path, text); with missing_ok, a missing file
+    returns (real_path, None) instead of raising.
+
+    ensure_trusted_path alone leaves a validate-then-reopen window: a
+    concurrent writer could swap the pathname (or a parent component) for a
+    symlink between validation and a later Path.read_text, steering the
+    pre-approved runner into reading an out-of-boundary file into the
+    network-backed codex prompt. Here the content always comes from an
+    opened descriptor whose inode is re-verified AFTER the open: the
+    pathname must still resolve inside the boundary AND still name the very
+    inode that was opened — a swap in either direction changes one of those
+    and refuses. Benign in-boundary symlinks keep working (they re-verify to
+    the same inode). Non-regular files (FIFO, device, directory) are refused
+    outright, and O_NONBLOCK means a FIFO refuses instead of hanging."""
+    real = ensure_trusted_path(path, boundaries, label)
+    try:
+        fd = os.open(str(real), os.O_RDONLY | os.O_NONBLOCK)
+    except FileNotFoundError:
+        if missing_ok:
+            return real, None
+        raise TrustedPathError(f"{label} {path} does not exist") from None
+    except OSError as exc:
+        raise TrustedPathError(f"{label} {path} unreadable: {exc}") from None
+    try:
+        st_fd = os.fstat(fd)
+        if not stat.S_ISREG(st_fd.st_mode):
+            raise TrustedPathError(
+                f"{label} {path} is not a regular file — refusing to read "
+                f"it into a codex prompt")
+        real2 = Path(os.path.realpath(str(path)))
+        in_boundary = False
+        for boundary in boundaries:
+            try:
+                real2.relative_to(Path(os.path.realpath(str(boundary))))
+                in_boundary = True
+                break
+            except ValueError:
+                continue
+        try:
+            st_now = os.stat(real2)
+        except OSError:
+            st_now = None
+        if not in_boundary or st_now is None or \
+                (st_now.st_dev, st_now.st_ino) != (st_fd.st_dev, st_fd.st_ino):
+            raise TrustedPathError(
+                f"{label} {path} changed between validation and read "
+                f"(pathname no longer names the opened in-boundary file) — "
+                f"refusing")
+        real = real2  # the verified identity — callers check suffix on THIS
+        chunks = []
+        while True:
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    finally:
+        os.close(fd)
+    try:
+        return real, b"".join(chunks).decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise TrustedPathError(f"{label} {path} is not UTF-8: {exc}") from None
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 

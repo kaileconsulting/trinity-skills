@@ -96,18 +96,16 @@ def main(argv=None):
     repo_root, _ = shared.resolve_repo_root()
     handoff, _ = shared.resolve_handoff_dir()
     try:
-        diff_path = shared.ensure_trusted_path(args.diff, [handoff], "--diff")
-        intent_path = shared.ensure_trusted_path(args.intent, [handoff], "--intent")
+        # Identity-anchored reads: content comes from a descriptor whose
+        # inode is re-verified in-boundary after the open, so a pathname
+        # swapped between validation and read can't reach the codex prompt.
+        _diff_path, diff_text = shared.read_trusted_text(
+            args.diff, [handoff], "--diff")
+        _intent_path, intent_text = shared.read_trusted_text(
+            args.intent, [handoff], "--intent")
         if args.log_path is not None:
             shared.ensure_trusted_path(args.log_path, [repo_root], "--log-path")
     except shared.TrustedPathError as exc:
-        sys.stderr.write(f"run-pass: {exc}\n")
-        return EXIT_ERROR
-
-    try:
-        diff_text = diff_path.read_text(encoding="utf-8")
-        intent_text = intent_path.read_text(encoding="utf-8")
-    except OSError as exc:
         sys.stderr.write(f"run-pass: {exc}\n")
         return EXIT_ERROR
     if not diff_text.strip():
@@ -141,7 +139,8 @@ def main(argv=None):
 
     try:
         lens_ids, reasons = select_lenses(diff_text, args.lenses)
-        prior = rr.read_prior_passes(log_path, args.scope_tag)
+        prior = rr.read_prior_passes(log_path, args.scope_tag,
+                                     boundaries=[repo_root])
     except (sel.RuleDataError, rr.CompositionError) as exc:
         sys.stderr.write(f"run-pass: {exc}\n")
         return EXIT_ERROR

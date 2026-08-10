@@ -189,9 +189,12 @@ def resolve_log_path(scope_tag: str, override=None, cwd=None):
     return (root / PASS_LOG_DIRNAME / f"code-review-{scope_tag}.md"), warnings
 
 
-def read_prior_passes(log_path: Path, scope_tag: str) -> str:
+def read_prior_passes(log_path: Path, scope_tag: str, boundaries=None) -> str:
     """The runner READS the pass log for the PRIOR PASSES block; it never
-    writes it — the model is the sole log writer.
+    writes it — the model is the sole log writer. With `boundaries` (the
+    CLIs pass [repo_root]), the read is identity-anchored via
+    shared.read_trusted_text so a pathname swapped between validation and
+    read can never pull out-of-boundary content into the prompt.
 
     The log's own format is the read capability: a pass log created by this
     skill always opens with `# Code Review — <scope-tag>`, so an existing
@@ -204,12 +207,21 @@ def read_prior_passes(log_path: Path, scope_tag: str) -> str:
     same scope hash → same state dir), and same-repo pass logs are review
     history of this same repository, already inside the confidentiality
     boundary. A missing file is simply pass 1."""
-    try:
-        text = log_path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return ""
-    except OSError as exc:
-        raise CompositionError(f"pass log unreadable: {exc}") from None
+    if boundaries is not None:
+        try:
+            _real, text = shared.read_trusted_text(
+                log_path, boundaries, "pass log", missing_ok=True)
+        except shared.TrustedPathError as exc:
+            raise CompositionError(str(exc)) from None
+        if text is None:
+            return ""
+    else:
+        try:
+            text = log_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return ""
+        except OSError as exc:
+            raise CompositionError(f"pass log unreadable: {exc}") from None
     expected = f"# Code Review — {scope_tag}"
     first = text.splitlines()[0] if text else ""
     if first != expected:

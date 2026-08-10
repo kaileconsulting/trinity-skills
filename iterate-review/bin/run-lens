@@ -63,18 +63,14 @@ def main(argv=None):
     repo_root, _ = rr.shared.resolve_repo_root()
     handoff, _ = rr.shared.resolve_handoff_dir()
     try:
-        diff_path = rr.shared.ensure_trusted_path(args.diff, [handoff], "--diff")
-        intent_path = rr.shared.ensure_trusted_path(args.intent, [handoff], "--intent")
+        # Identity-anchored reads — same rationale as run-pass.
+        _diff_path, diff_text = rr.shared.read_trusted_text(
+            args.diff, [handoff], "--diff")
+        _intent_path, intent_text = rr.shared.read_trusted_text(
+            args.intent, [handoff], "--intent")
         if args.log_path is not None:
             rr.shared.ensure_trusted_path(args.log_path, [repo_root], "--log-path")
     except rr.shared.TrustedPathError as exc:
-        sys.stderr.write(f"run-lens: {exc}\n")
-        return EXIT_ERROR
-
-    try:
-        diff_text = diff_path.read_text(encoding="utf-8")
-        intent_text = intent_path.read_text(encoding="utf-8")
-    except OSError as exc:
         sys.stderr.write(f"run-lens: {exc}\n")
         return EXIT_ERROR
     if not diff_text.strip():
@@ -111,7 +107,8 @@ def main(argv=None):
     state_dir = rr.STATE_ROOT / shash
 
     try:
-        prior = rr.read_prior_passes(log_path, args.scope_tag)
+        prior = rr.read_prior_passes(log_path, args.scope_tag,
+                                     boundaries=[repo_root])
         input_path, response_path = rr.debug_paths(state_dir, args.lens)
         input_path.parent.mkdir(parents=True, exist_ok=True)
         entry = rr.run_one_lens(args.lens, intent_text, diff_text, prior,

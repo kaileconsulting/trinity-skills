@@ -296,6 +296,9 @@ def test_extraction(pr) -> None:
            pr.extract_section(PLAN_TEXT, "Phasing").endswith("Phase 1: fixture.\n"))
     record("extraction: an H3 with the same title text is not a section",
            pr.extract_section("## A\nx\n### B\ny\n", "B") is None)
+    record("extraction: a repeated identical H2 terminates the slice",
+           pr.extract_section("## A\nfirst\n## A\nsecond\n## B\nz\n", "A")
+           == "## A\nfirst\n")
     got = pr.extract_required_sections(PLAN_TEXT, ["Phasing", "Approach"])
     record("extraction: declared order preserved",
            got.index("## Phasing") < got.index("## Approach"))
@@ -320,6 +323,75 @@ def test_selection(pr) -> None:
         record("selection: --lenses with no ids rejected", False)
     except pr.CompositionError:
         record("selection: --lenses with no ids rejected", True)
+
+
+# ---------------------------------------------------------------------------
+# Identity-anchored trusted reads (module-level, on the shared helper)
+# ---------------------------------------------------------------------------
+
+def test_trusted_read(pr) -> None:
+    shared = pr.shared
+    tmp = tempfile.mkdtemp(prefix="trusted-read-")
+    try:
+        boundary = os.path.join(tmp, "repo")
+        os.makedirs(boundary)
+        victim = os.path.join(boundary, "plan.md")
+        with open(victim, "w") as fh:
+            fh.write("# in boundary\n")
+        secret = os.path.join(tmp, "secret.txt")
+        with open(secret, "w") as fh:
+            fh.write("SECRET\n")
+
+        real, text = shared.read_trusted_text(victim, [boundary], "--plan")
+        record("trusted read: benign read returns verified identity",
+               text == "# in boundary\n"
+               and str(real) == os.path.realpath(victim))
+
+        link = os.path.join(boundary, "link.md")
+        os.symlink(victim, link)
+        _real, text = shared.read_trusted_text(link, [boundary], "--plan")
+        record("trusted read: benign in-boundary symlink still allowed",
+               text == "# in boundary\n")
+
+        # Deterministic swap injection: the open lands on an out-of-boundary
+        # inode (as a pathname swap in the validate->open window would make
+        # it); the post-open identity re-verification must refuse.
+        real_open = os.open
+
+        def swapped_open(path, flags, *a, **k):
+            if isinstance(path, (str, os.PathLike)) \
+                    and os.path.abspath(str(path)) == os.path.realpath(victim):
+                return real_open(secret, flags, *a, **k)
+            return real_open(path, flags, *a, **k)
+
+        os.open = swapped_open
+        try:
+            try:
+                shared.read_trusted_text(victim, [boundary], "--plan")
+                ok = False
+            except shared.TrustedPathError as exc:
+                ok = "changed between validation and read" in str(exc)
+        finally:
+            os.open = real_open
+        record("trusted read: swapped inode between validation and open "
+               "refused", ok)
+
+        fifo = os.path.join(boundary, "fifo.md")
+        os.mkfifo(fifo)
+        try:
+            shared.read_trusted_text(fifo, [boundary], "--plan")
+            ok = False
+        except shared.TrustedPathError as exc:
+            ok = "not a regular file" in str(exc)
+        record("trusted read: FIFO refused without hanging", ok)
+
+        _real, text = shared.read_trusted_text(
+            os.path.join(boundary, "nope.md"), [boundary], "--plan",
+            missing_ok=True)
+        record("trusted read: missing_ok reports absence as None",
+               text is None)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
@@ -448,6 +520,15 @@ def test_boundaries(env: Env) -> None:
 
     # Notes must come from the handoff dir — an in-repo file elsewhere is
     # refused even though it is inside the repo root.
+    # A FIFO staged at a note name must refuse (regular files only), and
+    # must do so without hanging on the open.
+    fifo = os.path.join(env.handoff, "fifo-note")
+    os.mkfifo(fifo)
+    proc = env.run("run-pass", "--plan", env.plan, "--note", fifo)
+    record("boundary: FIFO staged as --note refused without hanging",
+           proc.returncode == 1 and "not a regular file" in proc.stderr)
+    os.remove(fifo)
+
     stray = os.path.join(env.repo, "docs", "stray-note.txt")
     with open(stray, "w") as fh:
         fh.write("note\n")
@@ -626,6 +707,7 @@ def main() -> int:
         env = Env(tmp)
         test_composition(pr)
         test_extraction(pr)
+        test_trusted_read(pr)
         test_selection(pr)
         test_rule_data_drift(env)
         test_contracts(env)

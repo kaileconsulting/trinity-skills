@@ -233,21 +233,23 @@ def extract_section(plan_text: str, title: str):
     """The slice for one required H2 section, or None when absent.
 
     Matching is exact and case-sensitive against the canonical bare title:
-    a line that is precisely `## <title>` opens the slice, and the slice
-    runs up to (not including) the next `## ` heading. Sub-headings (###)
-    belong to their parent section and are kept."""
+    the FIRST line that is precisely `## <title>` opens the slice, and the
+    slice runs up to (not including) the next `## ` heading — ANY next H2,
+    a repeated identical title included, so duplicate headings can never
+    merge into one oversized slice. Sub-headings (###) belong to their
+    parent section and are kept."""
     lines = plan_text.splitlines(keepends=True)
     out = []
     in_section = False
     for raw in lines:
         line = raw.rstrip("\n")
-        if line == f"## {title}":
-            in_section = True
+        if in_section:
+            if line.startswith("## "):
+                break
             out.append(raw)
             continue
-        if in_section and line.startswith("## "):
-            break
-        if in_section:
+        if line == f"## {title}":
+            in_section = True
             out.append(raw)
     if not out:
         return None
