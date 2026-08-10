@@ -407,6 +407,41 @@ def test_parity() -> None:
     cp.RULES = real_rules
     record("parity: per-skill rule missing a skill -> exit 2", rc == 2, f"exit {rc}")
 
+    # --- shared-file byte-identity (Phase 3) -------------------------------
+    # The hash check must actually fail on drift: build a copied mini-tree
+    # (real SKILL.mds so the prose rules stay green), then flip one byte.
+    import shutil
+    real_repo = cp.REPO
+    tmp = tempfile.mkdtemp(prefix="parity-drift-")
+    try:
+        for skill in real_skills:
+            os.makedirs(os.path.join(tmp, skill, "bin"))
+            shutil.copy(os.path.join(real_repo, skill, "SKILL.md"),
+                        os.path.join(tmp, skill, "SKILL.md"))
+            for name in cp.SHARED_BIN_FILES:
+                shutil.copy(os.path.join(real_repo, skill, "bin", name),
+                            os.path.join(tmp, skill, "bin", name))
+        cp.REPO = tmp
+        rc = quiet(cp.main, [])
+        record("parity: copied mini-tree baseline passes the hash check",
+               rc == 0, f"exit {rc}")
+
+        drifted = os.path.join(tmp, "iterate-plan", "bin", "runner_shared.py")
+        with open(drifted, "a", encoding="utf-8") as fh:
+            fh.write("# one drifted byte\n")
+        rc, out = loud(cp.main, [])
+        record("parity: a drifted shared file -> exit 1, named",
+               rc == 1 and "SHARED-FILE DRIFT" in out
+               and "runner_shared.py" in out)
+
+        os.remove(drifted)
+        rc, out = loud(cp.main, [])
+        record("parity: a missing shared file -> exit 1, not a silent pass",
+               rc == 1 and "SHARED-FILE DRIFT" in out and "UNREADABLE" in out)
+    finally:
+        cp.REPO = real_repo
+        shutil.rmtree(tmp, ignore_errors=True)
+
 
 # ---------------------------------------------------------------------------
 # check-examples.py

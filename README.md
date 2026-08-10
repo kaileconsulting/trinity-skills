@@ -129,19 +129,21 @@ runs the same loop against `git diff $(git merge-base HEAD main)...HEAD`. Pass l
 
 ## Runner scripts & the one-rule permission model
 
-> **Status:** landing in phases — see `docs/runner-scripts-artifact-hygiene-2026-08-06.md`. Phases 0–2 have landed: the runners are operative for `iterate-review`, including state pruning. Phase 3 ports the pattern to `iterate-plan`.
-
-Historically each review pass improvised unique shell to compose lens inputs and invoke Codex — commands that could never be pre-approved, so a 10-pass review meant dozens of opaque permission prompts and a settings file full of dead one-shot rules. The runner scripts replace that with three stable executables under `iterate-review/bin/` (`run-lens`, `run-pass`, `prune-state`; stdlib-only Python ≥ 3.9). A stable script accepts *arguments*, so one documented allowlist rule covers every invocation:
+Historically each review pass improvised unique shell to compose lens inputs and invoke Codex — commands that could never be pre-approved, so a 10-pass review meant dozens of opaque permission prompts and a settings file full of dead one-shot rules. The runner scripts replace that with three stable executables under each skill's `bin/` (`run-lens`, `run-pass`, `prune-state`; stdlib-only Python ≥ 3.9). A stable script accepts *arguments*, so one documented allowlist rule per skill covers every invocation:
 
 ```json
 // .claude/settings.json → permissions.allow — adjust the path to YOUR install:
 // symlink install (default ./install.sh):
 "Bash(~/.claude/skills/iterate-review/bin/* *)"
+"Bash(~/.claude/skills/iterate-plan/bin/* *)"
 // copied-directory install: use the directory you copied to, e.g.
 "Bash(/path/to/your/skills/iterate-review/bin/* *)"
+"Bash(/path/to/your/skills/iterate-plan/bin/* *)"
 ```
 
-With that one rule in place, the review machinery generates **zero further Bash permission prompts** end to end. What remains is deliberate: scope selection at the start, the skills' mandated human checkpoints, and pass-log appends via Claude Code's normal file-edit permissions. The runner composes and invokes; it never folds, never writes pass logs, never decides.
+With those rules in place, the review machinery generates **zero further Bash permission prompts** end to end. What remains is deliberate: scope selection at the start, the skills' mandated human checkpoints, and pass-log / plan appends via Claude Code's normal file-edit permissions. The runner composes and invokes; it never folds, never writes pass logs, never decides.
+
+The two skills share their runner machinery literally: `runner_shared.py` and `prune-state` are duplicated **byte-identically** between the two `bin/` directories and hash-checked by `tools/check-parity.py`, so both skills always run the same reviewed lock/publication/validation code. The adapted halves (`review_runner.py` vs `plan_runner.py` — composition and selection) are pinned by per-skill behavioral fixtures instead.
 
 **Pass-log default is off the repo root.** New pass logs default to `<repo-root>/docs/reviews/code-review-<scope-tag>.md` (created on demand); `--log-path` still overrides. **Existing logs are untouched** — no migration, no renames; move old root-level `code-review-*.md` files yourself if and when you want them gathered.
 
@@ -156,10 +158,11 @@ trinity-skills/
 │   └── template.md
 ├── iterate-plan/
 │   ├── SKILL.md
+│   ├── bin/                        # runner scripts: run-lens, run-pass, prune-state
 │   ├── reviewer-prompt.md          # shared contract; defers ROLE/FOCUS to the lens
 │   ├── reviewer-output.schema.json
 │   ├── lenses/                     # architect, product-manager + selection rules
-│   ├── examples/                   # merge goldens + a real Codex response
+│   ├── examples/                   # merge + composition goldens, a real Codex response
 │   └── state/                      # gitignored at runtime; only example.json tracked
 ├── iterate-review/
 │   ├── SKILL.md
@@ -169,6 +172,7 @@ trinity-skills/
 │   ├── lenses/                     # senior-dev, security, qa + selection rules
 │   ├── examples/
 │   │   ├── selection/              # routing fixtures + runnable reference impl
+│   │   ├── composition/            # byte-deterministic assembly goldens
 │   │   └── merge/                  # merge / verdict-aggregation goldens
 │   └── state/                      # gitignored at runtime
 ├── v1/                             # frozen single-reviewer skills (see below)
@@ -192,8 +196,10 @@ Its output is the live count of what's covered — deliberately not restated her
 |---|---|
 | `iterate-review/examples/selection/check-selection.py` | A **second implementation** of the deterministic selection rules, run against a set of golden diff fixtures. The rules claim any two implementations agree; until this existed there was one, and it was a language model reading prose. |
 | `tools/check-examples.py` | Every fixture validates against its skill's schema — and fixtures whose *names* make a claim have that claim verified. |
-| `tools/check-parity.py` | Every shared-machinery rule is present in **both** skills' per-pass loops. Semantic parity, not byte-identity: prose may differ, rules may not. |
-| `tools/test-checkers.py` | Tests that the three above actually fail when they should. |
+| `tools/check-parity.py` | Every shared-machinery rule is present in **both** skills' per-pass loops (semantic parity, not byte-identity: prose may differ, rules may not) — and the designated shared runner files (`runner_shared.py`, `prune-state`) are **byte-identical** across both `bin/` directories, by content hash. |
+| `tools/check-runners.py` | The iterate-review runner scripts' promised behavior: byte-deterministic composition, exit contracts, lock lifecycle, pass-log resolution, prune safety — against a copied install with a fake `codex`. |
+| `tools/check-plan-runners.py` | The iterate-plan port's adapted behavior: section extraction, always-all selection, `--plan`/`--note` boundaries, plus a wiring smoke over the shared contracts. |
+| `tools/test-checkers.py` | Tests that the checkers above actually fail when they should. |
 
 Worth knowing what they don't cover: `check-parity.py` checks a rule is *stated*, not that it is *correct*, and the merge step is deliberately not scripted — semantic dedupe is Opus's judgment, so it ships worked goldens to compare against rather than assertions. See `tools/README.md`.
 

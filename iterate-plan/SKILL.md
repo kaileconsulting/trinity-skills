@@ -31,6 +31,8 @@ Optional flags:
   entered mid-run via the `(L)oop from here` checkpoint option.
 - `--max-passes=N` — loop-mode safety cap (default 6), a fresh budget per loop
   activation.
+- `--keep-state` — on Converge, skip the state-dir prune and keep the
+  per-pass inputs/responses for audit or debugging.
 
 ## Setup (once per skill invocation)
 
@@ -56,66 +58,92 @@ handling, one HISTORICAL block, and the loop-mode checkpoint) are the
 verdict, `FAILED` handling, one HISTORICAL block, one checkpoint, loop mode +
 guardrails) hold in the sibling `iterate-review` skill's steps 10–14. Keep
 them in **semantic parity** — the prose legitimately differs where each
-skill's folding / pass-log / `--once` details differ; a Phase 4 fixture checks
-the shared *rules* are present in both, **not** byte-identity. Only lens
-selection + matched-context composition (step 5) is skill-specific.
+skill's folding / pass-log / `--once` details differ; `tools/check-parity.py`
+checks the shared *rules* are present in both, **not** byte-identity. Only
+lens selection + input composition (step 5) is skill-specific — and both are
+performed by the runner, deterministically.
 
-5. **Select lenses + compose matched context.** Read the lens records in
-   `~/.claude/skills/iterate-plan/lenses/*.md` and apply the selection table.
-   For iterate-plan both lenses always run.
+5. **Prepare the pass input — the runner selects lenses and composes.** The
+   plan file itself is the pass input; it must live **inside the invoking
+   repo root** (the runner refuses any `--plan` path — symlinks resolved —
+   outside it, and refuses non-`.md` files, so the pre-approved allowlist
+   rule can never be used to read arbitrary files into a network-backed
+   codex prompt).
 
-   For each lens, build a matched-context file by **extracting the plan H2
-   sections named in its `requires_sections`** — match a line `## <title>`
-   (title compared with the `## ` marker stripped) and take everything from
-   that heading up to the next `## ` heading. Write the concatenated slices to
-   `$STATE_DIR/pass-$N.<lensid>.context.md` under a header
-   `=== MATCHED CONTEXT (sections for the <lensid> lens) ===`, and use it as
-   `$MATCHED_CONTEXT_FILE` in step 6. A shell helper for one section:
+   **Only if a manual edit was detected** at the top of this pass (current
+   plan hash ≠ post-fold hash from the previous pass): write a
+   `Note: human edits since last pass — diff:` block to a note file — **in
+   the per-repository handoff directory, enforced**: `<git-dir>/iterate-plan/`
+   (worktree-aware; invisible to git, uncommittable; in a non-git cwd:
+   `<cwd>/.iterate-plan/`). The runner refuses `--note` paths anywhere else —
+   including elsewhere *inside* the repo — and prepends the staged note to
+   every lens's input.
+
+   **Lens selection is deterministic and performed by `run-pass`** — every
+   iterate-plan lens is `always: true` per `lenses/README.md`, so selection
+   is the full lens set; pass `--lenses <ids>` only to deliberately force a
+   subset (e.g. retrying one lens). Composition is likewise the runner's:
+   shared `reviewer-prompt.md` + the lens's ROLE/FOCUS fragment + a
+   `=== MATCHED CONTEXT ===` block (the lens's `matched_context` framing
+   line plus the plan H2 sections named in its `requires_sections` — exact
+   `## <title>` match, sub-headings kept with their parent; an absent
+   section contributes `NOTE: required section "<title>" is absent — flag
+   this gap` so the lens reports the omission rather than inventing content;
+   never skipped, never handed silence) + the optional staged note + the
+   full plan under `=== PLAN ===`, assembled **byte-deterministically**
+   (goldens in `examples/composition/`; composed inputs land in the state
+   dir as `pass-N.<lensid>.input.txt`). Prior passes need no separate block:
+   the plan's own HISTORICAL sections arrive with the plan.
+
+6. **Fan out — one `run-pass` invocation.** The runner makes **one Codex
+   call per selected lens, concurrently** (all lens futures awaited; one
+   lens failing never cancels its siblings), each writing
+   `$STATE_DIR/pass-$N.<lensid>.response.json` with the exact sandbox flags
+   (`codex -a never exec -C <plan-dir> -s read-only --skip-git-repo-check
+   --output-schema … --json --output-last-message … -`), then publishes
+   `pass-$N.summary.json` last:
 
    ```bash
-   extract_section() {  # $1 = bare H2 title, $2 = plan path
-     awk -v t="## $1" '$0==t{f=1;print;next} /^## /&&f{f=0} f{print}' "$2"
-   }
+   ~/.claude/skills/iterate-plan/bin/run-pass \
+     --plan "$PLAN_PATH" [--note "$NOTE_FILE"] [--lenses <ids>]
    ```
 
-   **If a required section is absent** (the helper prints nothing), still build
-   the file but include a line `NOTE: required section "<title>" is absent —
-   flag this gap` so the lens reports the omission rather than inventing
-   content. Never skip a lens, never hand it an empty file.
-
-6. **Fan out — one Codex call per selected lens, concurrently.** For each lens,
-   compose its input = the shared `reviewer-prompt.md` + the lens's ROLE/FOCUS
-   fragment + its matched-context slice + the plan. Run the calls in parallel
-   (background subprocesses), each writing
-   `$STATE_DIR/pass-$N.<lensid>.response.json`:
-
-   ```bash
-   cat ~/.claude/skills/iterate-plan/reviewer-prompt.md \
-       ~/.claude/skills/iterate-plan/lenses/<lensid>.md \
-       "$MATCHED_CONTEXT_FILE" "$PLAN_PATH" \
-     | codex -a never exec \
-         -C "$(dirname "$PLAN_PATH")" \
-         -s read-only --skip-git-repo-check \
-         --output-schema ~/.claude/skills/iterate-plan/reviewer-output.schema.json \
-         --json --output-last-message "$STATE_DIR/pass-$N.<lensid>.response.json" \
-         -
-   ```
-
-   Notes (unchanged from single-lens): `-a never` precedes `exec`;
-   `--skip-git-repo-check` when the plan dir isn't a git repo; the trailing `-`
-   reads stdin. If a manual edit was detected at the top of this pass (current
-   plan hash ≠ post-fold hash from the previous pass), prepend a
-   `Note: human edits since last pass — diff:` block to every lens's input.
+   Contract: **the runner composes and invokes; it never folds, never writes
+   the plan, never decides.** Exit 0 means exactly "the summary was
+   published" — per-lens failure/rejection is *data* inside it
+   (`status: ok|failed|rejected`, with exit code + stderr tail). Non-zero
+   exit / absent summary means the pass **aborted**: treat it as never-ran
+   and surface the runner's stderr to the user (e.g. the scope is locked by
+   a concurrent run, or an ambiguous lock needs `prune-state
+   --force-unlock`). **A pass exists iff its summary exists.** The summary
+   echoes `scope_hash` (sha1 of the plan's absolute path — the same per-plan
+   key as the state file) and `log_path` (the plan path — iterate-plan's
+   HISTORICAL record lives in the plan itself). This one command shape is
+   what the README's single allowlist rule pre-approves; requires `python3`
+   ≥ 3.9 and `codex` on PATH.
 
 7. **Read, validate, and merge the lens responses.**
-   - **Per response:** read each `pass-$N.<lensid>.response.json` (already
-     schema-validated by `--output-schema`). Apply belt-and-suspenders
-     patch-marker rejection (`*** Begin Patch`, `--- a/`, `+++ b/`, `@@`,
-     `<<<<<<<`).
-   - **Lens failure:** a lens that crashes or returns malformed/off-schema
-     output is **retried once**; if it still fails, record it as `FAILED`
-     orchestration metadata — **not** a verdict (the reviewer schema is
-     untouched).
+   - **Per response:** read the summary's per-lens entries. For
+     `status: ok`, read that lens's `pass-$N.<lensid>.response.json`
+     (schema-validated by `--output-schema`; the runner has already applied
+     belt-and-suspenders **patch-marker rejection** in code — `*** Begin
+     Patch`, `--- a/` or `+++ b/`, `@@ -` followed by digits, `<<<<<<<` or
+     `=======` or `>>>>>>>` — plus structural checks, both fixture-pinned).
+   - **Rejected response:** `status: rejected` means that lens's response
+     violated the reviewer contract. Report the actual cause from the
+     summary's `reject_reasons` — patch-marker rejection ("Codex response
+     contains patch-shaped output, which violates the reviewer contract") vs
+     structural failure — then abort: "Aborting. Inspect the offending
+     `pass-$N.<lensid>.response.json`." Do not proceed.
+   - **Lens failure:** a lens with `status: failed` (codex crashed or
+     returned nothing — exit code + stderr tail are in the summary) is
+     **retried once**, standalone: `bin/run-lens --plan … --lens <id>
+     [--note …]` (exit 0 = valid, 2 = rejected, 1 = error; its artifacts
+     land in the isolated `debug/` namespace, never `pass-N.*`). A
+     successful retry's response merges normally — note the debug response
+     path in the HISTORICAL block. If the retry also fails, record the lens
+     as `FAILED` orchestration metadata — **not** a verdict (the reviewer
+     schema is untouched).
    - **Merge (Opus, semantic judgment — not a mechanical key):** collapse
      findings that target the same location and assert the same defect; keep
      distinct concerns separate; a co-reported finding retains **all**
@@ -292,27 +320,73 @@ selection + matched-context composition (step 5) is skill-specific.
     (`pass_count`, `last_verdict`, `plan_abs_path`, `plan_content_hash`,
     `started_at`, `last_pass_at`,
     `convergence.handoff_decision` ∈ `{handoff, stay, aborted}`,
-    `convergence.handoff_path` if applicable). Exit.
+    `convergence.handoff_path` if applicable).
 
-State file shape: see `state/example.json`. Per-pass response files
-(`pass-N.response.json`) are written by `codex --output-last-message`
-during the loop and stay on disk for inspection / debugging.
+    **On Converge (Handoff or Stay), additionally prune the scope's state
+    directory** — the plan's HISTORICAL sections are the durable audit
+    record; the per-pass inputs, responses, and summaries under
+    `state/<scope-hash>/` are intermediates:
+
+    ```
+    ~/.claude/skills/iterate-plan/bin/prune-state --scope <scope-hash> --yes
+    ```
+
+    Skip the prune when the invocation carried `--keep-state` or the user
+    asks to keep the state at the Converge checkpoint (audit/debug trail —
+    e.g. investigating a bad merge); say so in the wrap-up either way.
+    Convergence is *your* determination confirmed by the human —
+    `prune-state` never infers it. A completed `run-pass` leaves no lock, so
+    this prune is never blocked; if it reports a refusal anyway, surface it
+    rather than retrying.
+
+    **On Abort, leave the state directory in place** — abandoned-run state
+    is cleaned up later, explicitly, with `prune-state --older-than <days>
+    --yes` (dry-run without `--yes`; it never touches a scope holding a live
+    run lock, the plan, or the `state/<scope-hash>.json` files).
+
+    Then exit.
+
+State file shape: see `state/example.json`. The per-scope state directory
+(`state/<scope-hash>/`, same sha1-of-plan-path key as the state file) is the
+runner's: composed `pass-N.<lensid>.input.txt`, raw
+`pass-N.<lensid>.response.json`, the `pass-N.summary.json` commit point (a
+pass exists iff its summary exists), `run.lock` (+ transient
+`run.lock.reclaim`) for exclusive scope ownership, and a `debug/` namespace
+for standalone `run-lens` output. Pruned at Converge (step 15) unless
+`--keep-state`; swept later by `prune-state --older-than` for abandoned runs.
 
 ## Pointers
 
 - `reviewer-prompt.md` — canonical reviewer prompt sent to Codex.
 - `reviewer-output.schema.json` — JSON Schema enforced by `--output-schema`.
+- `lenses/` — persona lens records + the selection rules (`lenses/README.md`).
 - `state/<plan-path-hash>.json` — per-plan iteration state (written at
-  convergence/abort only).
+  convergence/abort only; never touched by `prune-state`).
 - `state/example.json` — illustrative state file showing the schema.
+- `state/<scope-hash>/` — the runner's per-scope state directory (see the
+  State-file-shape paragraph above); pruned at Converge unless `--keep-state`.
+- `bin/` — the runner scripts steps 5–7 invoke: `run-pass` (selection +
+  composition + concurrent fan-out + summary), `run-lens` (one lens,
+  standalone/debug), `prune-state` (state-dir cleanup: `--scope` at Converge,
+  `--older-than` for abandoned runs, `--force-unlock` for ambiguous-lock
+  recovery; dry-run unless `--yes`), plus the modules they share
+  (`plan_runner.py`, and `runner_shared.py` — a byte-identical copy of
+  iterate-review's, hash-checked by `tools/check-parity.py`). Runner behavior
+  is fixture-pinned by `tools/check-plan-runners.py`.
 - `examples/` — fixtures (see `examples/README.md`). `pass-4-response.json` is a
   real pre-Axis-2 Codex response; `examples/merge/` holds multi-lens merge
-  goldens. Validate with `tools/check-examples.py`.
+  goldens; `examples/composition/` pins byte-deterministic input assembly.
+  Validate with `tools/check-examples.py`.
 
 ## Hard rules
 
 - Codex never edits the plan file. Enforced by `-s read-only -a never`
-  sandbox + reviewer prompt + skill-side patch-marker rejection.
+  sandbox + reviewer prompt + runner-side patch-marker rejection.
+- **The runner composes and invokes; it never folds, never writes the plan,
+  never decides.** `bin/run-pass` / `bin/run-lens` own lens selection, input
+  composition, Codex invocation, and response validation. Every behavioral
+  rule — semantic merge, worst-of verdict, `FAILED` handling, dispositions,
+  HISTORICAL blocks, checkpoints, loop control — stays with the model.
 - Skill never silently iterates. After every pass, prompt user:
   Continue / Converge / Abort. **Loop mode is the one opt-in exception**
   (via `--loop` or the `(L)oop from here` choice): it auto-continues REVISE

@@ -1,0 +1,15 @@
+# Golden Plan
+
+Intro line.
+
+## Approach
+Approach body.
+
+### Sub-decision
+Kept with its parent.
+
+## Phasing
+Phase 1 body.
+
+## Other
+Never sliced.

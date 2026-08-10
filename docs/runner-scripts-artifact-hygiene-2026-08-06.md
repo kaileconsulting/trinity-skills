@@ -206,7 +206,7 @@ Everything the runner does (state-dir writes, codex invocation, validation) happ
 - Extended parity fixture green; both skills' fixtures green; CHANGELOG finalized.
 
 **Iterate-review:** YES (rationale: duplicated bin/ must not drift)
-**Status:** not started
+**Status:** in progress (2026-08-10 — implementation + fixtures landed; iterate-review pass and dogfood pending)
 
 ## Acceptance criteria
 

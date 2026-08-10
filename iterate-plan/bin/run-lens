@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+"""run-lens — compose one lens input, invoke Codex, validate the response.
+
+Part of the iterate-plan runner set (stdlib-only, Python >= 3.9); see
+docs/runner-scripts-artifact-hygiene-2026-08-06.md. The runner composes and
+invokes; it never folds, never writes the plan, never decides.
+
+Standalone exit contract: 0 = valid response published; 2 = response rejected
+(patch markers or structural failure); 1 = invocation/orchestration error.
+Standalone invocations are debug tools: they take no lock and write only to
+the isolated state/<scope-hash>/debug/ namespace — never to published
+pass-N.* state, so a standalone run during a live run-pass cannot overwrite
+or interleave published artifacts. The machine-readable result is printed to
+stdout.
+"""
+import sys
+
+MIN_PYTHON = (3, 9)
+if sys.version_info < MIN_PYTHON:
+    sys.stderr.write(
+        "run-lens: Python %d.%d+ required, found %d.%d — see README (Prerequisites)\n"
+        % (MIN_PYTHON + sys.version_info[:2])
+    )
+    sys.exit(1)
+
+import argparse
+import json
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import plan_runner as pr  # noqa: E402
+
+EXIT_OK = 0
+EXIT_ERROR = 1
+EXIT_REJECTED = 2
+
+
+def build_parser():
+    p = argparse.ArgumentParser(
+        prog="run-lens",
+        description=(
+            "Compose one lens input from the plan, invoke Codex read-only, "
+            "validate the response. Standalone runs are debug-only: no lock, "
+            "artifacts under state/<scope-hash>/debug/. Exit 0 = valid "
+            "response, 2 = rejected (patch markers / structural failure), "
+            "1 = error."
+        ),
+    )
+    p.add_argument("--plan", required=True, type=Path,
+                   help="path to the plan markdown file (must be inside the "
+                        "invoking repo root)")
+    p.add_argument("--lens", required=True,
+                   help="lens id (architect | product-manager)")
+    p.add_argument("--note", type=Path, default=None,
+                   help="optional staged note file (human-edits-since-last-"
+                        "pass diff), prepended to the lens input; must live "
+                        "in the per-repo handoff dir")
+    return p
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+
+    # Same trusted boundaries as run-pass: the plan (a repository document)
+    # from inside the invoking repo root; the staged note from the per-repo
+    # handoff dir only.
+    repo_root, warnings = pr.shared.resolve_repo_root()
+    handoff, _ = pr.shared.resolve_handoff_dir()
+    try:
+        plan_path = pr.shared.ensure_trusted_path(args.plan, [repo_root],
+                                                  "--plan")
+        note_path = None
+        if args.note is not None:
+            note_path = pr.shared.ensure_trusted_path(args.note, [handoff],
+                                                      "--note")
+    except pr.shared.TrustedPathError as exc:
+        sys.stderr.write(f"run-lens: {exc}\n")
+        return EXIT_ERROR
+    if plan_path.suffix != ".md":
+        sys.stderr.write(
+            f"run-lens: plan {plan_path} must be a .md file — the runner "
+            f"reads it into the codex prompt and refuses to read anything "
+            f"else under that flag\n")
+        return EXIT_ERROR
+
+    try:
+        plan_text = plan_path.read_text(encoding="utf-8")
+        note_text = note_path.read_text(encoding="utf-8") if note_path else ""
+    except OSError as exc:
+        sys.stderr.write(f"run-lens: {exc}\n")
+        return EXIT_ERROR
+
+    try:
+        known = {lens["id"] for lens in pr.load_lenses()}
+    except pr.CompositionError as exc:
+        sys.stderr.write(f"run-lens: {exc}\n")
+        return EXIT_ERROR
+    if args.lens not in known:
+        sys.stderr.write(
+            f"run-lens: unknown lens id {args.lens!r} "
+            f"(known: {', '.join(sorted(known))})\n")
+        return EXIT_ERROR
+
+    shash = pr.scope_hash(plan_path)
+    state_dir = pr.STATE_ROOT / shash
+
+    try:
+        input_path, response_path = pr.debug_paths(state_dir, args.lens)
+        input_path.parent.mkdir(parents=True, exist_ok=True)
+        entry = pr.run_one_lens(args.lens, plan_text, note_text,
+                                plan_path.parent, input_path, response_path)
+    except pr.CompositionError as exc:
+        sys.stderr.write(f"run-lens: {exc}\n")
+        return EXIT_ERROR
+
+    result = {
+        "lens": args.lens,
+        "scope_hash": shash,
+        "plan_path": str(plan_path),
+        "warnings": warnings,
+        "input_path": str(input_path),
+        **entry,
+    }
+    # Committed — a vanished stdout consumer must not flip the exit code.
+    pr.shared.emit_stdout(json.dumps(result, indent=2, sort_keys=True) + "\n")
+    if entry["status"] == "ok":
+        return EXIT_OK
+    if entry["status"] == "rejected":
+        return EXIT_REJECTED
+    return EXIT_ERROR
+
+
+if __name__ == "__main__":
+    sys.exit(main())

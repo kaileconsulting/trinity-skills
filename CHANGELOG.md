@@ -4,9 +4,49 @@
 
 Plan: `docs/runner-scripts-artifact-hygiene-2026-08-06.md` (converged after 9
 iterate-plan passes). Replaces per-pass improvised shell with stdlib-only Python
-runners under `iterate-review/bin/` so one documented allowlist rule covers an
-entire review; moves the pass-log default to `docs/reviews/`; adds state pruning.
-Ports the pattern to `iterate-plan` in the final phase.
+runners under each skill's `bin/` so one documented allowlist rule per skill
+covers an entire review; moves the iterate-review pass-log default to
+`docs/reviews/`; adds state pruning. Phase 3 completes the pattern's port to
+`iterate-plan`.
+
+### Added (Phase 3 — iterate-plan port + parity fixtures)
+
+- `iterate-plan/bin/` with the same runner shape: `run-pass` (always-all lens
+  selection + concurrent fan-out + `pass-N.summary.json` contract), `run-lens`
+  (standalone/debug, isolated `debug/` namespace), `prune-state`, all under
+  the same lock/atomic-publication lifecycle. The plan file is the scope:
+  `--plan` must resolve inside the invoking repo root and be `.md`; an
+  optional `--note` (the human-edits-since-last-pass block) is read only from
+  the enforced per-repo handoff dir `<git-dir>/iterate-plan/`. Codex runs
+  with `-C <plan-dir>` per the skill's original invocation shape.
+- Adapted composition in `bin/plan_runner.py`, byte-deterministic and
+  golden-pinned (`examples/composition/`): reviewer prompt + lens body +
+  `=== MATCHED CONTEXT ===` (framing line + the H2 sections named in the
+  lens's `requires_sections`; an absent section contributes its NOTE line —
+  never skipped, never silent) + optional staged note + `=== PLAN ===`.
+  Prior passes need no separate block — the plan's HISTORICAL sections
+  arrive with the plan.
+- **Shared-vs-adapted boundary made mechanical**: `runner_shared.py` and
+  `prune-state` are designated shared files, duplicated byte-identically and
+  content-hash-checked by `tools/check-parity.py` (a single divergent byte
+  fails). To make the same bytes valid in both homes, the shared module
+  derives its skill identity from its own location (`SKILL_NAME` from
+  `bin/..`) — handoff dir, error text, and prune targets all follow the
+  hosting skill; `invoke_codex` gained an optional `cwd` (`-C`) that
+  iterate-review simply doesn't pass.
+- `tools/check-plan-runners.py`: 50 behavioral fixtures for the adapted half
+  (extraction semantics, selection + loud rule-data-drift failures,
+  boundaries, exit contracts, patch-marker rejection at both command
+  boundaries, debug isolation, concurrency fail-fast, prune wiring smoke) —
+  wired into `tools/check-all.sh`. Deep shared-machinery behavior is
+  deliberately not re-pinned: byte-identity plus iterate-review's 120
+  fixtures already pin it once.
+- `iterate-plan/SKILL.md` steps 5–7 rewired to the runners (selection +
+  composition moved into `run-pass`, summary-driven response handling,
+  one-retry via standalone `run-lens`); Converge now prunes the scope's
+  state dir (`--keep-state` opts out, new invocation flag); the runner
+  contract sentence added and enforced as a new `check-parity.py` prose rule
+  (37 rules total). README documents the second allowlist line (tilde form).
 
 ### Added (Phase 2 — prune-state + auto-prune on convergence)
 
