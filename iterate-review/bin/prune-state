@@ -140,15 +140,22 @@ def disclose(state_dir: Path):
 
 def newest_mtime(state_dir: Path) -> float:
     """Missing dir -> 0.0: a scope removed by a concurrent cleanup between
-    enumeration and inspection is benign disappearance, never a traceback."""
+    enumeration and inspection is benign disappearance, never a traceback.
+
+    Never follows symlinks: age must be a property of the scope's OWN
+    entries (pruning unlinks a nested symlink as a link, never entering its
+    target), so a fresh external target must not keep an abandoned scope
+    perpetually ineligible for --older-than cleanup."""
     try:
-        newest = os.stat(state_dir).st_mtime
+        newest = os.stat(state_dir, follow_symlinks=False).st_mtime
     except OSError:
         return 0.0
     for base, dnames, fnames in os.walk(state_dir):
         for name in list(fnames) + list(dnames):
             try:
-                newest = max(newest, os.stat(os.path.join(base, name)).st_mtime)
+                newest = max(newest,
+                             os.stat(os.path.join(base, name),
+                                     follow_symlinks=False).st_mtime)
             except OSError:
                 pass  # vanished mid-scan; age is advisory, not ownership
     return newest
@@ -343,6 +350,15 @@ def delete_scope(state_dir: Path, only_if=None):
         # only if the pathname still names the anchored inode — a NEW real
         # directory (or anything else) swapped in at the name was never
         # disclosed and is not ours to remove.
+        #
+        # A stat-to-rmdir window remains (POSIX has no remove-by-inode), and
+        # it is safe by construction rather than by timing: rmdir removes
+        # only EMPTY directories (ENOTEMPTY otherwise, unconditionally), so
+        # no directory holding state — disclosed or not — can ever be the
+        # victim. The only in-protocol loser is a run-pass whose just-
+        # mkdir'ed, still-empty scope dir vanishes before its lock create:
+        # it aborts non-zero with no summary, which the contract defines as
+        # a pass that never ran.
         try:
             st_path = os.stat(state_dir, follow_symlinks=False)
         except OSError:

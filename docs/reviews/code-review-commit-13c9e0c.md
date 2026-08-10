@@ -152,3 +152,30 @@ Diff captured at 2026-08-10 10:49; head SHA `d19037d` (pass-3 fold).
 ### Diff snapshot reference
 
 Diff captured at 2026-08-10 10:57; head SHA `aa99e53` (pass-4 fold).
+
+## Pass 6 — 2026-08-10 12:49 [HISTORICAL]
+
+**Scope:** commit series 13c9e0c^..HEAD (Phase 2 + folds), standalone · **Diff size:** 2120 lines · **Verdict:** REVISE (worst-of; security APPROVE — its first — senior-dev REVISE, qa REVISE; no FAILED lenses)
+
+### Findings
+
+1. **Final scope removal still has an identity-check TOCTOU race** — HIGH · lens: senior-dev: the pass-5 stat-then-rmdir identity fence leaves a window in which a replacement directory installed at the pathname could be removed.
+   → Opus: **disputed** — the window exists as stated, but its claimed impact ("removal of a replacement never disclosed or owned") cannot reach any state, by POSIX semantics rather than by timing: `rmdir` removes only EMPTY directories (`ENOTEMPTY` otherwise, unconditional — verified live), so no directory containing anything can ever be the victim. The only in-protocol collision is a `run-pass` whose freshly-mkdir'ed, still-empty scope dir vanishes before its lock create: verified live, it aborts non-zero with no summary — which the result contract explicitly defines as a pass that never ran (cosmetically a traceback; contract-safe). An actor installing empty directories inside the skill install requires filesystem write access, the documented out-of-protocol boundary since pass 1. POSIX offers no remove-by-inode to close the window "atomically"; the two-layer argument (identity fence narrows it, ENOTEMPTY voids its harm) is now stated in the code. Escalated to the human at this checkpoint per the disputed-HIGH rule.
+2. **Age calculation follows nested symlinks outside the scope** — MEDIUM · lens: qa: an old scope containing an old symlink to a recently-modified external target read as fresh, making it permanently ineligible for `--older-than` cleanup — age depended on files outside `state/`.
+   → Opus: incorporated — `newest_mtime` now uses `follow_symlinks=False` throughout (matching `newest_content_mtime` and the link-not-target deletion semantics). Fixture: old scope with an old symlink to a fresh target is swept, target intact.
+
+### Code corrections applied
+
+- (none filed by any lens)
+
+### New questions Codex raised
+
+- (none)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: APPROVE · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-10 12:32; head SHA `d822cba` (pass-5 fold).

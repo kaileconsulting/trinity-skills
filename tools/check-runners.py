@@ -1647,6 +1647,29 @@ def test_prune_fold5(env: Env, shared) -> None:
     os.unlink(os.path.join(state_root, weird))
 
 
+def test_prune_fold6(env: Env, shared) -> None:
+    """Phase 2 review, pass-6 fold: scope age never follows symlinks."""
+    state_root = os.path.join(env.skill, "state")
+    outside = os.path.join(env.root, "outside-fold6")
+    os.makedirs(outside)
+    hot = os.path.join(outside, "hot.txt")
+    with open(hot, "w") as fh:
+        fh.write("recently modified\n")  # fresh target
+    ag = os.path.join(state_root, "agesym1")
+    os.makedirs(ag)
+    link = os.path.join(ag, "linked")
+    os.symlink(hot, link)
+    backdate = time.time() - 2 * 86400
+    os.utime(link, (backdate, backdate), follow_symlinks=False)
+    os.utime(ag, (backdate, backdate))
+    proc = env.run("prune-state", "--older-than", "1", "--yes")
+    record("prune-fold6: old scope with old symlink to a FRESH target is "
+           "still swept; target survives",
+           proc.returncode == 0 and not os.path.exists(ag)
+           and read(hot) == "recently modified\n",
+           proc.stdout[-200:])
+
+
 def spawn_dead_pid() -> int:
     proc = subprocess.Popen(["true"])
     proc.wait()
@@ -1679,6 +1702,7 @@ def main() -> int:
         test_prune_fold3(env, shared)
         test_prune_fold4(env, shared)
         test_prune_fold5(env, shared)
+        test_prune_fold6(env, shared)
     except Exception as exc:  # noqa: BLE001
         import traceback
         traceback.print_exc()
