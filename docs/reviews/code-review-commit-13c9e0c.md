@@ -92,3 +92,32 @@ Diff captured at 2026-08-10 10:07; head SHA `d9e6138`.
 ### Diff snapshot reference
 
 Diff captured at 2026-08-10 10:23; head SHA `8aa5dfb` (pass-2 fold).
+
+## Pass 4 — 2026-08-10 10:56 [HISTORICAL]
+
+**Scope:** commit series 13c9e0c^..HEAD (Phase 2 + folds), standalone · **Diff size:** 1592 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+1. **Targeted prune can delete a newly completed run selected after disclosure** — HIGH · lens: senior-dev: pass 3 gave the age sweep an under-lock freshness recheck, but `--scope` still deleted unconditionally — a run finishing between disclosure and lock acquisition lost undisclosed fresh state.
+   → Opus: incorporated — exact-disclosure fence: the deletion runs under `only_if` comparing the under-lock entry set against the disclosed baseline (our own lock files excluded; vanished entries fine). Undisclosed entries → refuse with exit 1 and a re-disclose pointer. Fixtures: stale-disclosure wiring test (nothing deleted, no lock left) and clean re-run.
+2. **Lock acquisition itself is pathname-based — the swap class reaches ScopeLock before fd anchoring starts** — HIGH · lens: security: `delete_scope` acquired via path, so a scope swapped for a symlink post-validation could make lock create/reclaim/release touch files outside `state/`.
+   → Opus: incorporated — `ScopeLock` gains a `dir_fd` mode: create, read, reclaim, verify, and release all address `run.lock` by basename relative to an `O_NOFOLLOW|O_DIRECTORY` descriptor opened *before* any lock operation; `_read_lock` gains the same fd-relative variant. `run-pass` continues path-based (it creates its own state dir), pinned by the untouched Phase 1 fixtures. Fixture: descriptor taken, scope renamed away, symlink swapped in — the lock is created and released inside the anchored directory, never through the link.
+3. **Interrupted age prune reports partial deletion as "skipped … never touched"** — HIGH · lens: qa: a force-unlock displacing an in-progress prune raised `LockError` after some removals, which the sweep reported as a skip — false reporting the skip-safety contract depends on.
+   → Opus: incorporated — `delete_scope` now distinguishes acquire-time refusal (true skip, nothing touched — the only path that still reports skip) from mid-deletion revocation, which returns a `failed` outcome carrying an explicit "removal was PARTIAL" problem; both CLI paths exit 1 on it. Fixture: simulated mid-delete revocation — one entry gone, one surviving, PARTIAL reported, "skipped" absent.
+
+### Code corrections applied
+
+- (none filed by any lens)
+
+### New questions Codex raised
+
+- (none)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: REVISE · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-10 10:49; head SHA `d19037d` (pass-3 fold).

@@ -270,8 +270,14 @@ def _delete_tree_fd(dir_fd: int, lock, problems: list, at: str,
 
 def delete_scope(state_dir: Path, only_if=None):
     """Delete one scope dir under its own lock. Raises LockError when the
-    scope can't be owned (live/ambiguous lock, reclaim marker); raises
-    PruneError when the dir can't be opened without following links.
+    scope can't be owned (live/ambiguous lock, reclaim marker) — the ONLY
+    exit that guarantees nothing was touched; raises PruneError when the dir
+    can't be opened without following links.
+
+    The O_NOFOLLOW|O_DIRECTORY descriptor is opened BEFORE any lock
+    operation and every lock op runs relative to it (ScopeLock dir_fd) — a
+    scope pathname swapped for a symlink after validation can no longer make
+    lock creation, reclaim, or release touch anything outside state/.
 
     `only_if` is re-checked AFTER lock acquisition, closing the scan-to-lock
     window: a scope selected as deletable earlier may have been used by a
@@ -280,26 +286,36 @@ def delete_scope(state_dir: Path, only_if=None):
       'skipped'  — only_if said no under the lock; nothing touched
       'survived' — contents removed cleanly but the dir refilled: a new run
                    raced in after unlock (benign handoff, never retried)
-      'failed'   — genuine removal failures; details in problems"""
-    lock = shared.ScopeLock(state_dir, role="prune")
-    lock.acquire()
+      'failed'   — genuine removal failures, OR ownership revoked after
+                   deletion began (a PARTIAL removal is a failure to report
+                   honestly, never a skip); details in problems"""
+    try:
+        fd = os.open(state_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        return "deleted", []  # already gone — idempotent
+    except OSError as exc:
+        raise PruneError(
+            f"cannot open {state_dir} without following links ({exc}) — "
+            f"refusing to delete") from None
     problems = []
     try:
-        if only_if is not None and not only_if():
-            return "skipped", []
+        lock = shared.ScopeLock(state_dir, role="prune", dir_fd=fd)
+        lock.acquire()  # LockError propagates = true skip, nothing touched
         try:
-            fd = os.open(state_dir, os.O_RDONLY | os.O_DIRECTORY
-                         | os.O_NOFOLLOW)
-        except OSError as exc:
-            raise PruneError(
-                f"cannot open {state_dir} without following links ({exc}) — "
-                f"refusing to delete") from None
-        try:
-            _delete_tree_fd(fd, lock, problems, at="", skip=LOCK_NAME)
+            if only_if is not None and not only_if():
+                return "skipped", []
+            try:
+                _delete_tree_fd(fd, lock, problems, at="", skip=LOCK_NAME)
+            except shared.LockError:
+                problems.append((
+                    "(ownership)",
+                    "revoked mid-deletion (force-unlock or displacement) — "
+                    "removal was PARTIAL; inspect the scope"))
+                return "failed", problems
         finally:
-            os.close(fd)
+            lock.release()  # conditional on token; unlinks run.lock last
     finally:
-        lock.release()  # conditional on token; unlinks run.lock last
+        os.close(fd)
     if problems:
         return "failed", problems
     try:
@@ -322,10 +338,24 @@ def prune_one(scope: str, yes: bool) -> int:
         out(f"dry run — nothing deleted ({len(entries)} entries). "
             f"Re-run with --yes to delete.")
         return EXIT_OK
+    # Exact-disclosure fence, re-checked under the lock: if entries exist
+    # that the disclosure above didn't list (a run reused the scope between
+    # disclosure and lock acquisition), deleting them would remove state
+    # that was never disclosed — refuse and let the caller re-disclose.
+    # Entries VANISHING is fine (subset); our own lock files are expected.
+    baseline = set(entries)
+    lockish = {f"{scope}/{LOCK_NAME}", f"{scope}/{RECLAIM_NAME}"}
     try:
-        outcome, problems = delete_scope(state_dir)
+        outcome, problems = delete_scope(
+            state_dir,
+            only_if=lambda: set(disclose(state_dir)) - lockish <= baseline)
     except (shared.LockError, PruneError) as exc:
         out(f"refused: {exc}")
+        return EXIT_REFUSED
+    if outcome == "skipped":
+        out("refused: entries appeared that were not disclosed above (a "
+            "run reused this scope) — nothing deleted; re-run to "
+            "re-disclose")
         return EXIT_REFUSED
     if outcome == "deleted":
         out(f"pruned: {len(entries)} entries, scope directory removed")

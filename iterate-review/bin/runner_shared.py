@@ -235,16 +235,24 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
-def _read_lock(path: Path):
+def _read_lock(path: Path, dir_fd=None):
     """Return (raw_bytes, parsed_dict_or_None). Missing file -> (None, None).
 
     Opens O_NONBLOCK and verifies the inode is a REGULAR file before reading:
     a directory, FIFO, or device squatting at a lock name must classify as
     malformed (b"", None) — never crash the caller, never block inspection
     waiting for a FIFO writer. Lock names are the recovery path's input;
-    they must be readable-or-refusable under any filesystem state."""
+    they must be readable-or-refusable under any filesystem state.
+
+    With `dir_fd`, the lock is addressed by BASENAME relative to that open
+    directory descriptor and O_NOFOLLOW — no path re-traversal."""
+    if dir_fd is not None:
+        target = os.path.basename(str(path))
+        flags = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW
+    else:
+        target, flags = path, os.O_RDONLY | os.O_NONBLOCK
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        fd = os.open(target, flags, dir_fd=dir_fd)
     except FileNotFoundError:
         return None, None
     except OSError:
@@ -350,9 +358,17 @@ class ScopeLock:
     LOCK_NAME = "run.lock"
     RECLAIM_NAME = "run.lock.reclaim"
 
-    def __init__(self, state_dir: Path, role: str):
+    def __init__(self, state_dir: Path, role: str, dir_fd=None):
+        """`dir_fd`, when given, must be an open O_NOFOLLOW|O_DIRECTORY
+        descriptor for state_dir that outlives this lock: every lock
+        operation then addresses run.lock by basename relative to it, so a
+        scope pathname swapped for a symlink after validation can never
+        redirect lock creation, reclaim, or release outside the anchored
+        directory. Without it, operations are path-based (run-pass's own
+        state dir, which it creates itself)."""
         self.state_dir = Path(state_dir)
         self.role = role
+        self.dir_fd = dir_fd
         self.token = secrets.token_hex(16)
         self.lock_path = self.state_dir / self.LOCK_NAME
         self.reclaim_path = self.state_dir / self.RECLAIM_NAME
@@ -372,7 +388,12 @@ class ScopeLock:
 
     def _try_create(self, path: Path) -> bool:
         try:
-            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            if self.dir_fd is not None:
+                fd = os.open(os.path.basename(str(path)),
+                             os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                             dir_fd=self.dir_fd)
+            else:
+                fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
             return False
         try:
@@ -380,6 +401,12 @@ class ScopeLock:
         finally:
             os.close(fd)
         return True
+
+    def _unlink(self, path: Path) -> None:
+        if self.dir_fd is not None:
+            os.unlink(os.path.basename(str(path)), dir_fd=self.dir_fd)
+        else:
+            os.unlink(path)
 
     def _refuse(self, why: str):
         raise LockError(
@@ -392,12 +419,14 @@ class ScopeLock:
     # -- protocol ---------------------------------------------------------
 
     def acquire(self) -> None:
-        self.state_dir.mkdir(parents=True, exist_ok=True)
+        if self.dir_fd is None:
+            self.state_dir.mkdir(parents=True, exist_ok=True)
 
         # A reclaim marker means recovery is in progress (live pid) or died
         # mid-recovery (dead pid). Neither case is ours to clean up: the
         # recursion terminates by refusing to recurse.
-        marker_raw, marker = _read_lock(self.reclaim_path)
+        marker_raw, marker = _read_lock(self.reclaim_path,
+                                        dir_fd=self.dir_fd)
         if marker_raw is not None:
             if marker is not None and _pid_alive(int(marker["pid"])):
                 self._refuse("a stale-lock reclaim is in progress")
@@ -407,7 +436,7 @@ class ScopeLock:
             self._held = True
             return
 
-        raw, parsed = _read_lock(self.lock_path)
+        raw, parsed = _read_lock(self.lock_path, dir_fd=self.dir_fd)
         if raw is None:
             # Lock vanished between the failed create and the read — the owner
             # released it. Take the clean-create path again, once.
@@ -444,7 +473,8 @@ class ScopeLock:
             removed = _locked_mutation(
                 self.lock_path,
                 lambda raw: raw == observed_raw,
-                lambda fd: os.unlink(self.lock_path))
+                lambda fd: self._unlink(self.lock_path),
+                dir_fd=self.dir_fd)
             if not removed:
                 self._refuse("the scope lock changed while reclaiming — a "
                              "successor owns it")
@@ -454,14 +484,15 @@ class ScopeLock:
         finally:
             # Conditional removal of OUR marker only — same rule as the lock.
             _locked_mutation(self.reclaim_path, self._is_mine,
-                             lambda fd: os.unlink(self.reclaim_path))
+                             lambda fd: self._unlink(self.reclaim_path),
+                             dir_fd=self.dir_fd)
 
     def verify(self) -> None:
         """Cheap early ownership check (no flock) for abort-before-work.
         The authoritative gate is verify_and(), which fences the actual
         mutation; this exists so a displaced run stops composing/invoking as
         soon as it notices rather than at its next publication."""
-        _raw, parsed = _read_lock(self.lock_path)
+        _raw, parsed = _read_lock(self.lock_path, dir_fd=self.dir_fd)
         if parsed is None or parsed.get("token") != self.token:
             raise LockError(
                 "scope ownership was revoked (force-unlock or displacement) — "
@@ -475,7 +506,7 @@ class ScopeLock:
         revoke_token() either lands before (we refuse) or blocks until the
         publication completes (publish-before-revoke linearization)."""
         ran = _locked_mutation(self.lock_path, self._is_mine,
-                               lambda fd: publish())
+                               lambda fd: publish(), dir_fd=self.dir_fd)
         if not ran:
             raise LockError(
                 "scope ownership was revoked (force-unlock or displacement) — "
@@ -495,7 +526,8 @@ class ScopeLock:
             return
         try:
             _locked_mutation(self.lock_path, self._is_mine,
-                             lambda fd: os.unlink(self.lock_path))
+                             lambda fd: self._unlink(self.lock_path),
+                             dir_fd=self.dir_fd)
         except OSError:
             pass
         self._held = False

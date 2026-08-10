@@ -31,10 +31,12 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import fcntl
 import glob
 import importlib.machinery
 import importlib.util
+import io
 import json
 import os
 import shutil
@@ -1429,6 +1431,113 @@ def test_prune_fold3(env: Env, shared) -> None:
            proc.returncode == 0 and not os.path.exists(weird))
 
 
+def _load_prune_module(env: Env):
+    loader = importlib.machinery.SourceFileLoader(
+        "ps_mod4", os.path.join(env.bin, "prune-state"))
+    spec = importlib.util.spec_from_loader("ps_mod4", loader)
+    ps = importlib.util.module_from_spec(spec)
+    loader.exec_module(ps)
+    return ps
+
+
+def test_prune_fold4(env: Env, shared) -> None:
+    """Phase 2 review, pass-4 fold: exact-disclosure fence on targeted prune,
+    fd-anchored lock acquisition, honest partial-deletion reporting."""
+    state_root = os.path.join(env.skill, "state")
+    ps = _load_prune_module(env)
+
+    # Targeted prune refuses when entries exist that disclosure didn't list
+    # (a run reused the scope between disclosure and lock acquisition).
+    tp = os.path.join(state_root, "tp1")
+    os.makedirs(tp)
+    with open(os.path.join(tp, "pass-1.a.input.txt"), "w") as fh:
+        fh.write("a\n")
+    with open(os.path.join(tp, "extra.txt"), "w") as fh:
+        fh.write("appeared-after-disclosure\n")
+    orig_disclose = ps.disclose
+    calls = {"n": 0}
+
+    def stale_first(d):
+        calls["n"] += 1
+        entries = orig_disclose(d)
+        if calls["n"] == 1:  # the disclosure pass has a stale view
+            return [e for e in entries if "extra" not in e]
+        return entries       # the under-lock recheck sees reality
+
+    ps.disclose = stale_first
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = ps.prune_one("tp1", True)
+    ps.disclose = orig_disclose
+    record("prune-fold4: undisclosed entries under the lock -> refuse, "
+           "nothing deleted",
+           rc == 1 and "not disclosed" in buf.getvalue()
+           and os.path.exists(os.path.join(tp, "pass-1.a.input.txt"))
+           and os.path.exists(os.path.join(tp, "extra.txt"))
+           and not os.path.exists(os.path.join(tp, "run.lock")),
+           buf.getvalue().strip()[-160:])
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = ps.prune_one("tp1", True)
+    record("prune-fold4: re-run after re-disclosure deletes cleanly",
+           rc == 0 and not os.path.exists(tp))
+
+    # fd-anchored lock acquisition: with the scope pathname swapped for a
+    # symlink AFTER the descriptor was taken, every lock operation stays
+    # inside the original (anchored) directory — nothing is ever created
+    # through the symlink.
+    outside = os.path.join(env.root, "outside-fold4")
+    os.makedirs(outside, exist_ok=True)
+    anchor = os.path.join(state_root, "anchor1")
+    os.makedirs(anchor)
+    fd = os.open(anchor, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    moved = os.path.join(state_root, "anchor1-moved")
+    os.rename(anchor, moved)
+    os.symlink(outside, anchor)  # the validated pathname now points OUT
+    try:
+        lk = shared.ScopeLock(anchor, role="prune", dir_fd=fd)
+        lk.acquire()
+        created_inside = os.path.exists(os.path.join(moved, "run.lock"))
+        created_outside = os.path.exists(os.path.join(outside, "run.lock"))
+        lk.release()
+        released_inside = not os.path.exists(os.path.join(moved, "run.lock"))
+    finally:
+        os.close(fd)
+    record("prune-fold4: dir_fd-anchored ScopeLock never operates through a "
+           "swapped-in symlink",
+           created_inside and not created_outside and released_inside)
+    os.unlink(anchor)
+    os.rmdir(moved)
+
+    # Ownership revoked AFTER deletion began is a PARTIAL failure (exit 1),
+    # never reported as a skip.
+    pd = os.path.join(state_root, "pd1")
+    os.makedirs(pd)
+    with open(os.path.join(pd, "pass-1.a.input.txt"), "w") as fh:
+        fh.write("a\n")
+    with open(os.path.join(pd, "pass-1.b.input.txt"), "w") as fh:
+        fh.write("b\n")
+    orig_tree = ps._delete_tree_fd
+
+    def partial_then_revoked(dir_fd, lock, problems, at, skip=None):
+        os.unlink("pass-1.a.input.txt", dir_fd=dir_fd)
+        raise ps.shared.LockError("simulated revocation")
+
+    ps._delete_tree_fd = partial_then_revoked
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = ps.prune_one("pd1", True)
+    ps._delete_tree_fd = orig_tree
+    text = buf.getvalue()
+    record("prune-fold4: revocation mid-deletion reports PARTIAL failure, "
+           "exit 1, never a skip",
+           rc == 1 and "PARTIAL" in text and "skipped" not in text
+           and not os.path.exists(os.path.join(pd, "pass-1.a.input.txt"))
+           and os.path.exists(os.path.join(pd, "pass-1.b.input.txt")),
+           text.strip()[-200:])
+    shutil.rmtree(pd)
+
+
 def spawn_dead_pid() -> int:
     proc = subprocess.Popen(["true"])
     proc.wait()
@@ -1459,6 +1568,7 @@ def main() -> int:
         test_prune_fold1(env, shared)
         test_prune_fold2(env, shared)
         test_prune_fold3(env, shared)
+        test_prune_fold4(env, shared)
     except Exception as exc:  # noqa: BLE001
         import traceback
         traceback.print_exc()
