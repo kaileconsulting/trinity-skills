@@ -180,7 +180,7 @@ Everything the runner does (state-dir writes, codex invocation, validation) happ
 - `tools/check-all.sh` green.
 
 **Iterate-review:** YES (rationale: core execution code — composition, codex invocation, patch-marker check, embedded lens selection, golden-file fixtures)
-**Status:** shipped (2026-08-10; code acceptance via the 11-pass self-hosted iterate-review, three-lens APPROVE — pass log: `docs/reviews/code-review-branch-docs-runner-scripts-brief.md`. **Dogfood acceptance met 2026-08-10 (deferred by Kyle's sequencing call, then completed the same day):** a real 5-pass loop-mode review of doc-bot's write-path Phase 1 converged APPROVE×3 — pass log in doc-bot `docs/reviews/`, handoff via `.git/iterate-review/`, cross-repo convergence prune, one Bash prompt total whose cause was an R3-class rule-form mismatch in the *pre-staged rule* (absolute path vs the SKILL template's `~` form — the README's tilde snippet was already correct; doc-bot's rule normalized to tilde form after).)
+**Status:** shipped (2026-08-10; code acceptance via the 11-pass self-hosted iterate-review, three-lens APPROVE — pass log: `code-review-branch-docs-runner-scripts-brief.md` (archived alongside this plan). **Dogfood acceptance met 2026-08-10 (deferred by Kyle's sequencing call, then completed the same day):** a real 5-pass loop-mode review of doc-bot's write-path Phase 1 converged APPROVE×3 — pass log in doc-bot `docs/reviews/`, handoff via `.git/iterate-review/`, cross-repo convergence prune, one Bash prompt total whose cause was an R3-class rule-form mismatch in the *pre-staged rule* (absolute path vs the SKILL template's `~` form — the README's tilde snippet was already correct; doc-bot's rule normalized to tilde form after).)
 
 ### Phase 2 — prune-state + auto-prune on convergence (~0.5 day)
 **Deliverables:**
@@ -193,7 +193,7 @@ Everything the runner does (state-dir writes, codex invocation, validation) happ
 - Dry-run output lists exactly what would be deleted; nothing outside `state/` is ever touched, and a dir with a live run lock is never touched (both fixture-pinned).
 
 **Iterate-review:** YES (rationale: deletion code warrants review)
-**Status:** reviewed (2026-08-10 — iterate-review converged after 6 passes in loop mode, Kyle-confirmed at the max-pass guardrail: 23 findings, 21 incorporated across 6 fold commits, 1 folded with corrected premise, 1 disputed HIGH accepted by Kyle (rmdir TOCTOU — ENOTEMPTY makes the window harmless); security lens APPROVE at pass 6. Pass log: `docs/reviews/code-review-commit-13c9e0c.md`. The convergence prune then ran for real on the review's own 42-entry state dir — Phase 2's first live use.)
+**Status:** reviewed (2026-08-10 — iterate-review converged after 6 passes in loop mode, Kyle-confirmed at the max-pass guardrail: 23 findings, 21 incorporated across 6 fold commits, 1 folded with corrected premise, 1 disputed HIGH accepted by Kyle (rmdir TOCTOU — ENOTEMPTY makes the window harmless); security lens APPROVE at pass 6. Pass log: `code-review-commit-13c9e0c.md` (archived alongside this plan). The convergence prune then ran for real on the review's own 42-entry state dir — Phase 2's first live use.)
 
 ### Phase 3 — iterate-plan port + parity fixtures (~1 day)
 **Deliverables:**
@@ -206,7 +206,7 @@ Everything the runner does (state-dir writes, codex invocation, validation) happ
 - Extended parity fixture green; both skills' fixtures green; CHANGELOG finalized.
 
 **Iterate-review:** YES (rationale: duplicated bin/ must not drift)
-**Status:** reviewed (2026-08-10 — iterate-review converged after 3 passes in loop mode, APPROVE×3 at pass 3: 6 findings, all incorporated across 2 fold commits (`5abb4b1`, `9baf676`), 0 disputed. Standouts: a validate-then-read symlink-swap TOCTOU closed with identity-anchored `read_trusted_text` in the shared module (the read-side twin of Phase 2's fd-anchored deletion), and duplicate-H2 slice merging — a bug faithfully ported from the original awk helper prose, caught only once it became code. Pass log: `docs/reviews/code-review-commit-6286fdd.md`. **Dogfood met 2026-08-11:** the Axis 1 plan review ran 5 loop-mode passes under the single rule with zero other Bash prompts — see the acceptance criterion above.)
+**Status:** reviewed (2026-08-10 — iterate-review converged after 3 passes in loop mode, APPROVE×3 at pass 3: 6 findings, all incorporated across 2 fold commits (`5abb4b1`, `9baf676`), 0 disputed. Standouts: a validate-then-read symlink-swap TOCTOU closed with identity-anchored `read_trusted_text` in the shared module (the read-side twin of Phase 2's fd-anchored deletion), and duplicate-H2 slice merging — a bug faithfully ported from the original awk helper prose, caught only once it became code. Pass log: `code-review-commit-6286fdd.md` (archived alongside this plan). **Dogfood met 2026-08-11:** the Axis 1 plan review ran 5 loop-mode passes under the single rule with zero other Bash prompts — see the acceptance criterion above.)
 
 ## Acceptance criteria
 
@@ -293,9 +293,9 @@ A 3.11-ism in a runner breaks the stated 3.9 floor on someone else's machine.
 | Phase | Iterate-review | Status | Last pass | Pass log |
 |-------|----------------|--------|-----------|----------|
 | Phase 0 | NO  | n/a | n/a | n/a |
-| Phase 1 | YES | reviewed (converged, 3-lens APPROVE) | Pass 11 — 2026-08-07 | [code-review-branch-docs-runner-scripts-brief.md](reviews/code-review-branch-docs-runner-scripts-brief.md) |
-| Phase 2 | YES | reviewed (converged at cap, Kyle-confirmed; 1 disputed HIGH accepted) | Pass 6 — 2026-08-10 | [code-review-commit-13c9e0c.md](reviews/code-review-commit-13c9e0c.md) |
-| Phase 3 | YES | reviewed (converged, 3-lens APPROVE; dogfood met 2026-08-11) | Pass 3 — 2026-08-10 | [code-review-commit-6286fdd.md](reviews/code-review-commit-6286fdd.md) |
+| Phase 1 | YES | reviewed (converged, 3-lens APPROVE) | Pass 11 — 2026-08-07 | [code-review-branch-docs-runner-scripts-brief.md](code-review-branch-docs-runner-scripts-brief.md) |
+| Phase 2 | YES | reviewed (converged at cap, Kyle-confirmed; 1 disputed HIGH accepted) | Pass 6 — 2026-08-10 | [code-review-commit-13c9e0c.md](code-review-commit-13c9e0c.md) |
+| Phase 3 | YES | reviewed (converged, 3-lens APPROVE; dogfood met 2026-08-11) | Pass 3 — 2026-08-10 | [code-review-commit-6286fdd.md](code-review-commit-6286fdd.md) |
 
 ## Pre-flight review pass (Opus, YYYY-MM-DD) [HISTORICAL]
 

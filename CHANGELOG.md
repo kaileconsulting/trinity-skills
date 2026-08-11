@@ -1,13 +1,28 @@
 # Changelog
 
-## Unreleased — runner scripts + artifact hygiene (in progress)
+## 2.2.0 — 2026-08-11 — runner scripts + artifact hygiene
 
-Plan: `docs/runner-scripts-artifact-hygiene-2026-08-06.md` (converged after 9
-iterate-plan passes). Replaces per-pass improvised shell with stdlib-only Python
+Plan: `docs/archive/runner-scripts-artifact-hygiene-2026-08-06.md` (converged
+after 9 iterate-plan passes; all acceptance criteria met, each annotated with
+its evidence). Replaces per-pass improvised shell with stdlib-only Python
 runners under each skill's `bin/` so one documented allowlist rule per skill
 covers an entire review; moves the iterate-review pass-log default to
-`docs/reviews/`; adds state pruning. Phase 3 completes the pattern's port to
-`iterate-plan`.
+`docs/reviews/`; adds state pruning. Phase 3 completed the pattern's port to
+`iterate-plan`. Real-world validation: the iterate-review dogfood (doc-bot
+write-path Phase 1, 5 passes) and the iterate-plan dogfood (Axis 1 plan
+review, 6 passes / 12 codex calls) each ran end to end with **zero Bash
+permission prompts**; platform matrix verified on macOS (both install
+layouts, rule matching demonstrated) and a `python:3.9-slim` Linux container
+(full check suite green on the actual 3.9 floor interpreter).
+
+### Changed (model-agnostic editor role)
+
+- The editor role is no longer named after a model: "Opus" → **"the editor"**
+  (Claude, whichever model drives the session) across both SKILL.mds, both
+  reviewer prompts, lens READMEs, README, and the create-plan template; the
+  loop is now described as **Claude⇄Codex**. HISTORICAL fold tags are
+  `→ Editor:` going forward. Historical records (existing pass logs, archived
+  plans, frozen `v1/`) deliberately keep their original wording.
 
 ### Added (Phase 3 — iterate-plan port + parity fixtures)
 
