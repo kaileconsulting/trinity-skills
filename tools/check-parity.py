@@ -150,7 +150,7 @@ RULES: list[tuple[str, str, list[str] | dict[str, list[str]]]] = [
     ("guard-human-judgment", "guardrail: a fold needing human judgment halts",
      [r"needs human judgment",
       # Tightened with question classification: the guardrail must name which
-      # class halts, not just say "a question Opus can't answer".
+      # class halts, not just say "a question the editor can't answer".
       r"new_question classified needs_human",
       r"do not halt the loop|does not halt the loop"]),
 
@@ -164,7 +164,7 @@ RULES: list[tuple[str, str, list[str] | dict[str, list[str]]]] = [
      [r"never decides convergence"]),
     ("codex-never-edits", "Codex never edits files",
      [r"codex never edits"]),
-    ("opus-sole-writer", "Opus is the sole writer of folds",
+    ("editor-sole-writer", "the editor is the sole writer of folds",
      [r"sole writer"]),
 ]
 

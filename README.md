@@ -1,12 +1,12 @@
 # trinity-skills
 
-Three Claude Code skills that formalize the **Opus ⇄ Codex review loop** for planning and code review:
+Three Claude Code skills that formalize the **Claude ⇄ Codex review loop** for planning and code review:
 
 | Skill | What it does |
 |---|---|
 | **`create-plan`** | Scaffold a new plan markdown file in `docs/` using a canonical template (phases, iterate-review markers, HISTORICAL stubs). |
-| **`iterate-plan`** | Iterate a plan between Opus (sole editor) and Codex (structured reviewer) until APPROVE. Runs an **architect** and a **product-manager** lens per pass, each fed the plan sections it needs, and merges their findings into one list. Codex never edits — it returns JSON-schema-validated findings + plan corrections + question answers; Opus folds them in. |
-| **`iterate-review`** | Same loop applied to **code changes** — a working-tree diff, a feature branch, or a PR (open or merged). Deterministically selects **senior-dev** (always) plus **security** and **QA** based on what the diff touches, then merges their findings. Opus folds them into the working code. |
+| **`iterate-plan`** | Iterate a plan between Claude (the editor — whichever model drives the session) and Codex (structured reviewer) until APPROVE. Runs an **architect** and a **product-manager** lens per pass, each fed the plan sections it needs, and merges their findings into one list. Codex never edits — it returns JSON-schema-validated findings + plan corrections + question answers; the editor folds them in. |
+| **`iterate-review`** | Same loop applied to **code changes** — a working-tree diff, a feature branch, or a PR (open or merged). Deterministically selects **senior-dev** (always) plus **security** and **QA** based on what the diff touches, then merges their findings. The editor folds them into the working code. |
 
 They're independent — install any one of them — but compose naturally:
 
@@ -25,7 +25,7 @@ Version history, including the breaking changes and the known gaps, is in [`CHAN
 
 Sending a plan or diff to Codex for review is high-value but tedious to do by hand: copy the markdown out, paste into a Codex prompt, copy the response back, manually decide what to incorporate, repeat. The trinity skills automate the shuttle while preserving the load-bearing invariants:
 
-- **Opus is the sole editor.** Codex runs in a `-s read-only -a never` sandbox with `--output-schema` enforcement. It returns structured findings; Opus does every file edit.
+- **Claude is the sole editor.** Codex runs in a `-s read-only -a never` sandbox with `--output-schema` enforcement. It returns structured findings; the editor (the Claude session driving the skill) does every file edit.
 - **No silent iteration.** After every pass the human is prompted to Continue / Converge / Abort. The skills never decide convergence themselves.
 - **HISTORICAL audit trail.** Every pass appends a `[HISTORICAL]` block to the plan (or pass log) so subsequent passes see the full review history and can spot regressions or unfolded findings.
 
@@ -35,7 +35,7 @@ One reviewer persona means one framing's blind spots applied to every issue cate
 
 ```
                      ┌─ senior-dev ── codex exec ─┐
-  select lenses ────▶├─ security ──── codex exec ─┤──▶ Opus merges ──▶ one findings list ──▶ ONE checkpoint
+  select lenses ────▶├─ security ──── codex exec ─┤──▶ the editor merges ──▶ one findings list ──▶ ONE checkpoint
   (deterministic)    └─ qa ────────── codex exec ─┘    (dedupe, worst-of verdict,
                                                         lens attribution)
 ```
@@ -69,11 +69,11 @@ A reviewer that raises a question classifies it by **who can settle it**, and th
 
 | `settled_by` | Meaning | Loop behavior |
 |---|---|---|
-| `resolvable_in_fold` | answerable from the full plan / the repo — the reviewer only saw a slice | Opus answers it and **continues** |
-| `needs_lookup` | a fact settles it, but reaching it needs a call the reviewer can't make | Opus performs the lookup and **continues**; if the lookup fails it becomes `needs_human` |
+| `resolvable_in_fold` | answerable from the full plan / the repo — the reviewer only saw a slice | the editor answers it and **continues** |
+| `needs_lookup` | a fact settles it, but reaching it needs a call the reviewer can't make | the editor performs the lookup and **continues**; if the lookup fails it becomes `needs_human` |
 | `needs_human` | no fact settles it — your preference, risk tolerance, or product judgment | **halts**, always |
 
-Without this, the guardrail read "a question Opus can't answer from the plan + repo context," which lumped all three together: an unattended loop would stop to ask something one file read would have answered. **When a reviewer is unsure, the contract requires `needs_human`** — an unnecessary escalation costs a question, while mislabeling your decision as machine-resolvable invites a fabricated answer. Each label carries a one-line `why` so it can be audited rather than trusted, and Opus overrides a label it doesn't believe.
+Without this, the guardrail read "a question the editor can't answer from the plan + repo context," which lumped all three together: an unattended loop would stop to ask something one file read would have answered. **When a reviewer is unsure, the contract requires `needs_human`** — an unnecessary escalation costs a question, while mislabeling your decision as machine-resolvable invites a fabricated answer. Each label carries a one-line `why` so it can be audited rather than trusted, and the editor overrides a label it doesn't believe.
 
 ## Prerequisites
 
@@ -112,7 +112,7 @@ walks you through plan-type selection (`initiative` or `fix`), phase metadata, a
 /iterate-plan docs/refactor-payments-2026-05-19.md
 ```
 
-sends the plan to Codex; Opus folds Codex's structured findings back into the file; you confirm Continue / Converge after each pass. On convergence, Opus optionally writes a handoff prompt for a fresh Sonnet session to execute the plan.
+sends the plan to Codex; the editor folds Codex's structured findings back into the file; you confirm Continue / Converge after each pass. On convergence, the editor optionally writes a handoff prompt for a fresh Sonnet session to execute the plan.
 
 Per phase, ship commits then:
 
@@ -201,7 +201,7 @@ Its output is the live count of what's covered — deliberately not restated her
 | `tools/check-plan-runners.py` | The iterate-plan port's adapted behavior: section extraction, always-all selection, `--plan`/`--note` boundaries, plus a wiring smoke over the shared contracts. |
 | `tools/test-checkers.py` | Tests that the checkers above actually fail when they should. |
 
-Worth knowing what they don't cover: `check-parity.py` checks a rule is *stated*, not that it is *correct*, and the merge step is deliberately not scripted — semantic dedupe is Opus's judgment, so it ships worked goldens to compare against rather than assertions. See `tools/README.md`.
+Worth knowing what they don't cover: `check-parity.py` checks a rule is *stated*, not that it is *correct*, and the merge step is deliberately not scripted — semantic dedupe is the editor's judgment, so it ships worked goldens to compare against rather than assertions. See `tools/README.md`.
 
 ## V1 — the original single-reviewer skills
 
@@ -220,12 +220,12 @@ To roll back entirely instead: `git checkout v1.0 && ./install.sh`. Details and 
 Each iterate-* skill invokes Codex as one subprocess **per selected lens**, each with three structural guarantees:
 
 1. **Sandbox** — `codex -a never exec -s read-only --skip-git-repo-check` makes file writes structurally impossible from Codex's side.
-2. **Output schema** — `--output-schema <reviewer-output.schema.json>` forces Codex's response into a strict JSON shape (verdict + findings + corrections + answers). Free-form prose is rejected by Codex's runtime before it reaches Opus.
-3. **Patch-marker rejection** — Opus scans each response for `*** Begin Patch`, unified-diff markers, and merge-conflict markers before folding. Defense in depth against a Codex response that smuggles a patch into a description field.
+2. **Output schema** — `--output-schema <reviewer-output.schema.json>` forces Codex's response into a strict JSON shape (verdict + findings + corrections + answers). Free-form prose is rejected by Codex's runtime before it reaches the editor.
+3. **Patch-marker rejection** — the editor scans each response for `*** Begin Patch`, unified-diff markers, and merge-conflict markers before folding. Defense in depth against a Codex response that smuggles a patch into a description field.
 
 This makes the editor/reviewer separation a structural property of the system, not a trust property. Even an out-of-contract response gets caught at the gateway.
 
-The lens fan-out sits on top without weakening any of it: the shared `reviewer-prompt.md` carries the contract and defers only ROLE and FOCUS to the lens fragment, so every lens runs under identical restrictions and returns the same schema. Merging N responses into one findings list is Opus's job, consistent with Opus-as-sole-editor — dedupe collapses findings that share **both** a location and an asserted defect, so two distinct concerns about the same line stay distinct, and a finding both lenses raised keeps both attributions.
+The lens fan-out sits on top without weakening any of it: the shared `reviewer-prompt.md` carries the contract and defers only ROLE and FOCUS to the lens fragment, so every lens runs under identical restrictions and returns the same schema. Merging N responses into one findings list is the editor's job, consistent with the editor-as-sole-editor — dedupe collapses findings that share **both** a location and an asserted defect, so two distinct concerns about the same line stay distinct, and a finding both lenses raised keeps both attributions.
 
 ## License
 

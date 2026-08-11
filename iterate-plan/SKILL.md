@@ -1,13 +1,14 @@
 ---
 name: iterate-plan
-description: Iterate a plan file between Opus (editor) and Codex (reviewer) until convergence, with mandatory human checkpoints. Use when the user has a plan in markdown and wants Codex's review folded back in without manually shuttling content.
+description: Iterate a plan file between Claude (editor) and Codex (reviewer) until convergence, with mandatory human checkpoints. Use when the user has a plan in markdown and wants Codex's review folded back in without manually shuttling content.
 ---
 
 # `iterate-plan`
 
-Formalizes the proven Opus⇄Codex review loop. Opus is the sole editor of
-the plan file. Codex is the technical reviewer — provides structured
-feedback via `codex exec --output-schema`, never edits.
+Formalizes the proven Claude⇄Codex review loop. Claude — whichever model
+drives the session — is **the editor**, sole editor of the plan file. Codex
+is the technical reviewer — provides structured feedback via
+`codex exec --output-schema`, never edits.
 
 ## When to invoke
 
@@ -51,7 +52,7 @@ Optional flags:
 
 Each pass fans out across the **persona lenses** for design review (see
 `lenses/` — `architect` + `product-manager`, both always selected per
-`lenses/README.md`), then Opus merges their findings into one list. Steps
+`lenses/README.md`), then the editor merges their findings into one list. Steps
 6–10 (fan-out, per-response validation, merge + worst-of verdict + `FAILED`
 handling, one HISTORICAL block, and the loop-mode checkpoint) are the
 **SHARED MACHINERY** — the same *rules* (fan-out, semantic merge, worst-of
@@ -144,7 +145,7 @@ performed by the runner, deterministically.
      path in the HISTORICAL block. If the retry also fails, record the lens
      as `FAILED` orchestration metadata — **not** a verdict (the reviewer
      schema is untouched).
-   - **Merge (Opus, semantic judgment — not a mechanical key):** collapse
+   - **Merge (the editor, semantic judgment — not a mechanical key):** collapse
      findings that target the same location and assert the same defect; keep
      distinct concerns separate; a co-reported finding retains **all**
      contributing lens ids. Produce one merged findings list.
@@ -187,7 +188,7 @@ performed by the runner, deterministically.
      REVISE** — BLOCK is preserved if any *completed* lens returned BLOCK —
      and blocks Converge (step 10).
 
-8. **Fold merged findings + append ONE HISTORICAL block.** Opus is the sole
+8. **Fold merged findings + append ONE HISTORICAL block.** The editor is the sole
    writer. Fold `plan_corrections` mechanically; incorporate HIGH/MEDIUM
    findings (skip/dispute only with explicit reasoning); LOW is informational.
    Append a single HISTORICAL section for the whole pass, each finding tagged
@@ -201,7 +202,7 @@ performed by the runner, deterministically.
 
    ### Findings
    1. **<title>** — <severity> · lens: <architect|product-manager|both>: <description>
-      → Opus: <incorporated|skipped|disputed> — <reasoning>
+      → Editor: <incorporated|skipped|disputed> — <reasoning>
    ...
 
    ### Plan corrections applied
@@ -225,7 +226,7 @@ performed by the runner, deterministically.
 10. **Checkpoint — Continue / Converge / Abort / (L)oop.** Present the
     aggregate verdict + a recommendation:
     - Recommend **Converge** when aggregate `verdict == APPROVE`, no lens is
-      `FAILED`, and Opus has no further changes pending. One APPROVE +
+      `FAILED`, and the editor has no further changes pending. One APPROVE +
       no-further-changes is enough.
     - Recommend **Continue** otherwise. Never auto-decide convergence.
 
@@ -248,7 +249,7 @@ performed by the runner, deterministically.
       or a `new_question` classified **`needs_human`** survived the fold (after
       the label sanity-check and any override in step 7) → stop, escalate.
       `resolvable_in_fold` and `needs_lookup` questions do **not** halt the
-      loop: Opus resolves them and continues. If a `needs_lookup` resolution
+      loop: the editor resolves them and continues. If a `needs_lookup` resolution
       *fails*, it becomes `needs_human` and then halts. This is the whole point
       of the classification — an unattended loop shouldn't stop for a question
       it could have answered, and must never continue past one only Kyle can.
@@ -261,19 +262,19 @@ performed by the runner, deterministically.
 
 ## On Converge — Sonnet-handoff sub-flow (Phase 3)
 
-11. **Assess plan complexity, recommend handoff vs stay.** Opus
+11. **Assess plan complexity, recommend handoff vs stay.** The editor
     surfaces a one-paragraph recommendation framed by these signals:
     - **Handoff to Sonnet** when the plan is well-specified, execution
       is largely mechanical, and a fresh session helps (lower context
       cost during execution, cleaner separation of design vs build).
       Long plans (~500+ lines) touching many files usually fit here.
-    - **Stay with Opus** when the plan is short, execution overlaps
+    - **Stay with the editor** when the plan is short, execution overlaps
       with ongoing design judgment, or there's load-bearing in-session
       context that's expensive to re-establish. Plans drafted and
       executed in a single sitting often fit here.
 
-12. **Prompt user: (H)andoff to Sonnet / (S)tay with Opus / (A)bort.**
-    Always surface all three. Never auto-pick — Opus's recommendation
+12. **Prompt user: (H)andoff to Sonnet / (S)tay with the editor / (A)bort.**
+    Always surface all three. Never auto-pick — the editor's recommendation
     is advisory only.
 
 13. On **Handoff**: generate the handoff prompt and write to
@@ -394,9 +395,9 @@ for standalone `run-lens` output. Pruned at Converge (step 15) unless
   HISTORICAL block, and the loop always halts and returns to the human at
   APPROVE or any guardrail (step 10). Loop mode automates `Continue` only.
 - Skill never decides convergence. Suggests when verdict=APPROVE +
-  Opus reports no further changes; human always confirms. **Loop mode never
+  the editor reports no further changes; human always confirms. **Loop mode never
   auto-converges** — it stops at APPROVE and presents the Converge decision.
-- Fan-out is one Codex call per selected lens; Opus merges (semantic dedupe,
+- Fan-out is one Codex call per selected lens; the editor merges (semantic dedupe,
   worst-of verdict, lens attribution). A selected lens that fails after one
   retry is `FAILED` metadata that forces at-least-REVISE (BLOCK preserved) and blocks Converge. Exactly
   one HISTORICAL block and one checkpoint per pass, regardless of lens count.

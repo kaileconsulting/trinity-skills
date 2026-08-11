@@ -211,7 +211,7 @@ work matters. Why now, why not after X, what blocks what. -->
 expects this exact shape — its `question_id` field references "Q1", "Q2",
 etc. If you have no open questions at plan-creation time, leave the
 section with "(none at this time)" — iterate-plan may still raise new
-questions which Opus will fold in here as Q-numbered items. -->
+questions which the editor will fold in here as Q-numbered items. -->
 
 - **Q1.** ...
 - **Q2.** ...
@@ -284,9 +284,9 @@ where each phase stands in the review lifecycle.
 | Phase 2 | CONDITIONAL | not started | — | — |
 -->
 
-## Pre-flight review pass (Opus, YYYY-MM-DD) [HISTORICAL]
+## Pre-flight review pass (the editor, YYYY-MM-DD) [HISTORICAL]
 
-<!-- OPTIONAL self-review by Opus before execution. Useful as a final
+<!-- OPTIONAL self-review by the editor before execution. Useful as a final
 "smell test" pass after iterate-plan converges but before any code
 lands. Captures any nits that don't warrant another Codex pass but
 are worth noting on the record. Delete this section if you skip the

@@ -69,4 +69,4 @@ When a heuristic is borderline — *is this "network"? is this "user-facing"? is
 
 ## Merge & attribution
 
-Opus merges all selected lenses' findings (semantic dedupe; co-reported findings retain **all** contributing lens ids), aggregates verdict worst-of, and records each finding's originating lens id in the pass log — the attribution that powers the ROI metric. A selected lens that fails after one retry is recorded as `FAILED` (orchestration metadata, not a verdict), aggregates the pass to REVISE, and blocks Converge with an (R)etry option.
+The editor merges all selected lenses' findings (semantic dedupe; co-reported findings retain **all** contributing lens ids), aggregates verdict worst-of, and records each finding's originating lens id in the pass log — the attribution that powers the ROI metric. A selected lens that fails after one retry is recorded as `FAILED` (orchestration metadata, not a verdict), aggregates the pass to REVISE, and blocks Converge with an (R)etry option.

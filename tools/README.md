@@ -1,7 +1,7 @@
 # tools/
 
 Dev-time checks for the trinity skills. **None of these run during a real skill
-invocation** — the skills are prose that Opus follows, and these tools exist to
+invocation** — the skills are prose that the editor follows, and these tools exist to
 keep that prose honest.
 
 ```bash
@@ -40,12 +40,12 @@ Worth stating plainly, because a green run is persuasive:
 
 - **`check-parity.py` checks presence, not correctness.** It confirms a rule is
   *stated* in both skills. A rule stated wrongly in both passes.
-- **Merge is not tested anywhere.** Semantic dedupe is Opus's judgment by design
+- **Merge is not tested anywhere.** Semantic dedupe is the editor's judgment by design
   (plan Q3), so it has goldens to compare against, not assertions. See
   `../iterate-review/examples/merge/README.md`.
 - **`check-selection.py` is a second opinion, not the authority.** The lens
   frontmatter and `lenses/README.md` are the source of truth. If the script and
-  Opus disagree on a diff, that disagreement is the finding — and the script is
+  the editor disagree on a diff, that disagreement is the finding — and the script is
   as likely to be the one that's wrong.
 
 ## Adding a check
