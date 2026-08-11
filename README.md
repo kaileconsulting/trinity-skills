@@ -1,12 +1,12 @@
 # trinity-skills
 
-Three Claude Code skills that formalize the **Opus ⇄ Codex review loop** for planning and code review:
+Three Claude Code skills that formalize the **Claude ⇄ Codex review loop** for planning and code review:
 
 | Skill | What it does |
 |---|---|
 | **`create-plan`** | Scaffold a new plan markdown file in `docs/` using a canonical template (phases, iterate-review markers, HISTORICAL stubs). |
-| **`iterate-plan`** | Iterate a plan between Opus (sole editor) and Codex (structured reviewer) until APPROVE. Runs an **architect** and a **product-manager** lens per pass, each fed the plan sections it needs, and merges their findings into one list. Codex never edits — it returns JSON-schema-validated findings + plan corrections + question answers; Opus folds them in. |
-| **`iterate-review`** | Same loop applied to **code changes** — a working-tree diff, a feature branch, or a PR (open or merged). Deterministically selects **senior-dev** (always) plus **security** and **QA** based on what the diff touches, then merges their findings. Opus folds them into the working code. |
+| **`iterate-plan`** | Iterate a plan between Claude (the editor — whichever model drives the session) and Codex (structured reviewer) until APPROVE. Runs an **architect** and a **product-manager** lens per pass, each fed the plan sections it needs, and merges their findings into one list. Codex never edits — it returns JSON-schema-validated findings + plan corrections + question answers; the editor folds them in. |
+| **`iterate-review`** | Same loop applied to **code changes** — a working-tree diff, a feature branch, or a PR (open or merged). Deterministically selects **senior-dev** (always) plus **security** and **QA** based on what the diff touches, then merges their findings. The editor folds them into the working code. |
 
 They're independent — install any one of them — but compose naturally:
 
@@ -25,7 +25,7 @@ Version history, including the breaking changes and the known gaps, is in [`CHAN
 
 Sending a plan or diff to Codex for review is high-value but tedious to do by hand: copy the markdown out, paste into a Codex prompt, copy the response back, manually decide what to incorporate, repeat. The trinity skills automate the shuttle while preserving the load-bearing invariants:
 
-- **Opus is the sole editor.** Codex runs in a `-s read-only -a never` sandbox with `--output-schema` enforcement. It returns structured findings; Opus does every file edit.
+- **Claude is the sole editor.** Codex runs in a `-s read-only -a never` sandbox with `--output-schema` enforcement. It returns structured findings; the editor (the Claude session driving the skill) does every file edit.
 - **No silent iteration.** After every pass the human is prompted to Continue / Converge / Abort. The skills never decide convergence themselves.
 - **HISTORICAL audit trail.** Every pass appends a `[HISTORICAL]` block to the plan (or pass log) so subsequent passes see the full review history and can spot regressions or unfolded findings.
 
@@ -35,7 +35,7 @@ One reviewer persona means one framing's blind spots applied to every issue cate
 
 ```
                      ┌─ senior-dev ── codex exec ─┐
-  select lenses ────▶├─ security ──── codex exec ─┤──▶ Opus merges ──▶ one findings list ──▶ ONE checkpoint
+  select lenses ────▶├─ security ──── codex exec ─┤──▶ the editor merges ──▶ one findings list ──▶ ONE checkpoint
   (deterministic)    └─ qa ────────── codex exec ─┘    (dedupe, worst-of verdict,
                                                         lens attribution)
 ```
@@ -69,16 +69,17 @@ A reviewer that raises a question classifies it by **who can settle it**, and th
 
 | `settled_by` | Meaning | Loop behavior |
 |---|---|---|
-| `resolvable_in_fold` | answerable from the full plan / the repo — the reviewer only saw a slice | Opus answers it and **continues** |
-| `needs_lookup` | a fact settles it, but reaching it needs a call the reviewer can't make | Opus performs the lookup and **continues**; if the lookup fails it becomes `needs_human` |
+| `resolvable_in_fold` | answerable from the full plan / the repo — the reviewer only saw a slice | the editor answers it and **continues** |
+| `needs_lookup` | a fact settles it, but reaching it needs a call the reviewer can't make | the editor performs the lookup and **continues**; if the lookup fails it becomes `needs_human` |
 | `needs_human` | no fact settles it — your preference, risk tolerance, or product judgment | **halts**, always |
 
-Without this, the guardrail read "a question Opus can't answer from the plan + repo context," which lumped all three together: an unattended loop would stop to ask something one file read would have answered. **When a reviewer is unsure, the contract requires `needs_human`** — an unnecessary escalation costs a question, while mislabeling your decision as machine-resolvable invites a fabricated answer. Each label carries a one-line `why` so it can be audited rather than trusted, and Opus overrides a label it doesn't believe.
+Without this, the guardrail read "a question the editor can't answer from the plan + repo context," which lumped all three together: an unattended loop would stop to ask something one file read would have answered. **When a reviewer is unsure, the contract requires `needs_human`** — an unnecessary escalation costs a question, while mislabeling your decision as machine-resolvable invites a fabricated answer. Each label carries a one-line `why` so it can be audited rather than trusted, and the editor overrides a label it doesn't believe.
 
 ## Prerequisites
 
 - [Claude Code](https://claude.com/claude-code) (the skills run inside it)
 - [Codex CLI](https://github.com/openai/codex) — tested against `codex-cli 0.125.0+`. The skills shell out via `codex -a never exec ... --output-schema ...`.
+- `python3` ≥ **3.9** — required by the `bin/` runner scripts (stdlib only, no pip installs). macOS ships no interpreter by default; the Xcode Command Line Tools' 3.9.6 clears the floor, as does any Homebrew or distro python3. Runners fail fast with a clear message below the floor.
 - `git`, `bash`, and `gh` (only needed for `iterate-review --scope=pr:<n>`).
 
 ## Install
@@ -111,7 +112,7 @@ walks you through plan-type selection (`initiative` or `fix`), phase metadata, a
 /iterate-plan docs/refactor-payments-2026-05-19.md
 ```
 
-sends the plan to Codex; Opus folds Codex's structured findings back into the file; you confirm Continue / Converge after each pass. On convergence, Opus optionally writes a handoff prompt for a fresh Sonnet session to execute the plan.
+sends the plan to Codex; the editor folds Codex's structured findings back into the file; you confirm Continue / Converge after each pass. On convergence, the editor optionally writes a handoff prompt for a fresh Sonnet session to execute the plan.
 
 Per phase, ship commits then:
 
@@ -126,6 +127,28 @@ runs the same loop against `git diff $(git merge-base HEAD main)...HEAD`. Pass l
 - `--once` — single-pass review, no loop
 - `--loop` — auto-continue REVISE passes, stop at APPROVE (see [Loop mode](#loop-mode))
 
+## Runner scripts & the one-rule permission model
+
+Historically each review pass improvised unique shell to compose lens inputs and invoke Codex — commands that could never be pre-approved, so a 10-pass review meant dozens of opaque permission prompts and a settings file full of dead one-shot rules. The runner scripts replace that with three stable executables under each skill's `bin/` (`run-lens`, `run-pass`, `prune-state`; stdlib-only Python ≥ 3.9). A stable script accepts *arguments*, so one documented allowlist rule per skill covers every invocation:
+
+```json
+// .claude/settings.json → permissions.allow — adjust the path to YOUR install:
+// symlink install (default ./install.sh):
+"Bash(~/.claude/skills/iterate-review/bin/* *)"
+"Bash(~/.claude/skills/iterate-plan/bin/* *)"
+// copied-directory install: use the directory you copied to, e.g.
+"Bash(/path/to/your/skills/iterate-review/bin/* *)"
+"Bash(/path/to/your/skills/iterate-plan/bin/* *)"
+```
+
+With those rules in place, the review machinery generates **zero further Bash permission prompts** end to end. What remains is deliberate: scope selection at the start, the skills' mandated human checkpoints, and pass-log / plan appends via Claude Code's normal file-edit permissions. The runner composes and invokes; it never folds, never writes pass logs, never decides.
+
+The two skills share their runner machinery literally: `runner_shared.py` and `prune-state` are duplicated **byte-identically** between the two `bin/` directories and hash-checked by `tools/check-parity.py`, so both skills always run the same reviewed lock/publication/validation code. The adapted halves (`review_runner.py` vs `plan_runner.py` — composition and selection) are pinned by per-skill behavioral fixtures instead.
+
+**Pass-log default is off the repo root.** New pass logs default to `<repo-root>/docs/reviews/code-review-<scope-tag>.md` (created on demand); `--log-path` still overrides. **Existing logs are untouched** — no migration, no renames; move old root-level `code-review-*.md` files yourself if and when you want them gathered.
+
+**State cleanup is part of the loop.** On Converge the skill prunes the review's state directory (`prune-state --scope <hash> --yes`) — the pass log is the durable record; composed inputs, raw responses, and pass summaries are intermediates. Pass `--keep-state` to keep them for auditing or debugging a bad merge. For runs that were aborted or abandoned, `prune-state` is age-based and dry-run by default: `prune-state --older-than 30 --yes` removes state untouched for 30 days (30 is an example, not policy — pick your own threshold). It never touches pass logs, `state/<hash>.json` records, anything outside `state/`, or a scope holding a live run lock; `prune-state --force-unlock <scope>` is the explicit recovery path for a wedged lock. Bare `prune-state` prints a read-only overview of accumulated state.
+
 ## Directory layout
 
 ```
@@ -135,18 +158,21 @@ trinity-skills/
 │   └── template.md
 ├── iterate-plan/
 │   ├── SKILL.md
+│   ├── bin/                        # runner scripts: run-lens, run-pass, prune-state
 │   ├── reviewer-prompt.md          # shared contract; defers ROLE/FOCUS to the lens
 │   ├── reviewer-output.schema.json
 │   ├── lenses/                     # architect, product-manager + selection rules
-│   ├── examples/                   # merge goldens + a real Codex response
+│   ├── examples/                   # merge + composition goldens, a real Codex response
 │   └── state/                      # gitignored at runtime; only example.json tracked
 ├── iterate-review/
 │   ├── SKILL.md
+│   ├── bin/                        # runner scripts: run-lens, run-pass, prune-state
 │   ├── reviewer-prompt.md
 │   ├── reviewer-output.schema.json
 │   ├── lenses/                     # senior-dev, security, qa + selection rules
 │   ├── examples/
 │   │   ├── selection/              # routing fixtures + runnable reference impl
+│   │   ├── composition/            # byte-deterministic assembly goldens
 │   │   └── merge/                  # merge / verdict-aggregation goldens
 │   └── state/                      # gitignored at runtime
 ├── v1/                             # frozen single-reviewer skills (see below)
@@ -170,10 +196,12 @@ Its output is the live count of what's covered — deliberately not restated her
 |---|---|
 | `iterate-review/examples/selection/check-selection.py` | A **second implementation** of the deterministic selection rules, run against a set of golden diff fixtures. The rules claim any two implementations agree; until this existed there was one, and it was a language model reading prose. |
 | `tools/check-examples.py` | Every fixture validates against its skill's schema — and fixtures whose *names* make a claim have that claim verified. |
-| `tools/check-parity.py` | Every shared-machinery rule is present in **both** skills' per-pass loops. Semantic parity, not byte-identity: prose may differ, rules may not. |
-| `tools/test-checkers.py` | Tests that the three above actually fail when they should. |
+| `tools/check-parity.py` | Every shared-machinery rule is present in **both** skills' per-pass loops (semantic parity, not byte-identity: prose may differ, rules may not) — and the designated shared runner files (`runner_shared.py`, `prune-state`) are **byte-identical** across both `bin/` directories, by content hash. |
+| `tools/check-runners.py` | The iterate-review runner scripts' promised behavior: byte-deterministic composition, exit contracts, lock lifecycle, pass-log resolution, prune safety — against a copied install with a fake `codex`. |
+| `tools/check-plan-runners.py` | The iterate-plan port's adapted behavior: section extraction, always-all selection, `--plan`/`--note` boundaries, plus a wiring smoke over the shared contracts. |
+| `tools/test-checkers.py` | Tests that the checkers above actually fail when they should. |
 
-Worth knowing what they don't cover: `check-parity.py` checks a rule is *stated*, not that it is *correct*, and the merge step is deliberately not scripted — semantic dedupe is Opus's judgment, so it ships worked goldens to compare against rather than assertions. See `tools/README.md`.
+Worth knowing what they don't cover: `check-parity.py` checks a rule is *stated*, not that it is *correct*, and the merge step is deliberately not scripted — semantic dedupe is the editor's judgment, so it ships worked goldens to compare against rather than assertions. See `tools/README.md`.
 
 ## V1 — the original single-reviewer skills
 
@@ -192,12 +220,12 @@ To roll back entirely instead: `git checkout v1.0 && ./install.sh`. Details and 
 Each iterate-* skill invokes Codex as one subprocess **per selected lens**, each with three structural guarantees:
 
 1. **Sandbox** — `codex -a never exec -s read-only --skip-git-repo-check` makes file writes structurally impossible from Codex's side.
-2. **Output schema** — `--output-schema <reviewer-output.schema.json>` forces Codex's response into a strict JSON shape (verdict + findings + corrections + answers). Free-form prose is rejected by Codex's runtime before it reaches Opus.
-3. **Patch-marker rejection** — Opus scans each response for `*** Begin Patch`, unified-diff markers, and merge-conflict markers before folding. Defense in depth against a Codex response that smuggles a patch into a description field.
+2. **Output schema** — `--output-schema <reviewer-output.schema.json>` forces Codex's response into a strict JSON shape (verdict + findings + corrections + answers). Free-form prose is rejected by Codex's runtime before it reaches the editor.
+3. **Patch-marker rejection** — the editor scans each response for `*** Begin Patch`, unified-diff markers, and merge-conflict markers before folding. Defense in depth against a Codex response that smuggles a patch into a description field.
 
 This makes the editor/reviewer separation a structural property of the system, not a trust property. Even an out-of-contract response gets caught at the gateway.
 
-The lens fan-out sits on top without weakening any of it: the shared `reviewer-prompt.md` carries the contract and defers only ROLE and FOCUS to the lens fragment, so every lens runs under identical restrictions and returns the same schema. Merging N responses into one findings list is Opus's job, consistent with Opus-as-sole-editor — dedupe collapses findings that share **both** a location and an asserted defect, so two distinct concerns about the same line stay distinct, and a finding both lenses raised keeps both attributions.
+The lens fan-out sits on top without weakening any of it: the shared `reviewer-prompt.md` carries the contract and defers only ROLE and FOCUS to the lens fragment, so every lens runs under identical restrictions and returns the same schema. Merging N responses into one findings list is the editor's job, consistent with the editor-as-sole-editor — dedupe collapses findings that share **both** a location and an asserted defect, so two distinct concerns about the same line stay distinct, and a finding both lenses raised keeps both attributions.
 
 ## License
 

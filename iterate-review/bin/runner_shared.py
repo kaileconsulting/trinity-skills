@@ -1,0 +1,751 @@
+#!/usr/bin/env python3
+"""Shared runner machinery: state lifecycle, codex invocation, validation.
+
+This module is the SHARED half of the runner design (see
+docs/runner-scripts-artifact-hygiene-2026-08-06.md, "State lifecycle & result
+contract"): everything here is skill-agnostic and is duplicated byte-identically
+into the sibling skill's bin/ when the runner pattern ports (checked by content
+hash in tools/check-parity.py from that phase on). Skill-specific behavior —
+lens selection, input composition, pass-log naming — lives in the adapted
+modules, never here.
+
+The contract in one line: **the runner composes and invokes; it never folds,
+never writes pass logs, never decides.**
+
+Key invariants implemented here:
+
+- One ownership protocol for every actor that mutates a scope directory:
+  an exclusive `run.lock` (O_CREAT|O_EXCL) recording pid + ISO timestamp +
+  role + an unforgeable random token. Every mutation re-verifies the token;
+  release is conditional on token match, never unconditional.
+- Race-safe stale reclaim through an intermediate `run.lock.reclaim` marker
+  with byte-identity re-verification, so a successor's fresh lock is never
+  deleted. A dead-owner reclaim marker gets NO automatic cleanup — actors
+  refuse and point at `prune-state --force-unlock`.
+- Atomic publication: every artifact is written to `<name>.tmp` and
+  os.replace()d into place; readers never see partials.
+- A pass exists iff its summary exists: `pass-N.summary.json` is published
+  last, under a valid token — the pass's single commit point.
+
+Stdlib-only, Python >= 3.9.
+"""
+
+from __future__ import annotations
+
+import fcntl
+import json
+import os
+import re
+import secrets
+import stat
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+# --------------------------------------------------------------------------
+# Skill identity — derived from this file's location (bin/ -> skill root), so
+# the SAME BYTES behave correctly in whichever skill's bin/ they live in.
+# Never hardcode a skill name in this module: it is duplicated byte-identically
+# between the sibling skills and hash-checked by tools/check-parity.py.
+# --------------------------------------------------------------------------
+
+SKILL_NAME = Path(__file__).resolve().parent.parent.name
+
+
+# --------------------------------------------------------------------------
+# Codex invocation — flags preserved exactly per SKILL.md; the read-only
+# sandbox is a hard rule. One named constant so drift is a one-line diff.
+# --------------------------------------------------------------------------
+
+CODEX_BASE_ARGS = (
+    "-a", "never", "exec",
+    "-s", "read-only",
+    "--skip-git-repo-check",
+)
+
+STDERR_TAIL_CHARS = 2000
+
+
+def codex_command(schema_path: Path, response_path: Path, cwd=None) -> list:
+    """The exact codex argv for one lens invocation; input arrives on stdin.
+    `cwd`, when given, becomes codex's working root via `-C` (placed right
+    after `exec`, matching the SKILL.md invocation shape) — iterate-plan
+    points codex at the plan's directory; iterate-review omits it and codex
+    inherits the invoking repo."""
+    c_args = ("-C", str(cwd)) if cwd is not None else ()
+    return [
+        "codex", *CODEX_BASE_ARGS[:3], *c_args, *CODEX_BASE_ARGS[3:],
+        "--output-schema", str(schema_path),
+        "--json",
+        "--output-last-message", str(response_path),
+        "-",
+    ]
+
+
+def staging_path_for(response_path: Path) -> Path:
+    """A run-unique staging target for one codex invocation. Codex writes
+    here — never to the final published path — so a killed codex leaves only
+    an ignorable staging file, and a displaced run's still-writing child can
+    never collide with a successor's artifacts (pid + random suffix)."""
+    suffix = f".stage-{os.getpid()}-{secrets.token_hex(4)}.tmp"
+    return response_path.with_name(response_path.name + suffix)
+
+
+def invoke_codex(input_text: str, schema_path: Path, staging_path: Path,
+                 cwd=None) -> dict:
+    """Run one codex invocation writing to a STAGING path (see
+    staging_path_for). Returns {exit_code, stderr_tail}. The caller verifies
+    ownership and atomically publishes the staged response afterwards.
+    `cwd` is forwarded to codex_command's `-C` (see there)."""
+    proc = subprocess.run(
+        codex_command(schema_path, staging_path, cwd=cwd),
+        input=input_text.encode("utf-8"),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+    tail = proc.stderr.decode("utf-8", "replace")[-STDERR_TAIL_CHARS:]
+    return {"exit_code": proc.returncode, "stderr_tail": tail}
+
+
+# --------------------------------------------------------------------------
+# Response validation — belt-and-suspenders beyond codex --output-schema.
+# --------------------------------------------------------------------------
+
+# Patch-marker rejection, exactly the SKILL.md step list: *** Begin Patch,
+# `--- a/` / `+++ b/`, `@@ -` followed by a digit, and merge-conflict markers.
+PATCH_MARKER_PATTERNS = (
+    re.compile(r"\*\*\* Begin Patch"),
+    re.compile(r"^(--- a/|\+\+\+ b/)", re.MULTILINE),
+    re.compile(r"@@ -\d"),
+    re.compile(r"^(<{7}|={7}|>{7})", re.MULTILINE),
+)
+
+VERDICTS = ("APPROVE", "REVISE", "BLOCK")
+
+
+def scan_patch_markers(text: str) -> list:
+    """Return the patterns (as strings) found in the raw response text."""
+    return [p.pattern for p in PATCH_MARKER_PATTERNS if p.search(text)]
+
+
+def structural_check(schema_path: Path, response: object) -> list:
+    """Cheap stdlib structural validation of a parsed response against the
+    schema's top level: required keys present, verdict in its enum, array
+    fields are arrays. codex --output-schema does the deep enforcement; this
+    catches a missing/empty/hand-mangled response file."""
+    problems = []
+    with open(schema_path, encoding="utf-8") as fh:
+        schema = json.load(fh)
+    if not isinstance(response, dict):
+        return [f"response is {type(response).__name__}, expected object"]
+    for key in schema.get("required", []):
+        if key not in response:
+            problems.append(f"missing required key: {key}")
+    verdict = response.get("verdict")
+    if verdict is not None and verdict not in VERDICTS:
+        problems.append(f"verdict {verdict!r} not in {VERDICTS}")
+    for key, spec in schema.get("properties", {}).items():
+        if spec.get("type") == "array" and key in response \
+                and not isinstance(response[key], list):
+            problems.append(f"{key} is not an array")
+    return problems
+
+
+def validate_response_file(schema_path: Path, response_path: Path) -> list:
+    """All rejection reasons for a response file (empty list = valid)."""
+    try:
+        raw = response_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return [f"response unreadable: {exc}"]
+    markers = scan_patch_markers(raw)
+    if markers:
+        return [f"patch marker present: {m}" for m in markers]
+    try:
+        parsed = json.loads(raw)
+    except ValueError as exc:
+        return [f"response is not valid JSON: {exc}"]
+    return structural_check(schema_path, parsed)
+
+
+# --------------------------------------------------------------------------
+# Atomic publication
+# --------------------------------------------------------------------------
+
+def emit_stdout(text: str) -> None:
+    """Emit a committed result to stdout, tolerating a vanished consumer.
+    Once the artifact is committed, a BrokenPipeError from the caller's side
+    must not turn a published result into a non-zero exit; stdout is pointed
+    at devnull afterwards so interpreter shutdown can't raise a second time."""
+    try:
+        sys.stdout.write(text)
+        sys.stdout.flush()
+    except (BrokenPipeError, OSError):
+        try:
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        except OSError:
+            pass
+
+
+def atomic_publish(path: Path, data: str) -> None:
+    """Write to `<name>.tmp`, then os.replace() into place. Readers never see
+    a partial artifact; a crash leaves only a `.tmp` that readers ignore and
+    prune sweeps."""
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(data, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+# --------------------------------------------------------------------------
+# Lock lifecycle
+# --------------------------------------------------------------------------
+
+class LockError(Exception):
+    """Scope ownership could not be acquired/verified. Message is user-facing."""
+
+
+class TrustedPathError(Exception):
+    """A runner-readable path escapes the trusted boundary. Message is
+    user-facing."""
+
+
+def ensure_trusted_path(path, boundaries, label: str) -> Path:
+    """Refuse any runner-readable path outside the trusted boundaries.
+
+    The runner is pre-approved by a standing allowlist rule, which makes it a
+    trusted deputy: whatever it reads ends up in a prompt to the
+    network-backed codex process with no human gate. So every runner-readable
+    path must resolve — symlinks and traversal included, via realpath — to
+    its declared boundary: staged inputs to the per-repository handoff dir
+    (resolve_handoff_dir — enforced, so even unrelated *in-repo* files like
+    an untracked .env or .git/config can't be named as inputs), and
+    repository documents (the pass log, the plan) to the invoking repo root.
+    No shared cross-repo area exists at all: one repository's review must
+    never read files staged for another's."""
+    real = Path(os.path.realpath(str(path)))
+    for boundary in boundaries:
+        b = Path(os.path.realpath(str(boundary)))
+        try:
+            real.relative_to(b)
+            return real
+        except ValueError:
+            continue
+    raise TrustedPathError(
+        f"{label} {path} resolves to {real}, outside the trusted boundaries "
+        f"({', '.join(str(b) for b in boundaries)}). The pre-approved runner "
+        f"reads staged inputs only from the per-repo handoff dir "
+        f"(<git-dir>/{SKILL_NAME}/) and repository documents only from "
+        f"inside the invoking repo root."
+    )
+
+
+def read_trusted_text(path, boundaries, label: str, missing_ok: bool = False):
+    """Validate, open, RE-verify, and read as one identity-anchored
+    operation. Returns (real_path, text); with missing_ok, a missing file
+    returns (real_path, None) instead of raising.
+
+    ensure_trusted_path alone leaves a validate-then-reopen window: a
+    concurrent writer could swap the pathname (or a parent component) for a
+    symlink between validation and a later Path.read_text, steering the
+    pre-approved runner into reading an out-of-boundary file into the
+    network-backed codex prompt. Here the content always comes from an
+    opened descriptor whose inode is re-verified AFTER the open: the
+    pathname must still resolve inside the boundary AND still name the very
+    inode that was opened — a swap in either direction changes one of those
+    and refuses. Benign in-boundary symlinks keep working (they re-verify to
+    the same inode). Non-regular files (FIFO, device, directory) are refused
+    outright, and O_NONBLOCK means a FIFO refuses instead of hanging."""
+    real = ensure_trusted_path(path, boundaries, label)
+    try:
+        fd = os.open(str(real), os.O_RDONLY | os.O_NONBLOCK)
+    except FileNotFoundError:
+        if missing_ok:
+            return real, None
+        raise TrustedPathError(f"{label} {path} does not exist") from None
+    except OSError as exc:
+        raise TrustedPathError(f"{label} {path} unreadable: {exc}") from None
+    try:
+        st_fd = os.fstat(fd)
+        if not stat.S_ISREG(st_fd.st_mode):
+            raise TrustedPathError(
+                f"{label} {path} is not a regular file — refusing to read "
+                f"it into a codex prompt")
+        real2 = Path(os.path.realpath(str(path)))
+        in_boundary = False
+        for boundary in boundaries:
+            try:
+                real2.relative_to(Path(os.path.realpath(str(boundary))))
+                in_boundary = True
+                break
+            except ValueError:
+                continue
+        try:
+            st_now = os.stat(real2)
+        except OSError:
+            st_now = None
+        if not in_boundary or st_now is None or \
+                (st_now.st_dev, st_now.st_ino) != (st_fd.st_dev, st_fd.st_ino):
+            raise TrustedPathError(
+                f"{label} {path} changed between validation and read "
+                f"(pathname no longer names the opened in-boundary file) — "
+                f"refusing")
+        real = real2  # the verified identity — callers check suffix on THIS
+        chunks = []
+        while True:
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    finally:
+        os.close(fd)
+    try:
+        return real, b"".join(chunks).decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise TrustedPathError(f"{label} {path} is not UTF-8: {exc}") from None
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _lock_pid(parsed):
+    """The pid from parsed lock metadata iff it is exactly a positive JSON
+    integer (bool excluded); None otherwise. Malformed metadata must never
+    be coerced (int("1.9"), True->1) or crash (int("abc")) any path — least
+    of all a destructive one: a pid the record doesn't literally contain
+    must never be probed for liveness."""
+    if not isinstance(parsed, dict):
+        return None
+    pid = parsed.get("pid")
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        return None
+    return pid
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _read_lock(path: Path, dir_fd=None):
+    """Return (raw_bytes, parsed_dict_or_None). Missing file -> (None, None).
+
+    Opens O_NONBLOCK and verifies the inode is a REGULAR file before reading:
+    a directory, FIFO, or device squatting at a lock name must classify as
+    malformed (b"", None) — never crash the caller, never block inspection
+    waiting for a FIFO writer. Lock names are the recovery path's input;
+    they must be readable-or-refusable under any filesystem state.
+
+    With `dir_fd`, the lock is addressed by BASENAME relative to that open
+    directory descriptor and O_NOFOLLOW — no path re-traversal."""
+    if dir_fd is not None:
+        target = os.path.basename(str(path))
+        flags = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW
+    else:
+        target, flags = path, os.O_RDONLY | os.O_NONBLOCK
+    try:
+        fd = os.open(target, flags, dir_fd=dir_fd)
+    except FileNotFoundError:
+        return None, None
+    except OSError:
+        return b"", None
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return b"", None
+        try:
+            raw = os.read(fd, 65536)
+        except OSError:
+            return b"", None
+    finally:
+        os.close(fd)
+    try:
+        parsed = json.loads(raw.decode("utf-8"))
+        if not isinstance(parsed, dict) or "pid" not in parsed or "token" not in parsed:
+            parsed = None
+    except (ValueError, UnicodeDecodeError):
+        parsed = None
+    return raw, parsed
+
+
+def _locked_mutation(path: Path, predicate, mutate, dir_fd=None):
+    """The fencing critical section: flock the lock file's inode, confirm the
+    path still names that inode (an unlink+recreate is a different inode),
+    re-read its content, and run `mutate(fd_content)` only if `predicate`
+    accepts it — all under the flock, so verification and mutation cannot be
+    interleaved by force-unlock or a successor. Every actor that mutates or
+    revokes a lock MUST go through this helper (prune-state's force-unlock
+    included) — the serialization only holds if everyone takes the flock.
+
+    With `dir_fd`, the file is addressed by BASENAME relative to that open
+    directory descriptor and opened O_NOFOLLOW — the anchored variant for
+    callers (prune-state) that must not re-traverse a validated path, so a
+    directory component swapped for a symlink after validation cannot
+    redirect the mutation. A symlink sitting where the lock should be
+    refuses (ELOOP -> False), same as vanished/changed.
+
+    Returns True if `mutate` ran, False if the file vanished/changed first.
+    Raises nothing on the refuse path — callers decide what refusal means."""
+    if dir_fd is not None:
+        target, flags = os.path.basename(str(path)), os.O_RDWR | os.O_NOFOLLOW
+    else:
+        target, flags = path, os.O_RDWR
+    try:
+        fd = os.open(target, flags, dir_fd=dir_fd)
+    except (FileNotFoundError, OSError):
+        return False
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        st_fd = os.fstat(fd)
+        try:
+            if dir_fd is not None:
+                st_path = os.stat(target, dir_fd=dir_fd, follow_symlinks=False)
+            else:
+                st_path = os.stat(path)
+        except FileNotFoundError:
+            return False
+        if (st_fd.st_dev, st_fd.st_ino) != (st_path.st_dev, st_path.st_ino):
+            return False
+        raw = os.read(fd, 65536)
+        if not predicate(raw):
+            return False
+        mutate(fd)
+        return True
+    finally:
+        os.close(fd)
+
+
+def revoke_token(lock_path: Path) -> bool:
+    """Revoke a lock's ownership token in place (the force-unlock primitive):
+    under the same flock discipline as every other mutation, rewrite the lock
+    with a fresh record whose token nobody holds. A displaced owner's next
+    verification fails; an in-flight verified publication completes first
+    (it holds the flock), which linearizes publish-before-revoke."""
+    def rewrite(fd):
+        record = {
+            "pid": os.getpid(),
+            "timestamp": _utc_now(),
+            "role": "revoked",
+            "token": secrets.token_hex(16),
+            "owner_name": "revoke",
+        }
+        data = (json.dumps(record, sort_keys=True) + "\n").encode("utf-8")
+        os.lseek(fd, 0, os.SEEK_SET)
+        os.truncate(fd, 0)
+        os.write(fd, data)
+
+    return _locked_mutation(lock_path, lambda raw: True, rewrite)
+
+
+class ScopeLock:
+    """Exclusive ownership of one scope's state directory.
+
+    Usage:
+        lock = ScopeLock(state_dir, role="run-pass")
+        lock.acquire()          # O_EXCL create, or race-safe reclaim of a
+                                # dead-pid lock; raises LockError otherwise
+        ...mutate, calling lock.verify() before each publication...
+        lock.release()          # conditional on token match — in a finally
+    """
+
+    LOCK_NAME = "run.lock"
+    RECLAIM_NAME = "run.lock.reclaim"
+
+    def __init__(self, state_dir: Path, role: str, dir_fd=None):
+        """`dir_fd`, when given, must be an open O_NOFOLLOW|O_DIRECTORY
+        descriptor for state_dir that outlives this lock: every lock
+        operation then addresses run.lock by basename relative to it, so a
+        scope pathname swapped for a symlink after validation can never
+        redirect lock creation, reclaim, or release outside the anchored
+        directory. Without it, operations are path-based (run-pass's own
+        state dir, which it creates itself)."""
+        self.state_dir = Path(state_dir)
+        self.role = role
+        self.dir_fd = dir_fd
+        self.token = secrets.token_hex(16)
+        self.lock_path = self.state_dir / self.LOCK_NAME
+        self.reclaim_path = self.state_dir / self.RECLAIM_NAME
+        self._held = False
+
+    # -- helpers ----------------------------------------------------------
+
+    def _payload(self) -> bytes:
+        record = {
+            "pid": os.getpid(),
+            "timestamp": _utc_now(),
+            "role": self.role,
+            "token": self.token,
+            "owner_name": os.path.basename(sys.argv[0]) or "python3",
+        }
+        return (json.dumps(record, sort_keys=True) + "\n").encode("utf-8")
+
+    def _try_create(self, path: Path) -> bool:
+        try:
+            if self.dir_fd is not None:
+                fd = os.open(os.path.basename(str(path)),
+                             os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                             dir_fd=self.dir_fd)
+            else:
+                fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            return False
+        try:
+            os.write(fd, self._payload())
+        finally:
+            os.close(fd)
+        return True
+
+    def _unlink(self, path: Path) -> None:
+        if self.dir_fd is not None:
+            os.unlink(os.path.basename(str(path)), dir_fd=self.dir_fd)
+        else:
+            os.unlink(path)
+
+    def _refuse(self, why: str):
+        raise LockError(
+            f"{why} (scope dir: {self.state_dir}). No automatic reclaim is "
+            f"attempted for ambiguous locks — if you are sure no run is live, "
+            f"recover explicitly with: prune-state --force-unlock "
+            f"{self.state_dir.name}"
+        )
+
+    # -- protocol ---------------------------------------------------------
+
+    def acquire(self) -> None:
+        if self.dir_fd is None:
+            self.state_dir.mkdir(parents=True, exist_ok=True)
+
+        # A reclaim marker means recovery is in progress (live pid) or died
+        # mid-recovery (dead pid). Neither case is ours to clean up: the
+        # recursion terminates by refusing to recurse.
+        marker_raw, marker = _read_lock(self.reclaim_path,
+                                        dir_fd=self.dir_fd)
+        if marker_raw is not None:
+            mpid = _lock_pid(marker)
+            if mpid is not None and _pid_alive(mpid):
+                self._refuse("a stale-lock reclaim is in progress")
+            # Dead pid OR malformed metadata: both are refuse-and-point —
+            # malformed must never be coerced into a probe-able pid.
+            self._refuse("an abandoned reclaim marker exists")
+
+        if self._try_create(self.lock_path):
+            self._held = True
+            return
+
+        raw, parsed = _read_lock(self.lock_path, dir_fd=self.dir_fd)
+        if raw is None:
+            # Lock vanished between the failed create and the read — the owner
+            # released it. Take the clean-create path again, once.
+            if self._try_create(self.lock_path):
+                self._held = True
+                return
+            self._refuse("the scope is locked by a concurrent run")
+        pid = _lock_pid(parsed)
+        if pid is None:
+            # Unparseable bytes, missing keys, or a pid that isn't exactly a
+            # positive integer — one malformed class, one refusal.
+            self._refuse("the scope lock has malformed metadata")
+        if _pid_alive(pid):
+            # Any live pid — even a name mismatch, which PID reuse can produce —
+            # is ambiguous. The recorded name is diagnostic only.
+            self._refuse(
+                f"the scope is locked by a live run (pid {pid}, "
+                f"role {parsed.get('role', '?')}, since {parsed.get('timestamp', '?')})"
+            )
+        self._reclaim(raw)
+
+    def _is_mine(self, raw: bytes) -> bool:
+        try:
+            return json.loads(raw.decode("utf-8")).get("token") == self.token
+        except (ValueError, UnicodeDecodeError, AttributeError):
+            return False
+
+    def _reclaim(self, observed_raw: bytes) -> None:
+        """Race-safe reclaim of a dead-pid lock: win the reclaim marker,
+        re-verify the lock is byte-identical to what we observed (a successor's
+        fresh lock differs and is never touched) and unlink it inside the
+        flock+inode critical section, then attempt our own O_EXCL creation.
+        Losing that creation race is a clean back-off."""
+        if not self._try_create(self.reclaim_path):
+            self._refuse("another reclaim of this scope is in progress")
+        try:
+            removed = _locked_mutation(
+                self.lock_path,
+                lambda raw: raw == observed_raw,
+                lambda fd: self._unlink(self.lock_path),
+                dir_fd=self.dir_fd)
+            if not removed:
+                self._refuse("the scope lock changed while reclaiming — a "
+                             "successor owns it")
+            if not self._try_create(self.lock_path):
+                self._refuse("lost the lock-creation race to a newly starting run")
+            self._held = True
+        finally:
+            # Conditional removal of OUR marker only — same rule as the lock.
+            _locked_mutation(self.reclaim_path, self._is_mine,
+                             lambda fd: self._unlink(self.reclaim_path),
+                             dir_fd=self.dir_fd)
+
+    def verify(self) -> None:
+        """Cheap early ownership check (no flock) for abort-before-work.
+        The authoritative gate is verify_and(), which fences the actual
+        mutation; this exists so a displaced run stops composing/invoking as
+        soon as it notices rather than at its next publication."""
+        _raw, parsed = _read_lock(self.lock_path, dir_fd=self.dir_fd)
+        if parsed is None or parsed.get("token") != self.token:
+            raise LockError(
+                "scope ownership was revoked (force-unlock or displacement) — "
+                "aborting without publishing"
+            )
+
+    def verify_and(self, publish) -> None:
+        """Fenced publication: run `publish()` inside the flock+inode critical
+        section, only if the lock still carries OUR token. Verification and
+        mutation cannot be interleaved by a revocation — a concurrent
+        revoke_token() either lands before (we refuse) or blocks until the
+        publication completes (publish-before-revoke linearization)."""
+        ran = _locked_mutation(self.lock_path, self._is_mine,
+                               lambda fd: publish(), dir_fd=self.dir_fd)
+        if not ran:
+            raise LockError(
+                "scope ownership was revoked (force-unlock or displacement) — "
+                "aborting without publishing"
+            )
+
+    def release(self) -> None:
+        """Conditional on token match inside the flock+inode critical section,
+        never unconditional: a displaced run must not unlink a successor's
+        lock, even when the revocation lands mid-release.
+
+        Never raises: release runs in finally blocks after the commit point,
+        and an OSError here must not turn a committed pass into a non-zero
+        exit. A lock left behind by a failed release is exactly a dead-pid
+        stale lock — the reclaim path is its documented recovery."""
+        if not self._held:
+            return
+        try:
+            _locked_mutation(self.lock_path, self._is_mine,
+                             lambda fd: self._unlink(self.lock_path),
+                             dir_fd=self.dir_fd)
+        except OSError:
+            pass
+        self._held = False
+
+
+# --------------------------------------------------------------------------
+# Pass numbering & summary contract
+# --------------------------------------------------------------------------
+
+_PASS_ARTIFACT = re.compile(r"^pass-(\d+)\.")
+
+
+def allocate_pass_number(state_dir: Path) -> int:
+    """max over ALL pass-N.* names (artifacts and summaries alike) + 1, so
+    orphan artifacts from a displaced run are never overwritten — their
+    numbers are simply skipped. Call while holding the scope lock."""
+    highest = 0
+    try:
+        names = os.listdir(state_dir)
+    except FileNotFoundError:
+        names = []
+    for name in names:
+        m = _PASS_ARTIFACT.match(name)
+        if m:
+            highest = max(highest, int(m.group(1)))
+    return highest + 1
+
+
+def pass_number_in_use(state_dir: Path, pass_num: int) -> bool:
+    """True if ANY pass-<N>.* artifact exists (input, response, summary, or
+    staging leftovers). An explicit --pass-num that collides is refused —
+    published pass state is immutable; orphaned numbers are skipped, never
+    reused. Call while holding the scope lock."""
+    prefix = f"pass-{pass_num}."
+    try:
+        names = os.listdir(state_dir)
+    except FileNotFoundError:
+        return False
+    return any(n.startswith(prefix) for n in names)
+
+
+def summary_path(state_dir, pass_num: int) -> Path:
+    return Path(state_dir) / f"pass-{pass_num}.summary.json"
+
+
+def publish_summary(lock: ScopeLock, state_dir: Path, pass_num: int,
+                    scope_hash: str, log_path: Path, warnings: list,
+                    lenses: dict) -> "tuple[Path, str]":
+    """Publish pass-N.summary.json — the pass's single commit point. A pass
+    exists iff its summary exists; readers discover passes only through
+    summaries. Published atomically, last, inside the token-fenced critical
+    section (verify_and), so a revocation cannot interleave the check and
+    the commit."""
+    payload = {
+        "pass": pass_num,
+        "scope_hash": scope_hash,
+        "log_path": str(log_path),
+        "warnings": list(warnings),
+        "lenses": lenses,
+        "complete": True,
+    }
+    path = summary_path(state_dir, pass_num)
+    text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    lock.verify_and(lambda: atomic_publish(path, text))
+    # Return the committed bytes too: the caller must never have to re-read
+    # the file to emit them — a post-publication read failure would break
+    # the exit-0-iff-summary-published contract.
+    return path, text
+
+
+# --------------------------------------------------------------------------
+# Invoking-repo root resolution (distinct from skill-root resolution)
+# --------------------------------------------------------------------------
+
+def resolve_handoff_dir(cwd=None):
+    """Return (handoff_dir, warnings) — the ONLY directory the runner will
+    read staged inputs from: `<git-dir>/<skill-name>/` (worktree-aware via
+    `git rev-parse --absolute-git-dir`; inside the repo but invisible to git
+    and uncommittable), falling back to `<cwd>/.<skill-name>/` with a
+    warning outside a git repo. The name is location-derived (SKILL_NAME),
+    so each skill's byte-identical copy gets its own handoff dir. Enforced,
+    not conventional: the standing allowlist rule must not let an
+    invocation-only attacker feed unrelated in-repo files (an untracked
+    .env, .git/config) to the network-backed codex process — inputs must
+    have been deliberately staged here by an actor with write access."""
+    cwd = Path(cwd) if cwd is not None else Path.cwd()
+    fallback = cwd / f".{SKILL_NAME}"
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "--absolute-git-dir"],
+            cwd=str(cwd), capture_output=True, text=True,
+        )
+    except OSError as exc:
+        return fallback, [
+            f"git unavailable ({exc}); input handoff falls back to "
+            f"<cwd>/.{SKILL_NAME}"]
+    if proc.returncode != 0:
+        return fallback, [
+            f"not inside a git repository; input handoff falls back to "
+            f"<cwd>/.{SKILL_NAME}"]
+    return Path(proc.stdout.strip()) / SKILL_NAME, []
+
+
+def resolve_repo_root(cwd=None):
+    """Return (root_path, warnings). `git rev-parse --show-toplevel` from the
+    cwd — handles subdirectory and worktree invocation — falling back to the
+    cwd with a warning when not in a git repo."""
+    cwd = Path(cwd) if cwd is not None else Path.cwd()
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=str(cwd), capture_output=True, text=True,
+        )
+    except OSError as exc:
+        return cwd, [f"git unavailable ({exc}); pass-log default falls back to the cwd"]
+    if proc.returncode != 0:
+        return cwd, ["not inside a git repository; pass-log default falls back to the cwd"]
+    return Path(proc.stdout.strip()), []

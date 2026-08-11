@@ -41,4 +41,4 @@ Both lenses run on every `iterate-plan` pass; the merge collapses overlap.
 
 ## Merge & attribution
 
-Findings from both lenses are merged by Opus (semantic dedupe; co-reported findings retain **all** contributing lens ids). Every folded finding records its originating lens id in the HISTORICAL block — this is the attribution that powers the ROI metric (fraction of incorporated findings from a non-default lens).
+Findings from both lenses are merged by the editor (semantic dedupe; co-reported findings retain **all** contributing lens ids). Every folded finding records its originating lens id in the HISTORICAL block — this is the attribution that powers the ROI metric (fraction of incorporated findings from a non-default lens).

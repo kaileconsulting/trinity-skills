@@ -1,0 +1,32 @@
+REVIEWER PROMPT (synthetic golden stand-in)
+Second prompt line.
+## ROLE (test-lens)
+Synthetic lens body line.
+---
+=== MATCHED CONTEXT (sections for the test-lens lens) ===
+[test-lens lens framing] The Approach section plus Phasing — synthetic framing scalar.
+
+## Approach
+Approach body.
+
+### Sub-decision
+Kept with its parent.
+
+## Phasing
+Phase 1 body.
+=== PLAN ===
+# Golden Plan
+
+Intro line.
+
+## Approach
+Approach body.
+
+### Sub-decision
+Kept with its parent.
+
+## Phasing
+Phase 1 body.
+
+## Other
+Never sliced.

@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+"""run-lens — compose one lens input, invoke Codex, validate the response.
+
+Part of the iterate-review runner set (stdlib-only, Python >= 3.9); see
+docs/runner-scripts-artifact-hygiene-2026-08-06.md. The runner composes and
+invokes; it never folds, never writes pass logs, never decides.
+
+Standalone exit contract: 0 = valid response published; 2 = response rejected
+(patch markers or structural failure); 1 = invocation/orchestration error.
+Standalone invocations are debug tools: they take no lock and write only to
+the isolated state/<scope-hash>/debug/ namespace — never to published
+pass-N.* state, so a standalone run during a live run-pass cannot overwrite
+or interleave published artifacts. The machine-readable result is printed to
+stdout.
+"""
+import sys
+
+MIN_PYTHON = (3, 9)
+if sys.version_info < MIN_PYTHON:
+    sys.stderr.write(
+        "run-lens: Python %d.%d+ required, found %d.%d — see README (Prerequisites)\n"
+        % (MIN_PYTHON + sys.version_info[:2])
+    )
+    sys.exit(1)
+
+import argparse
+import json
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import review_runner as rr        # noqa: E402
+import selection_engine as sel    # noqa: E402
+
+EXIT_OK = 0
+EXIT_ERROR = 1
+EXIT_REJECTED = 2
+
+
+def build_parser():
+    p = argparse.ArgumentParser(
+        prog="run-lens",
+        description=(
+            "Compose one lens input, invoke Codex read-only, validate the "
+            "response. Standalone runs are debug-only: no lock, artifacts "
+            "under state/<scope-hash>/debug/. Exit 0 = valid response, "
+            "2 = rejected (patch markers / structural failure), 1 = error."
+        ),
+    )
+    p.add_argument("--diff", required=True, type=Path, help="path to the scope diff file")
+    p.add_argument("--intent", required=True, type=Path, help="path to the intent file")
+    p.add_argument("--lens", required=True, help="lens id (senior-dev | security | qa)")
+    p.add_argument("--scope-tag", required=True, help="scope tag (with the resolved log path, keys the state dir)")
+    p.add_argument("--log-path", type=Path, default=None,
+                   help="pass-log override; default is <repo-root>/docs/reviews/code-review-<scope-tag>.md")
+    return p
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+
+    # Same trusted boundaries as run-pass: inputs from the per-repo handoff
+    # dir only; the pass log from inside the invoking repo root.
+    repo_root, _ = rr.shared.resolve_repo_root()
+    handoff, _ = rr.shared.resolve_handoff_dir()
+    try:
+        # Identity-anchored reads — same rationale as run-pass.
+        _diff_path, diff_text = rr.shared.read_trusted_text(
+            args.diff, [handoff], "--diff")
+        _intent_path, intent_text = rr.shared.read_trusted_text(
+            args.intent, [handoff], "--intent")
+        if args.log_path is not None:
+            rr.shared.ensure_trusted_path(args.log_path, [repo_root], "--log-path")
+    except rr.shared.TrustedPathError as exc:
+        sys.stderr.write(f"run-lens: {exc}\n")
+        return EXIT_ERROR
+    if not diff_text.strip():
+        # Same contract at both command boundaries as run-pass.
+        sys.stderr.write("run-lens: the diff is empty — nothing to review\n")
+        return EXIT_ERROR
+
+    known = {lens["id"] for lens in sel.load_lenses()}
+    if args.lens not in known:
+        sys.stderr.write(
+            f"run-lens: unknown lens id {args.lens!r} "
+            f"(known: {', '.join(sorted(known))})\n")
+        return EXIT_ERROR
+
+    try:
+        rr.validate_scope_tag(args.scope_tag)
+    except rr.CompositionError as exc:
+        sys.stderr.write(f"run-lens: {exc}\n")
+        return EXIT_ERROR
+    log_path, warnings = rr.resolve_log_path(args.scope_tag, args.log_path)
+    try:
+        # Same boundary + .md requirement as run-pass — the default included.
+        log_path = rr.shared.ensure_trusted_path(log_path, [repo_root], "pass log")
+        if log_path.suffix != ".md":
+            sys.stderr.write(
+                f"run-lens: pass log {log_path} must be a .md file — the "
+                f"runner reads it for prior-pass context and refuses to "
+                f"read anything else under that flag\n")
+            return EXIT_ERROR
+    except rr.shared.TrustedPathError as exc:
+        sys.stderr.write(f"run-lens: {exc}\n")
+        return EXIT_ERROR
+    shash = rr.scope_hash(args.scope_tag, log_path)
+    state_dir = rr.STATE_ROOT / shash
+
+    try:
+        prior = rr.read_prior_passes(log_path, args.scope_tag,
+                                     boundaries=[repo_root])
+        input_path, response_path = rr.debug_paths(state_dir, args.lens)
+        input_path.parent.mkdir(parents=True, exist_ok=True)
+        entry = rr.run_one_lens(args.lens, intent_text, diff_text, prior,
+                                input_path, response_path)
+    except (rr.CompositionError, OSError) as exc:
+        # OSError covers orchestration failures the standalone contract owes
+        # a diagnostic for (codex missing from PATH, artifact-publication
+        # errors) — exit 1 with a usable message, never a traceback.
+        sys.stderr.write(f"run-lens: {exc}\n")
+        return EXIT_ERROR
+
+    result = {
+        "lens": args.lens,
+        "scope_hash": shash,
+        "log_path": str(log_path),
+        "warnings": warnings,
+        "input_path": str(input_path),
+        **entry,
+    }
+    # Committed — a vanished stdout consumer must not flip the exit code.
+    rr.shared.emit_stdout(json.dumps(result, indent=2, sort_keys=True) + "\n")
+    if entry["status"] == "ok":
+        return EXIT_OK
+    if entry["status"] == "rejected":
+        return EXIT_REJECTED
+    return EXIT_ERROR
+
+
+if __name__ == "__main__":
+    sys.exit(main())

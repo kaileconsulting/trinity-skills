@@ -1,0 +1,26 @@
+SYNTHETIC REVIEWER PROMPT
+Line two of the contract.
+## ROLE (test lens)
+You are a synthetic reviewer.
+
+## FOCUS
+- one thing
+---
+=== INTENT ===
+[test-lens lens framing] The diff, intent, and prior passes, framed synthetically for the golden.
+
+feat: add widget
+
+Adds the widget frobnicator.
+=== DIFF ===
+diff --git a/w.py b/w.py
+--- a/w.py
++++ b/w.py
+@@ -1,1 +1,1 @@
+-x = 1
++x = 2
+=== PRIOR PASSES ===
+# Code Review — test
+
+## Pass 1 — 2026-08-06 [HISTORICAL]
+Prior content here.

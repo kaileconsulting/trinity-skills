@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+"""run-pass — select lenses, fan out concurrently, publish the pass summary.
+
+Part of the iterate-plan runner set (stdlib-only, Python >= 3.9); see
+docs/runner-scripts-artifact-hygiene-2026-08-06.md. The runner composes and
+invokes; it never folds, never writes the plan, never decides.
+
+Exit contract: exit 0 means exactly "pass-N.summary.json was published" —
+per-lens failure or rejection is DATA inside the summary, which the model
+folds under its existing FAILED rules. Non-zero exit / absent summary means
+the pass ABORTED and must be treated as never-ran. A pass exists iff its
+summary exists.
+
+Lens selection is deterministic per lenses/README.md (every iterate-plan
+lens is `always: true`, so selection is the full lens set); --lenses
+overrides it. The scope's run.lock is held for the duration of the
+invocation; a concurrent run of the same scope fails fast.
+"""
+import sys
+
+MIN_PYTHON = (3, 9)
+if sys.version_info < MIN_PYTHON:
+    sys.stderr.write(
+        "run-pass: Python %d.%d+ required, found %d.%d — see README (Prerequisites)\n"
+        % (MIN_PYTHON + sys.version_info[:2])
+    )
+    sys.exit(1)
+
+import argparse
+import concurrent.futures
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import plan_runner as pr          # noqa: E402
+import runner_shared as shared    # noqa: E402
+
+EXIT_OK = 0
+EXIT_ERROR = 1
+
+
+def positive_int(value):
+    n = int(value)
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"pass number must be >= 1, got {n}")
+    return n
+
+
+def build_parser():
+    p = argparse.ArgumentParser(
+        prog="run-pass",
+        description=(
+            "Select lenses deterministically, fan out one Codex call per "
+            "lens, publish pass-N.summary.json. Exit 0 iff the summary was "
+            "published; per-lens failure/rejection is data in the summary."
+        ),
+    )
+    p.add_argument("--plan", required=True, type=Path,
+                   help="path to the plan markdown file (must be inside the "
+                        "invoking repo root)")
+    p.add_argument("--note", type=Path, default=None,
+                   help="optional staged note file (human-edits-since-last-"
+                        "pass diff), prepended to every lens's input; must "
+                        "live in the per-repo handoff dir")
+    p.add_argument("--pass-num", type=positive_int, default=None, metavar="N",
+                   help="pass number (>= 1); refused if any pass-N.* artifact "
+                        "already exists — published pass state is immutable. "
+                        "Default allocates max+1 under the run lock")
+    p.add_argument("--lenses", default=None,
+                   help="comma-separated lens ids to force, overriding "
+                        "deterministic selection")
+    return p
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+
+    # The plan (a repository document) must resolve inside the invoking repo
+    # root; the staged note must come from the per-repo handoff dir (so even
+    # unrelated in-repo files can't be fed to codex under that flag).
+    repo_root, warnings = shared.resolve_repo_root()
+    handoff, _ = shared.resolve_handoff_dir()
+    try:
+        # Identity-anchored reads: content comes from a descriptor whose
+        # inode is re-verified in-boundary after the open, so a pathname
+        # swapped between validation and read can't reach the codex prompt.
+        plan_path, plan_text = shared.read_trusted_text(
+            args.plan, [repo_root], "--plan")
+        note_text = ""
+        if args.note is not None:
+            _note_path, note_text = shared.read_trusted_text(
+                args.note, [handoff], "--note")
+    except shared.TrustedPathError as exc:
+        sys.stderr.write(f"run-pass: {exc}\n")
+        return EXIT_ERROR
+    if plan_path.suffix != ".md":
+        # Checked on the VERIFIED identity read_trusted_text returned.
+        sys.stderr.write(
+            f"run-pass: plan {plan_path} must be a .md file — the runner "
+            f"reads it into the codex prompt and refuses to read anything "
+            f"else under that flag\n")
+        return EXIT_ERROR
+    if not plan_text.strip():
+        sys.stderr.write("run-pass: the plan is empty — nothing to review\n")
+        return EXIT_ERROR
+
+    try:
+        lens_ids, reasons = pr.select_lenses(args.lenses)
+    except pr.CompositionError as exc:
+        sys.stderr.write(f"run-pass: {exc}\n")
+        return EXIT_ERROR
+
+    shash = pr.scope_hash(plan_path)
+    state_dir = pr.STATE_ROOT / shash
+
+    lock = shared.ScopeLock(state_dir, role="run-pass")
+    try:
+        lock.acquire()
+    except shared.LockError as exc:
+        sys.stderr.write(f"run-pass: {exc}\n")
+        return EXIT_ERROR
+
+    try:
+        pass_num = args.pass_num
+        if pass_num is None:
+            pass_num = shared.allocate_pass_number(state_dir)
+        elif shared.pass_number_in_use(state_dir, pass_num):
+            sys.stderr.write(
+                f"run-pass: pass {pass_num} already has artifacts in "
+                f"{state_dir} — published pass state is immutable. Omit "
+                f"--pass-num to allocate a fresh number, or prune the scope "
+                f"first (prune-state).\n")
+            return EXIT_ERROR
+
+        def one(lens_id):
+            input_path = state_dir / f"pass-{pass_num}.{lens_id}.input.txt"
+            response_path = state_dir / f"pass-{pass_num}.{lens_id}.response.json"
+            return pr.run_one_lens(lens_id, plan_text, note_text,
+                                   plan_path.parent, input_path,
+                                   response_path, lock=lock)
+
+        # All lens futures are awaited; one lens failing never cancels its
+        # siblings. A LockError means ownership was revoked mid-run — the
+        # whole pass aborts with NO summary (orphan artifacts stay inert:
+        # a pass exists iff its summary exists).
+        entries = {}
+        revoked = None
+        with concurrent.futures.ThreadPoolExecutor(
+                max_workers=max(1, len(lens_ids))) as pool:
+            futures = {pool.submit(one, lid): lid for lid in lens_ids}
+            for fut in concurrent.futures.as_completed(futures):
+                lid = futures[fut]
+                try:
+                    entries[lid] = fut.result()
+                except shared.LockError as exc:
+                    revoked = exc
+                except Exception as exc:  # noqa: BLE001 — per-lens data, not a crash
+                    entries[lid] = {
+                        "status": "failed",
+                        "response_path": str(
+                            state_dir / f"pass-{pass_num}.{lid}.response.json"),
+                        "exit_code": None,
+                        "stderr_tail": f"runner exception: {exc!r}",
+                    }
+        if revoked is not None:
+            sys.stderr.write(f"run-pass: {revoked}\n")
+            return EXIT_ERROR
+
+        for lid in entries:
+            entries[lid]["selection_reasons"] = reasons.get(lid, [])
+
+        # publish_summary returns the committed bytes alongside the path so
+        # nothing is ever re-read after publication: exit 0 must mean exactly
+        # "a summary was published" even if the scope is pruned or the disk
+        # errors immediately afterwards. iterate-plan has no separate pass
+        # log — the plan file carries the HISTORICAL record — so the
+        # summary's log_path field echoes the plan path (the document the
+        # model appends to).
+        _summary_file, summary_text = shared.publish_summary(
+            lock, state_dir, pass_num, shash, plan_path, warnings, entries)
+    except shared.LockError as exc:
+        sys.stderr.write(f"run-pass: {exc}\n")
+        return EXIT_ERROR
+    finally:
+        lock.release()
+
+    # Committed — nothing after this point may flip the exit code.
+    shared.emit_stdout(summary_text)
+    return EXIT_OK
+
+
+if __name__ == "__main__":
+    sys.exit(main())

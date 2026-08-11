@@ -27,6 +27,10 @@ run() {
 
 run "selection routing (iterate-review)" \
     python3 iterate-review/examples/selection/check-selection.py
+run "runner scripts (iterate-review bin/)" \
+    python3 tools/check-runners.py
+run "runner scripts (iterate-plan bin/)" \
+    python3 tools/check-plan-runners.py
 run "example fixtures vs. schemas" \
     python3 tools/check-examples.py
 run "shared-machinery parity" \

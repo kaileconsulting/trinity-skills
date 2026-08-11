@@ -6,6 +6,13 @@ described twice. The plan requires them kept in **semantic parity, not
 byte-identity** -- the prose legitimately differs where each skill's folding,
 pass-log and flag handling differ, but the *rules* must hold in both.
 
+Since the Phase 3 runner port, this checker ALSO enforces the one place where
+byte-identity IS the contract: the designated shared runner files
+(`bin/runner_shared.py`, `bin/prune-state`) are duplicated between the two
+skills and compared by content hash. Prose drifts semantically; shared code
+drifts byte-by-byte -- a single divergent byte is a failure, because the whole
+point of the duplication is that both skills run the SAME reviewed machinery.
+
 This checker takes the "semantic" part seriously by normalising markdown before
 matching: emphasis markers, backticks, dash variants and whitespace are
 flattened, so a rule counts as present however it happens to be formatted. What
@@ -25,12 +32,18 @@ Usage:
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKILLS = ("iterate-plan", "iterate-review")
+
+# Designated SHARED runner files: duplicated byte-identically between the two
+# skills' bin/ (runner-scripts plan, Phase 3). Everything else under bin/ is
+# adapted per skill and covered by behavioral fixtures, never byte parity.
+SHARED_BIN_FILES = ("runner_shared.py", "prune-state")
 
 # (rule id, human description, patterns that must ALL appear)
 #
@@ -137,16 +150,21 @@ RULES: list[tuple[str, str, list[str] | dict[str, list[str]]]] = [
     ("guard-human-judgment", "guardrail: a fold needing human judgment halts",
      [r"needs human judgment",
       # Tightened with question classification: the guardrail must name which
-      # class halts, not just say "a question Opus can't answer".
+      # class halts, not just say "a question the editor can't answer".
       r"new_question classified needs_human",
       r"do not halt the loop|does not halt the loop"]),
 
     # --- standing invariants ---------------------------------------------
+    # The model/runner boundary (plan R1): the contract sentence must appear
+    # in both SKILL.mds. The middle clause legitimately differs ("never
+    # writes pass logs" vs "never writes the plan"), so it is not matched.
+    ("runner-contract", "the runner composes and invokes; never folds, never decides",
+     [r"the runner composes and invokes", r"never folds", r"never decides"]),
     ("never-decides-convergence", "the skill never decides convergence",
      [r"never decides convergence"]),
     ("codex-never-edits", "Codex never edits files",
      [r"codex never edits"]),
-    ("opus-sole-writer", "Opus is the sole writer of folds",
+    ("editor-sole-writer", "the editor is the sole writer of folds",
      [r"sole writer"]),
 ]
 
@@ -243,16 +261,45 @@ def main(argv: list[str]) -> int:
                 where = first_line_matching(pats_for(patterns, skill)[0], lines)
                 print(f"              {skill}/SKILL.md:{where}")
 
+    # -- shared runner files: byte-identity by content hash -----------------
+    print()
+    print("shared runner files: byte-identity (sha256)")
+    drifted: list[str] = []
+    for name in SHARED_BIN_FILES:
+        digests = {}
+        for skill in SKILLS:
+            path = os.path.join(REPO, skill, "bin", name)
+            try:
+                with open(path, "rb") as fh:
+                    digests[skill] = hashlib.sha256(fh.read()).hexdigest()
+            except OSError as exc:
+                digests[skill] = f"UNREADABLE ({exc})"
+        if len(set(digests.values())) == 1 \
+                and not str(next(iter(digests.values()))).startswith("UNREADABLE"):
+            print(f"  OK          bin/{name}  {digests[SKILLS[0]][:12]}")
+        else:
+            drifted.append(name)
+            print(f"  DRIFT       bin/{name}")
+            for skill, digest in digests.items():
+                print(f"              {skill}: {digest[:64]}")
+
     print()
     ok = len(RULES) - len(gaps) - len(missing)
-    print(f"{ok}/{len(RULES)} rules in parity")
+    print(f"{ok}/{len(RULES)} rules in parity; "
+          f"{len(SHARED_BIN_FILES) - len(drifted)}/{len(SHARED_BIN_FILES)} "
+          f"shared files byte-identical")
     if gaps:
         print(f"PARITY GAPS ({len(gaps)}): {', '.join(gaps)}")
     if missing:
         print(f"MISSING FROM BOTH ({len(missing)}): {', '.join(missing)}")
-    if gaps or missing:
+    if drifted:
+        print(f"SHARED-FILE DRIFT ({len(drifted)}): {', '.join(drifted)} — "
+              f"re-copy the reviewed file byte-identically; never fix one "
+              f"side alone")
+    if gaps or missing or drifted:
         print("\nSemantic parity means the same *rules* hold in both skills. "
-              "Prose may differ; a rule may not.")
+              "Prose may differ; a rule may not — and a designated shared "
+              "runner file may not differ by a single byte.")
         return 1
     return 0
 

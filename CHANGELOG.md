@@ -1,5 +1,213 @@
 # Changelog
 
+## 2.2.0 — 2026-08-11 — runner scripts + artifact hygiene
+
+Plan: `docs/archive/runner-scripts-artifact-hygiene-2026-08-06.md` (converged
+after 9 iterate-plan passes; all acceptance criteria met, each annotated with
+its evidence). Replaces per-pass improvised shell with stdlib-only Python
+runners under each skill's `bin/` so one documented allowlist rule per skill
+covers an entire review; moves the iterate-review pass-log default to
+`docs/reviews/`; adds state pruning. Phase 3 completed the pattern's port to
+`iterate-plan`. Real-world validation: the iterate-review dogfood (doc-bot
+write-path Phase 1, 5 passes) and the iterate-plan dogfood (Axis 1 plan
+review, 6 passes / 12 codex calls) each ran end to end with **zero Bash
+permission prompts**; platform matrix verified on macOS (both install
+layouts, rule matching demonstrated) and a `python:3.9-slim` Linux container
+(full check suite green on the actual 3.9 floor interpreter).
+
+### Changed (model-agnostic editor role)
+
+- The editor role is no longer named after a model: "Opus" → **"the editor"**
+  (Claude, whichever model drives the session) across both SKILL.mds, both
+  reviewer prompts, lens READMEs, README, and the create-plan template; the
+  loop is now described as **Claude⇄Codex**. HISTORICAL fold tags are
+  `→ Editor:` going forward. Historical records (existing pass logs, archived
+  plans, frozen `v1/`) deliberately keep their original wording.
+
+### Added (Phase 3 — iterate-plan port + parity fixtures)
+
+- `iterate-plan/bin/` with the same runner shape: `run-pass` (always-all lens
+  selection + concurrent fan-out + `pass-N.summary.json` contract), `run-lens`
+  (standalone/debug, isolated `debug/` namespace), `prune-state`, all under
+  the same lock/atomic-publication lifecycle. The plan file is the scope:
+  `--plan` must resolve inside the invoking repo root and be `.md`; an
+  optional `--note` (the human-edits-since-last-pass block) is read only from
+  the enforced per-repo handoff dir `<git-dir>/iterate-plan/`. Codex runs
+  with `-C <plan-dir>` per the skill's original invocation shape.
+- Adapted composition in `bin/plan_runner.py`, byte-deterministic and
+  golden-pinned (`examples/composition/`): reviewer prompt + lens body +
+  `=== MATCHED CONTEXT ===` (framing line + the H2 sections named in the
+  lens's `requires_sections`; an absent section contributes its NOTE line —
+  never skipped, never silent) + optional staged note + `=== PLAN ===`.
+  Prior passes need no separate block — the plan's HISTORICAL sections
+  arrive with the plan.
+- **Shared-vs-adapted boundary made mechanical**: `runner_shared.py` and
+  `prune-state` are designated shared files, duplicated byte-identically and
+  content-hash-checked by `tools/check-parity.py` (a single divergent byte
+  fails). To make the same bytes valid in both homes, the shared module
+  derives its skill identity from its own location (`SKILL_NAME` from
+  `bin/..`) — handoff dir, error text, and prune targets all follow the
+  hosting skill; `invoke_codex` gained an optional `cwd` (`-C`) that
+  iterate-review simply doesn't pass.
+- `tools/check-plan-runners.py`: 50 behavioral fixtures for the adapted half
+  (extraction semantics, selection + loud rule-data-drift failures,
+  boundaries, exit contracts, patch-marker rejection at both command
+  boundaries, debug isolation, concurrency fail-fast, prune wiring smoke) —
+  wired into `tools/check-all.sh`. Deep shared-machinery behavior is
+  deliberately not re-pinned: byte-identity plus iterate-review's 120
+  fixtures already pin it once.
+- `iterate-plan/SKILL.md` steps 5–7 rewired to the runners (selection +
+  composition moved into `run-pass`, summary-driven response handling,
+  one-retry via standalone `run-lens`); Converge now prunes the scope's
+  state dir (`--keep-state` opts out, new invocation flag); the runner
+  contract sentence added and enforced as a new `check-parity.py` prose rule
+  (37 rules total). README documents the second allowlist line (tilde form).
+
+### Hardened (Phase 3's 3-pass review — loop mode, APPROVE×3 at pass 3, 0 disputed)
+
+Six findings, all incorporated (fold commits `5abb4b1`, `9baf676`); trail in
+`docs/reviews/code-review-commit-6286fdd.md`:
+
+- **Reads are identity-anchored, not just validated**: new shared
+  `read_trusted_text` closes the validate-then-read symlink-swap window —
+  content always comes from an opened descriptor whose inode is re-verified
+  in-boundary AFTER the open; FIFOs/devices refuse without hanging; all four
+  CLIs and the pass-log read route through it. The read-side twin of Phase
+  2's fd-anchored deletion, pinned by a deterministic swap-injection fixture.
+- **Duplicate H2 headings can't merge into one oversized slice** — any next
+  H2 terminates extraction, a repeated identical title included. (The bug
+  was a faithful port of the original awk helper's behavior; it became
+  visible — and fixable — only once composition moved into code.)
+- **Standalone CLI contracts aligned across both skills**: run-lens refuses
+  empty inputs like run-pass, and orchestration failures (codex missing,
+  publication errors) exit 1 with a diagnostic instead of a traceback.
+- **The `-C <plan-dir>` invocation contract is asserted, not assumed** — the
+  fake codex records argv; fixtures pin the flag's presence, value, and
+  position at both command boundaries.
+
+### Added (Phase 2 — prune-state + auto-prune on convergence)
+
+- `bin/prune-state` implemented: `--scope` targeted cleanup (invoked by the
+  model at the Converge checkpoint — the pruner never infers convergence),
+  `--older-than` age-based cleanup for abandoned runs, `--force-unlock` as
+  the explicit recovery path for ambiguous locks, and a read-only overview
+  with no arguments. Every mode is a dry run unless `--yes`. Deletion holds
+  the scope's own `run.lock` (role=prune) for the entire operation; a
+  `run-pass` starting mid-cleanup fails fast on it. Never touched: pass
+  logs, `state/<hash>.json` records, anything outside `state/`, live-locked
+  scopes, and (by any automatic path) reclaim-marker-bearing scopes.
+  Force-unlock removals are flock+inode-fenced and conditional on
+  byte-identity with the inspected content — removal under that fence *is*
+  the token revocation, so a displaced live run aborts without committing a
+  summary and a successor's fresh lock is never touched.
+- `iterate-review/SKILL.md` step 16 wired: Converge prunes the scope
+  (`--keep-state` opts out, new invocation flag); Abort leaves state for the
+  age-based sweep.
+- Phase 2 fixture set in `tools/check-runners.py`: converged-scope removal,
+  dry-run exactness, pass-log + model-state-file safety, scope-name/symlink
+  refusals, live-lock refusal and age-sweep skip (marker-bearing scopes
+  included), run-start vs. prune fail-fast, dead-pid reclaim through a
+  targeted prune, concurrent force-unlock self-serialization, and
+  force-unlock of a genuinely live run (displaced run detects revocation,
+  successor's summary is the only one).
+
+### Hardened (Phase 2's 6-pass review — run entirely on the new runners, loop mode's first real outing)
+
+Behavior-visible outcomes, all fixture-pinned (suite grew from 90 to 120);
+full trail in `docs/reviews/code-review-commit-13c9e0c.md`:
+
+- **Deletion never re-traverses a validated pathname**: contents, locks, and
+  force-unlock all operate through `O_NOFOLLOW` directory descriptors
+  (`ScopeLock` gained a `dir_fd` mode); a symlink swapped in anywhere is
+  unlinked as a link or refused, never followed.
+- **Dry runs disclose exactly what `--yes` removes** — files, empty dirs,
+  and directory symlinks — and targeted prune refuses if undisclosed
+  entries appear before the lock is taken; the age sweep re-checks
+  freshness *under* the lock (blind to its own mtime bumps).
+- **Recovery tooling survives hostile state**: non-regular files (FIFO,
+  directory) at lock names classify as malformed without hanging or
+  crashing; malformed pids are never coerced on destructive paths (shared
+  `_lock_pid`); concurrent sweeps treat disappearance as benign (APFS
+  quirks included: EINVAL from unlinked-dir openat, `st_nlink=2` after
+  rmdir).
+- **Diagnostics are unforgeable**: every untrusted byte reaching the
+  terminal — lock contents, parsed fields, scope/entry names, refusal
+  text — is control-character-escaped into single-line records.
+- **Honest outcomes**: genuine removal failures exit 1 naming the entry
+  (never misreported as a benign handoff); mid-deletion displacement
+  reports PARTIAL, never "skipped".
+- One reviewer HIGH was **disputed and human-arbitrated** (final-rmdir
+  TOCTOU: the window exists, but POSIX `ENOTEMPTY` means only an *empty*
+  replacement could ever be removed — no state can be lost; verified live,
+  argument recorded in code). Loop mode drove all 6 passes and halted on
+  the max-pass + disputed-HIGH guardrails, as designed.
+
+### Added (Phase 1 — iterate-review runners + SKILL.md rewire)
+
+- `bin/run-pass` and `bin/run-lens` implemented: deterministic lens-input
+  composition (byte-identical, golden-pinned in `examples/composition/`),
+  concurrent per-lens Codex fan-out with the exact read-only sandbox flags,
+  patch-marker rejection + structural validation **in code**, and the
+  `pass-N.summary.json` result contract (exit 0 ⇔ summary published; a pass
+  exists iff its summary exists).
+- Lens selection **promoted to runtime**: the engine moved to
+  `bin/selection_engine.py`; `run-pass` calls it and
+  `examples/selection/check-selection.py` is now a thin goldens CLI over the
+  same module — exactly one implementation, all 14 routing fixtures repointed.
+- Run lifecycle: exclusive per-scope `run.lock` with ownership tokens,
+  race-safe stale reclaim (`run.lock.reclaim` + byte-identity), atomic
+  tmp+`os.replace` publication, conditional release, and an isolated `debug/`
+  namespace for standalone `run-lens`.
+- `tools/check-runners.py` — the runner fixture suite: composition goldens,
+  both exit-contract boundaries, pass-log resolution (docs/reviews default
+  from a subdirectory, override, non-git warning, existing logs untouched),
+  the adversarial lifecycle cases, and the trusted-boundary refusals; wired
+  into `check-all.sh`, teeth-tested in `test-checkers.py`. (Counts live in
+  the suite output, deliberately not restated here — they grew with every
+  self-hosted review pass.)
+- `iterate-review/SKILL.md` steps 9–11 rewired to one `run-pass` invocation
+  per pass; pass-log default moved to `docs/reviews/`; HISTORICAL appends via
+  the Edit/Write tools; runner contract added to Hard rules. `--once`,
+  `--loop`, `--max-passes`, `--log-path`, the state-file format, and the
+  pass-log HISTORICAL format are unchanged. Parity: 36/36.
+
+### Hardened (Phase 1's 11-pass self-hosted review — the runners reviewed their own branch)
+
+Behavior-visible outcomes a user will encounter, all fixture-pinned; full
+trail in `docs/reviews/code-review-branch-docs-runner-scripts-brief.md`:
+
+- **Inputs must live in the per-repo handoff dir** `<git-dir>/iterate-review/`
+  (non-git fallback `<cwd>/.iterate-review/`): the standing allowlist rule
+  can't be used to read arbitrary host files — or even unrelated in-repo
+  files (an untracked `.env`, `.git/config`) — into a codex prompt.
+- **The pass-log header is the read capability**: an existing `--log-path`
+  file is read as prior-pass context only when its first line is exactly
+  `# Code Review — <scope-tag>` for this invocation.
+- **Published pass state is immutable**: an explicit `--pass-num` colliding
+  with any existing `pass-N.*` artifact is refused; codex responses stage at
+  run-unique paths and publish atomically under a verified ownership token;
+  lock mutations are flock+inode-fenced so force-unlock can't race a
+  successor.
+- **exit 0 ⇔ summary published** holds through pruned scopes, post-commit
+  I/O errors, and broken stdout pipes, at both command boundaries.
+- One reviewer HIGH was **disputed and human-arbitrated** (PEP 604
+  annotations on the 3.9 floor — disproven on the floor interpreter, with a
+  Gemini cross-vendor second opinion concurring); the review also included
+  loop mode's first live guardrail halts.
+
+### Added (Phase 0 — foundations)
+
+- `iterate-review/bin/{run-lens,run-pass,prune-state}` — inert stubs pinning the
+  argument surface, exit contracts, skill-root resolution, and the Python ≥ 3.9
+  fail-fast check. Implementations land in Phases 1–2; SKILL.md steps are not yet
+  rewired, so current review behavior is unchanged.
+- README: the one-rule permission model (allowlist snippet for both install
+  layouts), `python3 ≥ 3.9` prerequisite, and the upcoming `docs/reviews/`
+  pass-log default with its existing-logs-untouched migration note.
+- `iterate-review/SKILL.md` Pointers: the extended state-dir layout the runners
+  will use (composed inputs, `pass-N.summary.json` as the pass's commit point,
+  `run.lock` ownership, `debug/` namespace).
+
 ## 2.1.1 — 2026-07-28 — bound the content-regex match span
 
 Fixes [#5](https://github.com/kaileconsulting/trinity-skills/issues/5), found while
