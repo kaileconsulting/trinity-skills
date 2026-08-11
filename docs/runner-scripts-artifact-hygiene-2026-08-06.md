@@ -206,12 +206,12 @@ Everything the runner does (state-dir writes, codex invocation, validation) happ
 - Extended parity fixture green; both skills' fixtures green; CHANGELOG finalized.
 
 **Iterate-review:** YES (rationale: duplicated bin/ must not drift)
-**Status:** reviewed (2026-08-10 — iterate-review converged after 3 passes in loop mode, APPROVE×3 at pass 3: 6 findings, all incorporated across 2 fold commits (`5abb4b1`, `9baf676`), 0 disputed. Standouts: a validate-then-read symlink-swap TOCTOU closed with identity-anchored `read_trusted_text` in the shared module (the read-side twin of Phase 2's fd-anchored deletion), and duplicate-H2 slice merging — a bug faithfully ported from the original awk helper prose, caught only once it became code. Pass log: `docs/reviews/code-review-commit-6286fdd.md`. **Dogfood still pending:** the first real iterate-plan review under its own single allowlist rule.)
+**Status:** reviewed (2026-08-10 — iterate-review converged after 3 passes in loop mode, APPROVE×3 at pass 3: 6 findings, all incorporated across 2 fold commits (`5abb4b1`, `9baf676`), 0 disputed. Standouts: a validate-then-read symlink-swap TOCTOU closed with identity-anchored `read_trusted_text` in the shared module (the read-side twin of Phase 2's fd-anchored deletion), and duplicate-H2 slice merging — a bug faithfully ported from the original awk helper prose, caught only once it became code. Pass log: `docs/reviews/code-review-commit-6286fdd.md`. **Dogfood met 2026-08-11:** the Axis 1 plan review ran 5 loop-mode passes under the single rule with zero other Bash prompts — see the acceptance criterion above.)
 
 ## Acceptance criteria
 
 - [x] A full multi-pass `iterate-review` on a real repo runs with **one documented allowlist rule and zero other Bash permission prompts** end to end (checkpoints and file-edit approvals excluded by design — see "The single-rule permission model"). *Met 2026-08-10 on doc-bot's write-path Phase 1 (5 passes, 15 codex calls); the single stray prompt traced to a mis-staged rule form (absolute vs `~`), not the machinery — rule form now standardized to the README's tilde snippet.*
-- [ ] A full `iterate-plan` review runs under its own single allowlist rule with zero other Bash permission prompts (unconditional; mirrors the iterate-review criterion).
+- [x] A full `iterate-plan` review runs under its own single allowlist rule with zero other Bash permission prompts (unconditional; mirrors the iterate-review criterion). *Met 2026-08-11 on the Axis 1 plan review: 5 loop-mode passes (plan passes 3–7), 10 codex calls, one `--note` staging, zero Bash prompts end to end — including the two lens-consensus Q9 answers and a stall-guardrail halt, all working as designed.*
 - [x] Composition golden-file fixtures prove byte-deterministic input assembly. *Met — iterate-review goldens Phase 1 (`examples/composition/`, check-runners); iterate-plan goldens Phase 3 (plain / with-note / absent-section, check-plan-runners).*
 - [x] Patch-marker rejection is exercised by fixtures at both command boundaries: standalone `run-lens` (malformed response → exit 2) and `run-pass` (completed pass, `status: rejected` in the summary, exit 0). *Met for both skills — Phase 1 fixtures (iterate-review) + Phase 3 fixtures (iterate-plan).*
 - [x] Pass-log behavior fully pinned: default name + `docs/reviews/` location, `--log-path` override, and pre-existing root logs untouched. *Met in Phase 1 (check-runners pass-log fixture set, asserted against the summary's `log_path` + `warnings`).*
@@ -295,7 +295,7 @@ A 3.11-ism in a runner breaks the stated 3.9 floor on someone else's machine.
 | Phase 0 | NO  | n/a | n/a | n/a |
 | Phase 1 | YES | reviewed (converged, 3-lens APPROVE) | Pass 11 — 2026-08-07 | [code-review-branch-docs-runner-scripts-brief.md](reviews/code-review-branch-docs-runner-scripts-brief.md) |
 | Phase 2 | YES | reviewed (converged at cap, Kyle-confirmed; 1 disputed HIGH accepted) | Pass 6 — 2026-08-10 | [code-review-commit-13c9e0c.md](reviews/code-review-commit-13c9e0c.md) |
-| Phase 3 | YES | reviewed (converged, 3-lens APPROVE; dogfood pending) | Pass 3 — 2026-08-10 | [code-review-commit-6286fdd.md](reviews/code-review-commit-6286fdd.md) |
+| Phase 3 | YES | reviewed (converged, 3-lens APPROVE; dogfood met 2026-08-11) | Pass 3 — 2026-08-10 | [code-review-commit-6286fdd.md](reviews/code-review-commit-6286fdd.md) |
 
 ## Pre-flight review pass (Opus, YYYY-MM-DD) [HISTORICAL]
 
