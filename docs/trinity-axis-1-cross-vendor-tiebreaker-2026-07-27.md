@@ -45,9 +45,14 @@
 > constraints not visible in what it was shown), and each needed external evidence to
 > arbitrate — an interpreter run, POSIX semantics, plan history — which is precisely
 > the tiebreaker's designed job. One was even ad-hoc cross-checked with Gemini at the
-> time, a manual preview of this axis. The plan remains parked pending Kyle's Q9 call
-> on minimum corpus size; this review pass is fleshing the design out so it is ready
-> if/when that call unparks it.
+> time, a manual preview of this axis.
+>
+> **Q9 resolved 2026-08-11 (Kyle): the plan stays parked while normal review work
+> accumulates the corpus. The unpark trigger is now a number — 6 real disputes —
+> at which point Phase 0 starts with a provisional benchmark (re-benchmark
+> precommitted at 10).** The design below has been fully fleshed out by review
+> passes 3–7 and is execution-ready when the trigger fires; no further design
+> work is expected to be needed at unpark time. Corpus at resolution: 3/6.
 >
 > ### Read before resuming
 >
@@ -130,6 +135,8 @@ Two separate questions, both previously conflated under "exactly one vote":
 **Vote identity (idempotency).** A vote is keyed on the namespace `(skill, pass_number, lens_id, finding_index)` plus a **content digest computed over a canonical serialization of every inference-relevant input**: a sorted-key UTF-8 JSON object with named fields — the finding's four schema fields (title, severity, description, suggested_action), `dispute_reasoning`, the **built slice content**, `low_context`, the resolved `TIEBREAKER_MODEL`, and a `prompt_version` identifier for the tiebreaker prompt + vote schema. Canonical structured serialization (not bare concatenation) is what makes the key collision-proof and identical across both skills; covering the slice, model, and prompt version means a vote is reused **only** when Gemini would see byte-identical input under the same configuration — an edited dispute reasoning, a re-sliced artefact, or a model/prompt change is correctly a *new* vote, never a stale cache hit. The result is cached in the pass's state directory under that key; checkpoint rendering, a retry, or a re-render reads the cached vote rather than re-invoking Gemini.
 
 **Cache-miss handling is single-writer, not first-past-the-post.** A lookup miss does not license an invocation: the requester must first take a **per-key atomic claim** (an `O_CREAT|O_EXCL` claim file beside the cache entry — the same primitive the runner scripts' scope lock already uses, dead-owner reclaim discipline included); only the claimant invokes Gemini and publishes the result atomically; concurrent observers of a live claim wait for the publication and read it. Without this, two simultaneous checkpoint renders could both miss and both invoke — violating exactly-once and, if the responses differ, making the cached and HISTORICAL records nondeterministic. The concurrent multi-vote fan-out makes this boundary mandatory, not defensive.
+
+**Durable recording rides the existing fold serialization — no second ownership mechanism.** The claim boundary above governs *vendor invocation and cache publication* only. Committing the vote to the checkpoint display and the HISTORICAL block is the **model's fold step**, which Axis 2 already serializes to **exactly one HISTORICAL block and one checkpoint per pass** — the model is the sole log writer, the runner and the cache never touch the log, and concurrent cache *readers* re-render displays but never append records. So exactly-once recording is inherited from the one-fold-per-pass invariant rather than re-implemented; what Phase 2 must assert is that the inheritance holds: one durable vote record per disputed finding per pass, single checkpoint preserved, under concurrent re-renders.
 
 **Counting unit.** The unit is **per disputed finding**, not per pass. Three disputed HIGHs in one pass request three votes. A **per-pass cap (default 3, configurable)** bounds cost; when the cap is hit, remaining disputes are surfaced as `vote_not_requested (per-pass cap reached)` — an explicit, visible state, never a silent omission. The cap suppresses *requests*, never findings: every disputed HIGH still reaches the human whether or not it got a vote.
 
@@ -263,7 +270,7 @@ Read this carefully rather than as a verdict on the design:
 
 **Consequence for sequencing.** Phase 0 must not begin until a dispute corpus exists. The corpus should come from **running the existing Axis 2 harness on real code — a project where the reviewer genuinely lacks context** — and recording the dispositions. That run is worth doing on its own merits (it is the outstanding lens-ROI measurement), and it produces exactly the data Phase 0 needs plus the frequency evidence that tells you whether to build Axis 1 at all.
 
-Minimum corpus size and the fallback if disputes stay sparse are Kyle's call — see Q9.
+Minimum corpus size is settled (Q9, Kyle 2026-08-11): **6 real disputes unlocks Phase 0's provisional benchmark; re-benchmark precommitted at 10; synthetics never scored.** Until the corpus reaches 6, the plan stays parked and normal review work keeps accumulating dispositions.
 
 ## Phasing
 
@@ -280,7 +287,7 @@ Minimum corpus size and the fallback if disputes stay sparse are Kyle's call —
 - A constructed payload contains only the six permitted fields and no prohibited field, verifiable by reading it.
 - A finding whose location cannot be narrowed produces a bounded slice with `low_context: true`, never a whole-artefact payload; a finding citing more locations than the floor permits slices the **budget-derived first K locations** (per the non-circular K rule in Approach → The slice builder) and references the rest, within the 200-line total.
 - **Model default is chosen from a recorded benchmark** of `gemini-2.5-pro` vs `gemini-3.6-flash` run under the predeclared protocol above — ground truth, scoring, selection/tie rule, strata, and coverage gaps all written down *before* the comparison, so an independent reader can verify the default follows from the recorded runs. The rejected candidate and the reason are written down.
-- **The benchmark corpus is identified before Phase 0 starts** — see *Bootstrapping the dispute corpus*. Phase 0 cannot satisfy its own acceptance without one; the corpus currently holds 3 real disputes and remains gated on Kyle's Q9 minimum-size decision.
+- **The benchmark corpus is identified before Phase 0 starts** — see *Bootstrapping the dispute corpus*. Phase 0 cannot satisfy its own acceptance without one; the gate is **6 real human-adjudicated disputes** (Q9, resolved 2026-08-11 — corpus was 3/6 at resolution).
 
 **Iterate-review:** YES (rationale: external-vendor integration + a new prompt/schema contract + the data-governance boundary — all load-bearing)
 **Status:** not started
@@ -311,7 +318,7 @@ Minimum corpus size and the fallback if disputes stay sparse are Kyle's call —
 - Fixtures for surface-not-decide, for `unavailable` still halting loop mode, for cap behaviour **including deterministic over-cap selection** (same merged list → same voted findings on re-render), and for cache reuse vs. cache-miss on edited reasoning, changed slice, and changed model/prompt version.
 - A payload-conformance fixture asserting the six-field budget and the ≤ 200-line bound, plus the many-locations boundary case (reference lines counted inside the budget, K sliced locations at ≥ the floor, summary line when references overflow, `low_context: true`, total ≤ 200 held by construction).
 - A multi-vote latency fixture: N disputes fan out concurrently and the pass-level deadline degrades stragglers to `unavailable` — the tiebreaker's added wall clock is bounded by one vote budget, not N of them.
-- A cache-claim concurrency fixture: simultaneous requests for the same vote key produce **one** external invocation and one shared result; a crashed claimant's stale claim is recovered rather than deadlocking waiters.
+- A cache-claim concurrency fixture: simultaneous requests for the same vote key produce **one** external invocation and one shared result; a crashed claimant's stale claim is recovered rather than deadlocking waiters; and the durable side holds too — **one HISTORICAL vote record per disputed finding and one checkpoint for the pass**, concurrent re-renders notwithstanding (the fold-serialization inheritance per Approach → Exactly-once votes).
 - A live end-to-end test in **both** skills: a real disputed finding → Gemini vote → checkpoint.
 
 **Acceptance:**
@@ -361,7 +368,7 @@ Axis 1 assumes Opus⇄Codex disputes are "rare and high-signal." Measured at par
 
 **Update 2026-08-11:** the trigger has now fired **3 times on real code reviews** (see Approach → Bootstrapping for the list), at roughly one disputed HIGH per major multi-pass review. All three were Kyle-ratified, all matched the predicted diff-invisible-constraint pattern, and each needed external evidence to arbitrate. *Rare* and *non-zero* are both now confirmed; **high-signal** held in all three observed cases (each dispute was correct). The residual risk is no longer "the event never occurs" but "the corpus accumulates too slowly for Phase 0's benchmark" — which is exactly Q9's fallback question.
 
-**Mitigation:** unchanged in kind — measure before building. Continue accumulating dispositions from real code reviews (each major review has produced ~1); Phase 0 stays gated on Kyle's Q9 minimum-corpus call. The original confounders (author-reviewed prose repo; Opus selecting dispositions and writing the log) are partially retired: the three observed disputes came from code reviews where the reviewer genuinely lacked context, and all three dispositions were confirmed by the human checkpoint.
+**Mitigation:** unchanged in kind — measure before building. Continue accumulating dispositions from real code reviews (each major review has produced ~1); Phase 0 is gated on the corpus reaching **6 real disputes** (Q9, resolved 2026-08-11). The original confounders (author-reviewed prose repo; Opus selecting dispositions and writing the log) are partially retired: the three observed disputes came from code reviews where the reviewer genuinely lacked context, and all three dispositions were confirmed by the human checkpoint.
 
 ### R5 — Slice widening under pressure
 A low-confidence vote creates pressure to send more context, and "just include the whole file" is one edit away.
@@ -385,13 +392,7 @@ After Axis 2 (built + live-validated 2026-07-27). Axis 1 depends on the Axis 2 f
 
 **Raised by pass 2:**
 
-- **Q9.** **What minimum dispute corpus is acceptable for Phase 0's model benchmark, and what is the fallback if real disputed HIGHs stay sparse?** *(Kyle's call — `needs_human`, label upheld on audit: no repository fact settles a calibration threshold.)*
-  The lookup half **is** answerable and has been done — twice now. At parking time (2026-07-28) the corpus was **empty** (0 clean disputes in 22 folds). **As of 2026-08-11 it holds 3 real disputed HIGHs** (see Approach → Bootstrapping), accumulating at ~1 per major multi-pass code review, every one confirmed correct at its checkpoint. Options, updated against the live data:
-  1. **Keep accumulating from real reviews until a threshold Kyle names** — the original "gate Phase 0 on a real-code run" option, already happening as a by-product of normal work. At the observed rate, a corpus of 6–10 is a handful of major reviews away. *Still recommended; the open parameter is only the number.*
-  2. **Synthesise a corpus to top up** — hand-author plausible disputed HIGHs to reach the threshold sooner. Cheaper now that 3 real exemplars exist to pattern from, but still benchmarks partly on invented disagreements ("theater" risk).
-  3. **Start Phase 0 at corpus=3** — small-N benchmark, `gemini-2.5-pro` vs `gemini-3.6-flash` on the three real disputes, decision recorded with its small-N caveat and revisited as the corpus grows. Honest and unblocking, at the cost of a weak initial benchmark.
-  Raised by `architect`.
-  **Pass 3 lens consensus (both lenses answered, independently agreeing):** ≥ 6 real human-adjudicated disputes for a *provisional* benchmark, ~10 before treating the choice as calibrated; require representation of both adjudication directions and both skills where feasible, disclosing the gap otherwise (the current 3 are all upheld disputes — one-sided); synthetic cases may validate mechanics but never enter the scored corpus; a provisional default at corpus=3 is acceptable only with a predeclared re-benchmark threshold recorded in advance. The threshold number itself remains Kyle's call.
+- **Q9.** (resolved by Kyle 2026-08-11 — **option 1: keep accumulating from real reviews; the plan stays parked meanwhile.** Thresholds adopted from the lens consensus (re-affirmed unchanged across passes 3–7 by both lenses): **6 real human-adjudicated disputes unlocks Phase 0 with a *provisional* model benchmark; a re-benchmark at 10 is precommitted here, before any model results exist.** Both adjudication directions and both skills should be represented where feasible; a missing stratum is disclosed in the recorded result, never manufactured. Synthetic disputes may exercise mechanics but never enter the scored corpus. Kyle's stated rationale: the trigger is rare in practice — the skill's defining property — so the right posture is parked-but-ready while normal work grows the corpus (~1 disputed HIGH per major multi-pass review; corpus was 3/6 at resolution time). Raised by `architect` in pass 2; settled against live data rather than in the abstract.)
 
 **Raised by pass 1:**
 
@@ -767,3 +768,41 @@ the cache design. Q9 consensus re-affirmed, fifth consecutive pass.
 ### Convergence status
 
 Verdicts: REVISE (1H) → REVISE (1H). Merged HIGH+MEDIUM count **1 → 1 → 1** across the last two transitions — **the non-convergence guardrail fires and the loop halts here.** Read honestly, this is a trickle rather than a deadlock: each pass closed its predecessor's single finding and a *different* single-defect polish item surfaced, with the two lanes alternating APPROVE (PM approved passes 4, 5, and 7 — by count; architect approved pass 6). Every finding since pass 3 has targeted a fold from the pass before it, never the original design. The loop's five folded passes this activation: 7 HIGH+MED → 2 → 1 → 1 → 1, all incorporated, none disputed. **Q9 remains the sole open question (needs_human) and blocks Phase 0 regardless of convergence.**
+
+## Codex review pass 8 — answers (2026-08-11) [HISTORICAL]
+
+Manual single-pass continue after the stall-guardrail halt, at Kyle's
+checkpoint direction. **Q9 was resolved by Kyle before this pass** (option 1 —
+stay parked, accumulate; unpark at 6 real disputes, provisional benchmark;
+re-benchmark precommitted at 10; synthetics never scored) and folded into the
+banner, Bootstrapping, R6, Phase 0, and Open questions. `architect` +
+`product-manager` concurrent via `bin/run-pass`; 1 finding filed → **1 merged**;
+0 corrections; no open questions remain, and none were raised.
+
+### Verdict
+**REVISE** (worst-of: architect REVISE / product-manager **APPROVE**; no FAILED lenses)
+
+### Findings
+
+1. **Vote claim does not make HISTORICAL publication exactly-once** — HIGH · lens: architect: the single-writer claim covers vendor invocation, but checkpoint/HISTORICAL publication sits outside it, so concurrent renders could append duplicate vote records; the Phase 2 fixture asserted one invocation, not one durable record.
+   → Opus: incorporated, with a corrected premise recorded: in this architecture the HISTORICAL writer is the **model's fold step**, already serialized by Axis 2's exactly-one-HISTORICAL-block-per-pass invariant — the runner and cache never write the log, so no second ownership mechanism exists to build. The plan now *states* that inheritance explicitly (the finding's own suggested action anticipated it: "reusing an existing serialized fold/checkpoint transaction if one exists" — it exists), and the Phase 2 concurrency fixture is extended to assert the durable side: one vote record per disputed finding, one checkpoint, under concurrent re-renders. The defect was a real documentation gap; the concurrency scenario it inferred was not reachable.
+
+### Plan corrections applied
+
+- (none filed)
+
+### Open-question answers
+
+- (none open — Q9 resolved by Kyle at the preceding checkpoint; recorded inline in Open questions)
+
+### New questions Codex raised
+
+- (none)
+
+### Lens run summary
+
+- architect: REVISE · product-manager: **APPROVE**
+
+### Convergence status
+
+Verdicts: REVISE (1H) → REVISE (1H). The count is flat but the substance has narrowed to stating an existing invariant the reviewer could not see from the plan alone — the closest this review has come to a dispute-shaped finding, resolved by documentation rather than disagreement. All open questions are now closed. Checkpoint presented to Kyle with the loop's full trail: passes 3–8, 14 findings folded, 0 disputed, PM APPROVE in 4 of the last 5 passes, architect APPROVE at pass 6.
