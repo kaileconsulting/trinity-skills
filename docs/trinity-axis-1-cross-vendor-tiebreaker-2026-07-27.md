@@ -48,11 +48,15 @@
 > time, a manual preview of this axis.
 >
 > **Q9 resolved 2026-08-11 (Kyle): the plan stays parked while normal review work
-> accumulates the corpus. The unpark trigger is now a number — 6 real disputes —
-> at which point Phase 0 starts with a provisional benchmark (re-benchmark
-> precommitted at 10).** The design below has been fully fleshed out by review
-> passes 3–7 and is execution-ready when the trigger fires; no further design
-> work is expected to be needed at unpark time. Corpus at resolution: 3/6.
+> accumulates the corpus. At 6 real disputes the trigger is a DECISION REVIEW,
+> not an automatic build:** come back and honestly assess how much the tiebreaker
+> would really gain — Kyle's stated position at resolution time is that he is
+> *not yet sold* that building it is the right long-term move, and the
+> documented-non-build closeout below remains a fully respectable outcome. If
+> that review says build, Phase 0 starts with a provisional benchmark
+> (re-benchmark precommitted at 10). The design below has been fully fleshed out
+> by review passes 3–8 and is execution-ready either way; no further design work
+> is expected at decision time. Corpus at resolution: 3/6.
 >
 > ### Read before resuming
 >
@@ -270,7 +274,7 @@ Read this carefully rather than as a verdict on the design:
 
 **Consequence for sequencing.** Phase 0 must not begin until a dispute corpus exists. The corpus should come from **running the existing Axis 2 harness on real code — a project where the reviewer genuinely lacks context** — and recording the dispositions. That run is worth doing on its own merits (it is the outstanding lens-ROI measurement), and it produces exactly the data Phase 0 needs plus the frequency evidence that tells you whether to build Axis 1 at all.
 
-Minimum corpus size is settled (Q9, Kyle 2026-08-11): **6 real disputes unlocks Phase 0's provisional benchmark; re-benchmark precommitted at 10; synthetics never scored.** Until the corpus reaches 6, the plan stays parked and normal review work keeps accumulating dispositions.
+Minimum corpus size is settled (Q9, Kyle 2026-08-11): **at 6 real disputes, hold the build/no-build decision review; if it says build, those 6 seed Phase 0's provisional benchmark (re-benchmark precommitted at 10; synthetics never scored).** Until then, the plan stays parked and normal review work keeps accumulating dispositions.
 
 ## Phasing
 
@@ -287,7 +291,7 @@ Minimum corpus size is settled (Q9, Kyle 2026-08-11): **6 real disputes unlocks 
 - A constructed payload contains only the six permitted fields and no prohibited field, verifiable by reading it.
 - A finding whose location cannot be narrowed produces a bounded slice with `low_context: true`, never a whole-artefact payload; a finding citing more locations than the floor permits slices the **budget-derived first K locations** (per the non-circular K rule in Approach → The slice builder) and references the rest, within the 200-line total.
 - **Model default is chosen from a recorded benchmark** of `gemini-2.5-pro` vs `gemini-3.6-flash` run under the predeclared protocol above — ground truth, scoring, selection/tie rule, strata, and coverage gaps all written down *before* the comparison, so an independent reader can verify the default follows from the recorded runs. The rejected candidate and the reason are written down.
-- **The benchmark corpus is identified before Phase 0 starts** — see *Bootstrapping the dispute corpus*. Phase 0 cannot satisfy its own acceptance without one; the gate is **6 real human-adjudicated disputes** (Q9, resolved 2026-08-11 — corpus was 3/6 at resolution).
+- **The benchmark corpus is identified before Phase 0 starts** — see *Bootstrapping the dispute corpus*. Phase 0 cannot satisfy its own acceptance without one; the gate is **6 real human-adjudicated disputes plus the build/no-build decision review** (Q9, resolved 2026-08-11 — corpus was 3/6 at resolution).
 
 **Iterate-review:** YES (rationale: external-vendor integration + a new prompt/schema contract + the data-governance boundary — all load-bearing)
 **Status:** not started
@@ -368,7 +372,7 @@ Axis 1 assumes Opus⇄Codex disputes are "rare and high-signal." Measured at par
 
 **Update 2026-08-11:** the trigger has now fired **3 times on real code reviews** (see Approach → Bootstrapping for the list), at roughly one disputed HIGH per major multi-pass review. All three were Kyle-ratified, all matched the predicted diff-invisible-constraint pattern, and each needed external evidence to arbitrate. *Rare* and *non-zero* are both now confirmed; **high-signal** held in all three observed cases (each dispute was correct). The residual risk is no longer "the event never occurs" but "the corpus accumulates too slowly for Phase 0's benchmark" — which is exactly Q9's fallback question.
 
-**Mitigation:** unchanged in kind — measure before building. Continue accumulating dispositions from real code reviews (each major review has produced ~1); Phase 0 is gated on the corpus reaching **6 real disputes** (Q9, resolved 2026-08-11). The original confounders (author-reviewed prose repo; Opus selecting dispositions and writing the log) are partially retired: the three observed disputes came from code reviews where the reviewer genuinely lacked context, and all three dispositions were confirmed by the human checkpoint.
+**Mitigation:** unchanged in kind — measure before building. Continue accumulating dispositions from real code reviews (each major review has produced ~1); Phase 0 is gated on the corpus reaching **6 real disputes *and* the build/no-build decision review passing** (Q9, resolved 2026-08-11). The original confounders (author-reviewed prose repo; Opus selecting dispositions and writing the log) are partially retired: the three observed disputes came from code reviews where the reviewer genuinely lacked context, and all three dispositions were confirmed by the human checkpoint.
 
 ### R5 — Slice widening under pressure
 A low-confidence vote creates pressure to send more context, and "just include the whole file" is one edit away.
@@ -392,7 +396,7 @@ After Axis 2 (built + live-validated 2026-07-27). Axis 1 depends on the Axis 2 f
 
 **Raised by pass 2:**
 
-- **Q9.** (resolved by Kyle 2026-08-11 — **option 1: keep accumulating from real reviews; the plan stays parked meanwhile.** Thresholds adopted from the lens consensus (re-affirmed unchanged across passes 3–7 by both lenses): **6 real human-adjudicated disputes unlocks Phase 0 with a *provisional* model benchmark; a re-benchmark at 10 is precommitted here, before any model results exist.** Both adjudication directions and both skills should be represented where feasible; a missing stratum is disclosed in the recorded result, never manufactured. Synthetic disputes may exercise mechanics but never enter the scored corpus. Kyle's stated rationale: the trigger is rare in practice — the skill's defining property — so the right posture is parked-but-ready while normal work grows the corpus (~1 disputed HIGH per major multi-pass review; corpus was 3/6 at resolution time). Raised by `architect` in pass 2; settled against live data rather than in the abstract.)
+- **Q9.** (resolved by Kyle 2026-08-11 — **option 1: keep accumulating from real reviews; the plan stays parked meanwhile. At 6 real disputes, the trigger is a build/no-build DECISION REVIEW, not an automatic unpark**: an honest assessment of how much the tiebreaker really gains, against the corpus's own evidence. Kyle's position at resolution: not yet sold that building is the right long-term move — the documented-non-build closeout is a live outcome, not a failure path. *If* the review says build: thresholds adopted from the lens consensus (re-affirmed unchanged across passes 3–7 by both lenses) — the 6 real disputes seed Phase 0's *provisional* model benchmark, with a re-benchmark at 10 precommitted here, before any model results exist; both adjudication directions and both skills represented where feasible, missing strata disclosed rather than manufactured; synthetic disputes may exercise mechanics but never enter the scored corpus. Rationale: the trigger is rare in practice — the skill's defining property — so the right posture is parked-but-ready while normal work grows the corpus (~1 disputed HIGH per major multi-pass review; 3/6 at resolution). Raised by `architect` in pass 2; settled against live data rather than in the abstract.)
 
 **Raised by pass 1:**
 
