@@ -34,3 +34,54 @@ runner port) from the runner-scripts plan
 ### Diff snapshot reference
 
 Diff captured at 2026-08-10 14:15; head SHA `6286fdd`. Folds committed as `5abb4b1`; suites 122/122 + 55/55, check-all green.
+
+## Pass 2 — 2026-08-10 14:45 [HISTORICAL]
+
+**Scope:** commit series b2cbe09..5abb4b1 · **Diff size:** 3823 lines · **Verdict:** REVISE (worst-of) · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+1. **Repeated required H2 headings are merged instead of stopping at the next H2** — HIGH · lens: senior-dev, qa (co-reported; severities HIGH/MEDIUM, worst kept): `extract_section` checked the title match before the section-end check, so a duplicate `## <title>` re-opened the slice and merged both sections, contradicting the documented "slice ends at the next H2" contract and over-exposing matched context.
+   → Opus: incorporated — the in-section branch now runs first: ANY subsequent H2 (identical title included) terminates the slice. Fixture: duplicate heading yields only the first section. (Noted for the record: the original SKILL.md awk helper had the same duplicate-merging behavior; the documented contract governs.)
+2. **Trusted-path validation has a symlink-swap race that can exfiltrate files outside the allowed boundary** — HIGH · lens: security: `ensure_trusted_path` realpaths at validation, but the later `read_text` re-traverses the pathname — a concurrent writer could swap a component mid-window and pull an out-of-boundary file into the network-backed codex prompt.
+   → Opus: incorporated — new shared `read_trusted_text`: validate → open (O_NONBLOCK) → re-verify AFTER the open that the pathname still resolves in-boundary AND still names the opened inode → read from the descriptor. Non-regular files (FIFO/device/directory) refuse outright without hanging; benign in-boundary symlinks still work; UTF-8 enforced. Wired through all four CLIs (`--diff`/`--intent`/`--plan`/`--note`) and the pass-log read (`read_prior_passes` gained an anchored mode). Pinned by a deterministic swap-injection fixture (os.open redirected to an out-of-boundary inode → refusal) plus FIFO refusal fixtures at module and subprocess boundaries. Same fd-anchoring discipline Phase 2 established for deletion, now on the read side.
+
+### Code corrections applied
+
+- (none issued)
+
+### New questions Codex raised
+
+- (none)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: REVISE · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-10 14:30; head SHA `5abb4b1`. Folds committed as `9baf676`; suites 122/122 + 62/62, check-all green.
+
+## Pass 3 — 2026-08-10 15:05 [HISTORICAL]
+
+**Scope:** commit series b2cbe09..9baf676 · **Diff size:** 4110 lines · **Verdict:** APPROVE (worst-of) · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+(none — all three lenses returned APPROVE with zero findings)
+
+### Code corrections applied
+
+- (none issued)
+
+### New questions Codex raised
+
+- (none)
+
+### Lens run summary
+
+- senior-dev: APPROVE · security: APPROVE · qa: APPROVE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-10 15:00; head SHA `9baf676`. Loop halted at the APPROVE guardrail; Converge decision presented to the human.

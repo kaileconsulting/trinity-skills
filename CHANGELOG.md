@@ -48,6 +48,28 @@ covers an entire review; moves the iterate-review pass-log default to
   contract sentence added and enforced as a new `check-parity.py` prose rule
   (37 rules total). README documents the second allowlist line (tilde form).
 
+### Hardened (Phase 3's 3-pass review — loop mode, APPROVE×3 at pass 3, 0 disputed)
+
+Six findings, all incorporated (fold commits `5abb4b1`, `9baf676`); trail in
+`docs/reviews/code-review-commit-6286fdd.md`:
+
+- **Reads are identity-anchored, not just validated**: new shared
+  `read_trusted_text` closes the validate-then-read symlink-swap window —
+  content always comes from an opened descriptor whose inode is re-verified
+  in-boundary AFTER the open; FIFOs/devices refuse without hanging; all four
+  CLIs and the pass-log read route through it. The read-side twin of Phase
+  2's fd-anchored deletion, pinned by a deterministic swap-injection fixture.
+- **Duplicate H2 headings can't merge into one oversized slice** — any next
+  H2 terminates extraction, a repeated identical title included. (The bug
+  was a faithful port of the original awk helper's behavior; it became
+  visible — and fixable — only once composition moved into code.)
+- **Standalone CLI contracts aligned across both skills**: run-lens refuses
+  empty inputs like run-pass, and orchestration failures (codex missing,
+  publication errors) exit 1 with a diagnostic instead of a traceback.
+- **The `-C <plan-dir>` invocation contract is asserted, not assumed** — the
+  fake codex records argv; fixtures pin the flag's presence, value, and
+  position at both command boundaries.
+
 ### Added (Phase 2 — prune-state + auto-prune on convergence)
 
 - `bin/prune-state` implemented: `--scope` targeted cleanup (invoked by the

@@ -206,7 +206,7 @@ Everything the runner does (state-dir writes, codex invocation, validation) happ
 - Extended parity fixture green; both skills' fixtures green; CHANGELOG finalized.
 
 **Iterate-review:** YES (rationale: duplicated bin/ must not drift)
-**Status:** in progress (2026-08-10 — implementation + fixtures landed; iterate-review pass and dogfood pending)
+**Status:** reviewed (2026-08-10 — iterate-review converged after 3 passes in loop mode, APPROVE×3 at pass 3: 6 findings, all incorporated across 2 fold commits (`5abb4b1`, `9baf676`), 0 disputed. Standouts: a validate-then-read symlink-swap TOCTOU closed with identity-anchored `read_trusted_text` in the shared module (the read-side twin of Phase 2's fd-anchored deletion), and duplicate-H2 slice merging — a bug faithfully ported from the original awk helper prose, caught only once it became code. Pass log: `docs/reviews/code-review-commit-6286fdd.md`. **Dogfood still pending:** the first real iterate-plan review under its own single allowlist rule.)
 
 ## Acceptance criteria
 
@@ -295,7 +295,7 @@ A 3.11-ism in a runner breaks the stated 3.9 floor on someone else's machine.
 | Phase 0 | NO  | n/a | n/a | n/a |
 | Phase 1 | YES | reviewed (converged, 3-lens APPROVE) | Pass 11 — 2026-08-07 | [code-review-branch-docs-runner-scripts-brief.md](reviews/code-review-branch-docs-runner-scripts-brief.md) |
 | Phase 2 | YES | reviewed (converged at cap, Kyle-confirmed; 1 disputed HIGH accepted) | Pass 6 — 2026-08-10 | [code-review-commit-13c9e0c.md](reviews/code-review-commit-13c9e0c.md) |
-| Phase 3 | YES | not started | — | — |
+| Phase 3 | YES | reviewed (converged, 3-lens APPROVE; dogfood pending) | Pass 3 — 2026-08-10 | [code-review-commit-6286fdd.md](reviews/code-review-commit-6286fdd.md) |
 
 ## Pre-flight review pass (Opus, YYYY-MM-DD) [HISTORICAL]
 
