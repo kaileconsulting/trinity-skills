@@ -1431,23 +1431,33 @@ def test_prune_fold3(env: Env, shared) -> None:
         os.rmdir(nr)
 
     # Genuine removal failures surface as exit 1 with the failing entry —
-    # never as the benign "a new run owns it now" handoff.
-    fl = os.path.join(state_root, "faildel")
-    os.makedirs(os.path.join(fl, "sub"))
-    with open(os.path.join(fl, "sub", "stuck.txt"), "w") as fh:
-        fh.write("stuck\n")
-    os.chmod(os.path.join(fl, "sub"), 0o555)
-    proc = env.run("prune-state", "--scope", "faildel", "--yes")
-    record("prune-fold3: undeletable entry -> exit 1 naming the entry, no "
-           "false new-run handoff",
-           proc.returncode == 1 and "failed" in proc.stdout
-           and "stuck.txt" in proc.stdout
-           and "new run" not in proc.stdout,
-           proc.stdout[-240:])
-    os.chmod(os.path.join(fl, "sub"), 0o755)
-    proc = env.run("prune-state", "--scope", "faildel", "--yes")
-    record("prune-fold3: after the obstacle clears, the same prune succeeds",
-           proc.returncode == 0 and not os.path.exists(fl))
+    # never as the benign "a new run owns it now" handoff. The obstacle is a
+    # read-only directory (EACCES on child unlink), which CANNOT refuse a
+    # root user — root bypasses permission bits — so under euid 0 (the Linux
+    # container matrix) these two records are explicit skips, not silent
+    # passes; the non-root authoring machine keeps the real coverage.
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        record("prune-fold3: undeletable entry -> exit 1 naming the entry "
+               "[SKIPPED: euid 0 — permission bits cannot refuse root]", True)
+        record("prune-fold3: after the obstacle clears, the same prune "
+               "succeeds [SKIPPED: euid 0]", True)
+    else:
+        fl = os.path.join(state_root, "faildel")
+        os.makedirs(os.path.join(fl, "sub"))
+        with open(os.path.join(fl, "sub", "stuck.txt"), "w") as fh:
+            fh.write("stuck\n")
+        os.chmod(os.path.join(fl, "sub"), 0o555)
+        proc = env.run("prune-state", "--scope", "faildel", "--yes")
+        record("prune-fold3: undeletable entry -> exit 1 naming the entry, no "
+               "false new-run handoff",
+               proc.returncode == 1 and "failed" in proc.stdout
+               and "stuck.txt" in proc.stdout
+               and "new run" not in proc.stdout,
+               proc.stdout[-240:])
+        os.chmod(os.path.join(fl, "sub"), 0o755)
+        proc = env.run("prune-state", "--scope", "faildel", "--yes")
+        record("prune-fold3: after the obstacle clears, the same prune succeeds",
+               proc.returncode == 0 and not os.path.exists(fl))
 
     # Filesystem-derived names are sanitized: a scope/entry name carrying
     # ESC or LF cannot forge output records.
