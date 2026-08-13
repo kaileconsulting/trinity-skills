@@ -82,6 +82,33 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
      - `--scope=branch` → output of `git log $(git merge-base HEAD main)..HEAD --pretty=format:"%h %s%n%b%n---"` (commit messages on the branch)
      - `--scope=pr:<n>` → output of `gh pr view <n> --json title,body --jq '"\(.title)\n\n\(.body)"'` (PR title + description)
 
+   - the **risk posture augmentation of the intent file** (best-effort, same spirit as the intent file itself — this is editor-composed content, not a runner change). Before invoking `run-pass`, resolve the posture source:
+
+     1. **If the human named a governing plan for this review** (e.g., "use the posture from `docs/foo-plan.md`" — informal, conversational; this is **not** the `--plan`/`--phase` v2 flags rejected in Setup step 1, which are structured phase-tracking automation) **and** that plan has a `## Risk posture` section, its `PF-audience` / `PF-blast` / `PF-shipbar` fields are this pass's posture fields.
+     2. **Else**, read the repo's `docs/risk-posture.md` (same section shape as the plan template) for its `PF-` fields.
+     3. **Else**, there is no posture source for this pass — proceed with none.
+
+     **Independent of which field source applies above, the accepted-risks register always comes from `docs/risk-posture.md`'s `## Accepted risks` section** (if present) — a named plan never carries its own register; that file is the register's single home per repo.
+
+     Log the resolved outcome distinctly — it becomes the pass log header's **Posture:** field (step 12): `used <source>` / `absent` / `malformed → <resolution>` / `both-present (plan wins; repo fields shadowed)`.
+
+     **A malformed source (found but unparseable — missing a `PF-` field, or duplicate `RR-` ids in the register) halts before fan-out.** Do not invoke `run-pass`. Present a decision card: *fix the source now* / *fall back to the next source in precedence* / *proceed with no posture* / *abort* / *discuss* — persist the card to the pass log before presenting it (so an interrupted session re-presents it on resume), and record the choice made.
+
+     **If a source resolved** (not "none"), append it to the intent file's content — after the existing intent text, separated by a blank line:
+
+     ```
+     === RISK POSTURE ===
+     PF-audience: <text>
+     PF-blast: <text>
+     PF-shipbar: <text>
+
+     Accepted risks (docs/risk-posture.md):
+     - RR-<id> — <behavior>; bound: <...>; recovery: <...>
+     - ... (or "none recorded" if the register is empty/absent)
+     ```
+
+     **If no source resolved, the intent file is byte-identical to what it would have been before this feature existed** — zero posture-specific bytes, so repos that haven't adopted posture see no change. This keeps posture composition entirely editor-side: `bin/review_runner.py`'s `compose_input()` and its `=== INTENT === / === DIFF === / === PRIOR PASSES ===` structure are untouched — the `RISK POSTURE` block lives inside the intent text the runner already treats as opaque content.
+
    **Lens selection is deterministic and performed by `run-pass`** — the single implementation of the `lenses/README.md` rules (Matching semantics) is `bin/selection_engine.py`, golden-pinned by `examples/selection/`. `senior-dev` always runs; `security` / `qa` run when their `path_globs` / `content_regexes` / `non_trivial_without_tests` match; ambiguity biases toward inclusion. Pass `--lenses <ids>` only to deliberately force a set (e.g. retrying one lens). Composition is likewise the runner's: shared `reviewer-prompt.md` + the lens's ROLE/FOCUS fragment + its `matched_context` framing + `=== INTENT ===` / `=== DIFF ===` / `=== PRIOR PASSES ===`, assembled **byte-deterministically** (goldens in `examples/composition/`; composed inputs land in the state dir as `pass-N.<lensid>.input.txt`). The runner reads the pass log itself for the PRIOR PASSES block.
 
 10. **Fan out — one `run-pass` invocation.** The runner makes **one Codex call per selected lens, concurrently** (all lens futures awaited; one lens failing never cancels its siblings), each writing `$STATE_DIR/pass-$PASS_N.<lensid>.response.json` with the exact sandbox flags (`codex -a never exec -s read-only --skip-git-repo-check --output-schema … --json --output-last-message … -`), then publishes `pass-$PASS_N.summary.json` last:
@@ -100,6 +127,9 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     - **Rejected response:** `status: rejected` means that lens's response violated the reviewer contract. Report the actual cause from the summary's `reject_reasons` — patch-marker rejection ("Codex response contains patch-shaped output, which violates the reviewer contract") vs structural failure ("Codex response failed structural validation: <reasons>") — then abort: "Aborting. Inspect the offending `pass-$PASS_N.<lensid>.response.json`." Do not proceed.
     - **Lens failure:** a lens with `status: failed` (codex crashed or returned nothing — exit code + stderr tail are in the summary) is **retried once**, standalone: `bin/run-lens --diff … --intent … --lens <id> --scope-tag <tag>` (exit 0 = valid, 2 = rejected, 1 = error; its artifacts land in the isolated `debug/` namespace, never `pass-N.*`). A successful retry's response merges normally — note the debug response path in the HISTORICAL block. If the retry also fails, record the lens as `FAILED` orchestration metadata — not a verdict (the reviewer schema is untouched).
     - **Merge (the editor, semantic judgment — not a mechanical key):** collapse findings that target the same location and assert the same defect; keep distinct concerns separate; a co-reported finding retains **all** contributing lens ids. Produce one merged findings list.
+    - **Validate `register_ref` on findings.** For each finding carrying a `register_ref`, look it up in `docs/risk-posture.md`'s `## Accepted risks` section. Unknown id, malformed id, or a missing register file → treat the finding as untagged (drop the ref; note in the HISTORICAL block, e.g. "register_ref RR-x not found, treated as untagged") and disposition it normally. If found, confirm the finding's behavior genuinely falls within the entry's recorded behavior/bound/recovery — not merely the same named area (per the reviewer-prompt's ON RISK POSTURE guidance, a finding presenting evidence the entry's bound or recovery is false is never a match, regardless of what `register_ref` the lens set). If it's a real match: compute a canonical digest of the entry's exact bullet text (sha1 hex of the full `- **RR-<id>** — ...` line, UTF-8, trailing whitespace stripped) and record the disposition as `register-match (RR-<n>, entry-digest <hash>)` in the HISTORICAL block — no code edit, no fresh human confirmation (the entry's own owner/date stands as its confirmation).
+
+      **Before trusting any `register-match` carried in a `PRIOR PASSES` block, recompute the current entry's digest with the same recipe and compare.** A mismatch (the entry text changed) or a missing entry (removed from the register) invalidates the match — the finding reverts to needing a fresh disposition this pass, exactly like a newly-filed finding, and blocks Converge (step 14) until it receives one.
     - **Dedupe `code_corrections` too.** Two lenses can file the same tactical correction. Corrections are applied *mechanically*, so a surviving duplicate can double-apply the same edit. Collapse by location + intended fix. (iterate-plan carries an additional rule for conflicting `open_question_answers`; the reviewer schema here has `new_questions` but no answer field, so that collision cannot arise.)
     - **Route `new_questions` by `settled_by`.** Each carries a class saying who can settle it. Dedupe across lenses first (two lenses often ask the same thing); on a class conflict for the same question, take the **most escalating** label (`needs_human` > `needs_lookup` > `resolvable_in_fold`) — the cautious label is the safe one. Then:
       - **`resolvable_in_fold`** — answer it now by **reading the repository**. The lens saw only the diff; you can read the surrounding code, the callers, and the tests. *Reading any file in the repo is this class, not `needs_lookup`.* Record the answer in the HISTORICAL block.
@@ -113,7 +143,7 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     ```markdown
     ## Pass <N> — <YYYY-MM-DD HH:MM> [HISTORICAL]
 
-    **Scope:** <scope value> · **Diff size:** <N lines> · **Verdict:** <APPROVE/REVISE/BLOCK> (worst-of; note any FAILED lenses) · **Lenses:** <senior-dev[, security][, qa]>
+    **Scope:** <scope value> · **Diff size:** <N lines> · **Verdict:** <APPROVE/REVISE/BLOCK> (worst-of; note any FAILED lenses) · **Posture:** <used <source>|absent|malformed → <resolution>|both-present (plan wins; repo shadowed)> · **Lenses:** <senior-dev[, security][, qa]>
 
     ### Findings
 
@@ -138,13 +168,13 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     Diff captured at <YYYY-MM-DD HH:MM>; head SHA `<git rev-parse HEAD>` (or PR head SHA for `--scope=pr:<n>`).
     ```
 
-    Dispositions: **`incorporated`** — apply the code edit (required for HIGH unless explicitly disputed with reasoning; recommended for MEDIUM; optional for LOW). **`skipped`** — acknowledge, don't act (typically LOW). **`disputed`** — reject with reasoning (Codex misread intent or a constraint not visible in the diff). `code_corrections` are applied mechanically.
+    Dispositions: **`incorporated`** — apply the code edit (required for HIGH unless explicitly disputed with reasoning; recommended for MEDIUM; optional for LOW). **`skipped`** — acknowledge, don't act (typically LOW). **`disputed`** — reject with reasoning (Codex misread intent or a constraint not visible in the diff). **`register-match (RR-<n>, entry-digest <hash>)`** — the finding matches a recorded accepted risk in `docs/risk-posture.md` (validated per step 11); no code edit, no fresh human confirmation. If a match is later invalidated (digest mismatch or the entry was removed), it reverts to needing a fresh disposition and blocks Converge until one is given. `code_corrections` are applied mechanically.
 
 13. **Recompute pass log content.** The pass log now reflects the latest pass for subsequent passes' `=== PRIOR PASSES ===` context.
 
 14. **Checkpoint — Continue / Converge / Abort / (L)oop**, with a recommendation:
 
-    - Recommend **Converge** when aggregate `verdict == APPROVE`, no lens is `FAILED`, and no further folds are pending.
+    - Recommend **Converge** when aggregate `verdict == APPROVE`, no lens is `FAILED`, no further folds are pending, and no `register-match` was invalidated this pass without receiving a fresh disposition.
     - Recommend **Continue** otherwise. Never auto-decide convergence.
 
     Surface a brief summary: "Pass <N>: <verdict> across <lenses>, <X> findings, <Y> corrections. Recommendation: <Continue|Converge>. Choose: (C)ontinue / (V)Converge / (A)bort[ / (L)oop]."
@@ -195,8 +225,9 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
 - **Skill never decides convergence.** Suggests when verdict=APPROVE + the editor reports no further folds; human always confirms. **Loop mode never auto-converges** — it stops at APPROVE and presents the Converge decision.
 - **Fan-out is one Codex call per selected lens.** The editor merges (semantic dedupe, worst-of verdict, lens attribution). A selected lens that fails after one retry is `FAILED` metadata that forces at-least-REVISE (BLOCK preserved) and blocks Converge. Exactly one HISTORICAL block and one checkpoint per pass, regardless of lens count.
 - **v1 is standalone-only.** Refuse `--plan` / `--phase` flags with a clear "deferred to v2" message and exit. Don't half-implement plan-bound features.
-- **the editor folds findings.** Codex provides findings; the editor (you) reads them and applies code edits via Edit/Write tools to the working code, then writes the disposition (`incorporated|skipped|disputed`) into the pass log's HISTORICAL block. This is the same the editor-as-sole-writer discipline as iterate-plan.
+- **the editor folds findings.** Codex provides findings; the editor (you) reads them and applies code edits via Edit/Write tools to the working code, then writes the disposition (`incorporated|skipped|disputed|register-match`) into the pass log's HISTORICAL block. This is the same the editor-as-sole-writer discipline as iterate-plan.
 - **Pass log lives next to where you invoked from**, not inside the skill directory. The skill directory holds machinery (prompt, schema, state); the pass log is a project artifact the user owns.
+- **Posture composition is editor-side; the runner never changes for it.** The `=== RISK POSTURE ===` block (when a source resolves) is composed by the editor into the intent file's content before `run-pass` runs — `bin/review_runner.py`'s `compose_input()` and its `INTENT`/`DIFF`/`PRIOR PASSES` structure are untouched by this feature. A malformed posture source halts before fan-out with a decision card rather than silently degrading to "none." Severity is never adjusted for posture (that's the reviewer's job to hold absolute); only disposition is.
 
 ## Using in plan-driven workflows (v1 — manual coordination)
 
@@ -238,6 +269,8 @@ In v2, steps 2 and 4 collapse to a single `iterate-review --plan=<path> --phase=
   namespace for standalone `run-lens` output. Runner behavior is fixture-pinned by
   `tools/check-runners.py`.
 
+- `docs/risk-posture.md` (per-repo, not part of this skill's own files) — the accepted-risks register (`## Accepted risks`, `RR-<date>-<slug>` entries) plus, for standalone reviews with no named plan, the fallback `PF-` posture fields. Section shape matches `create-plan/template.md`'s `## Risk posture`; see the Risk Posture & Proportionality plan for the full design.
+
 Sibling skills:
 - `~/.claude/skills/iterate-plan/SKILL.md` — architectural model.
-- `~/.claude/skills/create-plan/SKILL.md` — first-in-trinity, scaffolds plans this skill reviews against.
+- `~/.claude/skills/create-plan/SKILL.md` — first-in-trinity, scaffolds plans this skill reviews against; also scaffolds `docs/risk-posture.md`'s posture fields and register entries.
