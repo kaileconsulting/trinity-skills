@@ -131,7 +131,7 @@ docs/risk-posture.md (per-repo, downstream) # fallback posture for standalone re
 - iterate-plan smoke test on a sample plan carrying the new section: the pass raises **no posture-specific format findings** (findings about section absence, shape, or unanswered posture questions). Unrelated design findings don't fail the smoke — the criterion is posture-format acceptance, not a clean review.
 
 **Iterate-review:** YES (rationale: template + skill-procedure changes are load-bearing machinery prose; a bad section shape propagates into every future plan)
-**Status:** not started
+**Status:** reviewed
 
 ### Phase 1 — Posture flows to the lenses (~3h)
 **Deliverables:**
@@ -147,7 +147,7 @@ docs/risk-posture.md (per-repo, downstream) # fallback posture for standalone re
 - Fixture: amending or removing a referenced register entry mid-review invalidates the matches against it — the affected findings re-enter as `reopened` and block Converge until re-dispositioned.
 
 **Iterate-review:** YES (rationale: touches the deterministic composition path and its goldens — regression risk is concrete)
-**Status:** not started
+**Status:** reviewed
 
 ### Phase 2 — accepted-risk disposition + editor pushback (~3h)
 **Deliverables:**
@@ -255,8 +255,8 @@ iterate-review append/maintain these sections automatically.
 
 | Phase | Iterate-review | Status | Last pass | Pass log |
 |-------|----------------|--------|-----------|----------|
-| Phase 0 | YES | not started | — | — |
-| Phase 1 | YES | not started | — | — |
+| Phase 0 | YES | reviewed | Pass 8, APPROVE×3 (2026-08-13) | `docs/reviews/code-review-branch-kyle-risk-posture-phase-0.md` |
+| Phase 1 | YES | reviewed | Pass 8, APPROVE×3 (2026-08-13) | `docs/reviews/code-review-branch-kyle-risk-posture-phase-0.md` |
 | Phase 2 | YES | not started | — | — |
 | Phase 3 | NO  | n/a | n/a | n/a |
 -->
