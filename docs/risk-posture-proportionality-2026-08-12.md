@@ -178,7 +178,63 @@ docs/risk-posture.md (per-repo, downstream) # fallback posture for standalone re
 - The review's outcome is classified against the pre-defined classes, with the recorded dimensions written into the review log; disposition quality (were pushbacks warranted, were folds proportionate) is assessed explicitly alongside pass count.
 
 **Iterate-review:** NO (rationale: validation exercise in a downstream repo; no trinity-skills code ships in this phase)
-**Status:** not started
+**Status:** done (scope changed 2026-08-13 — see execution note below)
+
+**Execution note (2026-08-13) — scope changed from live validation to retrospective mining, by Kyle's explicit direction.** The deliverables above assume a *new* doc-bot review run live with the new machinery. That didn't happen: doc-bot's editor write-path (Phases 0–4) had already fully converged on 2026-08-12 and sits in open PR #11 — there was no live review left to attach the new machinery to, and Kyle was explicit he wanted doc-bot **read-only** (mine the existing pass logs for learnings, no new commits, no live `iterate-review` run against doc-bot). What follows is what that read-only mining produced, in place of the originally-scoped live case study.
+
+**Findings that directly validate the initiative's premise:**
+- **Kyle independently hand-wrote the exact doctrine `accepted-risk`/pushback formalizes**, at write-path Phase 3 pass 10 (2026-08-12), *before* any of this plan existed: dispute when a scenario needs scale the deployment won't reach and the failure is inconvenience rather than dishonesty; fold without argument anything where the app would lie, anything in the merge path, anything a reviewer meets at real scale. That's `accepted-risk`'s pushback criteria and `PF-shipbar`'s trust-boundary exemption, independently invented in prose a day before Phase 2 shipped the mechanism. Convergent invention is stronger validation than a pass-count win would have been — it means the problem is real, not manufactured to justify the machinery.
+- **One dispute recurred three separate times** across write-path Phase 0, Phase 1, and Phase 3 (the "drafts/publish/approve have no app-level auth" finding — same Q3 posture each time, invisible in each phase's diff) purely because no phase review had memory of the prior ones. This is direct, concrete evidence for what the register closes: one `RR-` entry would have let the *lens* recognize the pattern and stop filing it, instead of three separate dispute-and-cite cycles. (Folded into the Axis 1 dispute corpus as a clarifying update to entry 3, plus a genuinely new independent entry 4 — corpus now 4/6.)
+- **A live, real operational hazard was caught in passing**: `merged-at-rev-0007` pass 2 (2026-08-13, in doc-bot) recorded "ALL LENSES FAILED" — every Codex call failed identically — traced in that review's own log to trinity-skills commit `43ef077`, the exact schema bug this plan's own Phase 1 shipped and then fixed minutes later in this session. Because `~/.claude/skills/iterate-review` is a live symlink into whichever trinity-skills commit is checked out, doc-bot's concurrent use hit the broken schema mid-fix. Nobody was at fault — the doc-bot review correctly diagnosed it as an external tooling defect and escalated rather than patching doc-bot — but it's a concrete instance of the symlink's known hazard (already on record: "the symlink tracks the checked-out branch") biting *harder* than expected: not just branch-switching, but any in-progress commit on the active branch being live for concurrent users mid-edit.
+
+**Proposed `docs/risk-posture.md` for doc-bot** (reference only — not written to doc-bot; Kyle's call whether/when to apply it):
+
+```
+## Risk posture
+
+PF-audience: Internal editorial/support staff, 1-3 person team, Tailscale-perimeter
+             only (tailnet ingress verified as a deploy-review checklist item).
+             Authentik identity is a planned drop-in seam, not yet built (Q3,
+             closed 2026-08-04) — no public or anonymous access.
+PF-blast: The plan's operating principle throughout (Q1-Q10 closeout): the
+          cheapest correct mechanism for a 1-3 person team, not the most
+          general one. Autosave-path corruption is bounded to one draft,
+          recoverable via discard. Attribution weaker than ideal (`unknown`
+          author) is a permanent accepted limitation until Authentik lands,
+          not a probabilistic risk.
+PF-shipbar: Blocks ship: the app claiming more than it verified (the "UI
+            honesty rule" -- never render unattested authorship as verified,
+            never report success when the actual outcome differs). The
+            approve/merge path is a trust boundary -- full rigor applies to
+            any authorization, atomicity, or merge-precondition defect there
+            regardless of posture. Logged-as-accepted: no app-level auth on
+            any endpoint (perimeter is Tailscale + eventual Authentik);
+            attribution reads `unknown` until Authentik lands; autosave-path
+            staleness/corruption bounded and recoverable; review queue
+            unpaged at current single-digit-draft scale.
+
+## Accepted risks
+
+- **RR-2026-08-06-seq-poison** -- client-supplied seq can poison one draft
+  for <=24h; recoverable via discard; accepted 2026-08-06 (write-path
+  Phase 0 pass 5).
+- **RR-2026-08-04-no-app-identity** -- no application-level authentication
+  or authorization on any editor endpoint (drafts, publish, approve,
+  cancel); perimeter is Tailscale-only ingress, Authentik is the planned
+  drop-in seam; attribution is an explicit `unknown` sentinel until it
+  lands; accepted 2026-08-04 (DevOps, Q3), ratified at code-review
+  checkpoints 2026-08-06 (Phase 0), 2026-08-10 (Phase 1), 2026-08-12
+  (Phase 3).
+- **RR-2026-08-12-queue-unpaged** -- the review queue lists at most 100
+  pending changes with no pagination; unreachable at the deployment's
+  expected single-digit scale, and the failure mode there is an unlisted
+  row, not data loss or a wrong answer; accepted 2026-08-12 (write-path
+  Phase 3 pass 10).
+```
+
+Not proposed as a register entry: the deferred ruleset-ref-scoping finding (Phase 3 pass 12) — it's a conditional trigger ("fix when the content repo's ruleset exists"), not a settled acceptance, and the concurrent-approve/cancel dispute (`merged-at-rev-0007` pass 6) — that one was refuted as not a real risk at all, not accepted as a bounded one.
+
+**Classification against the pre-defined outcome classes:** none of success/inconclusive/regression cleanly apply — those measure whether a *live* posture-aware review outperforms the baseline, and no live review ran. This is better described as a **premise check**, and it comes back strongly validating: the target problem (real proportionality judgment happening ad hoc, disputes recurring for lack of memory) is confirmed to exist in exactly the shape the plan assumed, independently and before the mechanism shipped. **What remains genuinely untested**: whether `accepted-risk`/register-match *actually reduces* pass count on a live future review — deferred to whenever the proposed posture file is actually applied to doc-bot and a real phase (write-path's own next work, or the new `runtime-pipeline-2026-08-13` plan once it has code) gets reviewed against it.
 
 ## Acceptance criteria
 
