@@ -41,7 +41,7 @@ the precondition the provenance gate checks — see finding 2's gate):
 2. **Behavior** — the finding's behavior (unbounded seq poisons one draft, recoverable via discard) falls within the entry's recorded behavior/bound/recovery exactly. Pass.
 3. **Trust-boundary** — `editor/autosave.ts` is not named by `PF-shipbar`. Pass (nothing to exclude against).
 
-→ Disposition: `register-match (RR-2026-08-06-seq-poison, entry-digest 14d85d57e6f6ea63c4ca6bc1902bf13fc6638d54)`. No code edit, no fresh human confirmation.
+→ Disposition: `register-match (RR-2026-08-06-seq-poison, entry-digest a3d07653dbb18c4430bc518af9457e3f39db22826271c8cb63d85c892f8d014b)`. No code edit, no fresh human confirmation.
 
 **Finding 2 (approve/merge) — fails the trust-boundary gate:**
 1. **Provenance** — same entry, same pass. Pass.
@@ -54,13 +54,13 @@ the precondition the provenance gate checks — see finding 2's gate):
 
 Recipe (SKILL.md step 11): starting at the line matching `- **RR-<id>** — `,
 include every subsequent line up to the next `- **RR-` bullet or section end;
-strip trailing whitespace per line; join with `\n`; sha1 hex of the UTF-8 bytes.
+strip trailing whitespace per line; join with `\n`; sha256 hex of the UTF-8 bytes.
 
 ```
 - **RR-2026-08-06-seq-poison** — client-supplied seq can poison one
   draft for ≤24h; recoverable via discard; accepted 2026-08-06.
 ```
-→ `14d85d57e6f6ea63c4ca6bc1902bf13fc6638d54`
+→ `a3d07653dbb18c4430bc518af9457e3f39db22826271c8cb63d85c892f8d014b`
 
 If the entry is later amended — only the wrapped second line changes, bound
 tightened from "recoverable via discard" to permanent:
@@ -69,14 +69,14 @@ tightened from "recoverable via discard" to permanent:
 - **RR-2026-08-06-seq-poison** — client-supplied seq can poison one
   draft PERMANENTLY; not recoverable; accepted 2026-08-06.
 ```
-→ `5ea59741fcc5180f241f42e5baf911fa24cd2fe6` (different — correctly invalidates
+→ `60ab0fb440fb0885d271abe0513cc97e0ff2bec78c42975f2854fc24f8488b57` (different — correctly invalidates
 a prior `register-match` carried in `PRIOR PASSES`, reopening finding 1).
 
 ## What a wrong result looks like
 
 | Wrong implementation | What it produces | Why it's wrong |
 |---|---|---|
-| Digest = sha1 of only the first physical line (`- **RR-...** — client-supplied seq can poison one`) | `710e42b1a3f691fd86f3908f57c21be073971f88` — **identical** whether the entry is amended or not, since only the wrapped second line changed | The amendment above (discard → permanent, no recovery) goes completely undetected. A stale `register-match` for finding 1 keeps counting as resolved after the accepted risk's actual bound changed — this is the bug Codex found in pass 1 of the real review. |
+| Digest = sha256 of only the first physical line (`- **RR-...** — client-supplied seq can poison one`) | `96e93276d133ea9d43ccf5138b998371ff11064d838403730e39617e96ed1c0b` — **identical** whether the entry is amended or not, since only the wrapped second line changed | The amendment above (discard → permanent, no recovery) goes completely undetected. A stale `register-match` for finding 1 keeps counting as resolved after the accepted risk's actual bound changed — this is the bug Codex found in pass 1 of the real review. |
 | Trust-boundary gate skipped, or checked once for the whole register entry instead of per-finding | Finding 2 also becomes `register-match (RR-2026-08-06-seq-poison, ...)` | Silently converts an unauthenticated-write defect on the approve/merge path — the trust boundary the posture explicitly exempts from `accepted-risk` — into a no-human-confirmation-needed match. This is the bug Codex found in pass 3. |
 | Provenance gate skipped (no base-revision check) | A contributor adds `RR-2026-08-06-seq-poison` to `docs/risk-posture.md` in the *same diff* as `editor/autosave.ts:88`, and finding 1 still matches | The "entry's own owner/date stands as its confirmation" claim only holds if the entry predates the change it's excusing. Skipping this check lets a diff author self-approve their own defect via a same-branch register edit — the bug Codex found in pass 5, framed as a security concern (branch-controlled register entries treated as pre-authorized). |
 
