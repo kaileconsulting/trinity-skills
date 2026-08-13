@@ -60,8 +60,9 @@ Share with the user why this isn't optional: the `PF-` ids are stable anchors th
 **If the author dictates an existing accepted risk** while answering these questions (they already know of a real, disproportionate risk they're accepting), offer to seed the repo's accepted-risks register now:
 1. Resolve `<project-root>/docs/risk-posture.md` (same project-root resolution as Step 5).
 2. If it doesn't exist, create it with a `## Accepted risks` H2 and the new entry.
-3. If it exists, append the entry under that H2.
-4. Use the register shape from the template's "REGISTER SHAPE REFERENCE" comment: a stable `RR-<YYYY-MM-DD>-<slug>` id, the specific behavior, its bound, its recovery path, and the acceptance date. Never a blanket suppression ("ignore X findings") — if what the author describes reads as a category rather than a named behavior, push back and ask for the specific case.
+3. If it exists and already has a `## Accepted risks` H2, append the entry under that H2.
+4. If it exists but has no `## Accepted risks` H2 yet (a valid file can carry only `PF-` fields, seeded some other way — e.g. authored directly by the repo owner for standalone-review fallback), add the H2 to the file and then the entry under it. Don't create a second file or a differently-named section.
+5. Use the register shape from the template's "REGISTER SHAPE REFERENCE" comment: a stable `RR-<YYYY-MM-DD>-<slug>` id, the specific behavior, its bound, its recovery path, and the acceptance date. Never a blanket suppression ("ignore X findings") — if what the author describes reads as a category rather than a named behavior, push back and ask for the specific case.
 
 This is the one path where an accepted risk needs no separate confirmation step: the author is dictating it directly into the plan-authoring conversation, which is itself the confirmation. (Contrast with `iterate-review`'s `accepted-risk` disposition, which is an editor *proposal* during automated folding and does require a later human confirm.)
 

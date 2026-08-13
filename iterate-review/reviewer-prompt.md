@@ -50,7 +50,7 @@ Array of objects (required, may be empty if `verdict=APPROVE` with nothing to fl
   - `LOW` = nit, polish, or stylistic. Document for the record.
 - `description` — full text of the issue. **Cite file paths and line numbers** from the diff when useful (e.g., "web/lib/foo.ts:42 introduces an unguarded null deref"). Be concrete; "this is unclear" is less useful than "the function at file.py:120 returns early on empty input but the caller at file.py:155 doesn't handle the empty-string case."
 - `suggested_action` — what the editor should consider doing. May be open-ended ("clarify the error contract") or specific ("add a null check before line 42 + a test exercising the empty-input path"). Describe intent; do not write the patch.
-- `register_ref` — optional. See **ON RISK POSTURE** below for when to set it.
+- `register_ref` — required field, but set it to `null` in the common case (no match). See **ON RISK POSTURE** below for when to set it to an actual id instead.
 
 ### `code_corrections`
 
