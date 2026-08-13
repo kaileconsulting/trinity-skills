@@ -74,13 +74,17 @@ draft record) that must be checked on every subsequent write — a cross-request
 invariant. Classified as mechanism-requiring despite its small footprint;
 escalates the same as finding 3.
 - **Recommendation:** adopt the mechanism — no cheaper alternative exists
-  here (the whole point is making the race detectable, which requires new
-  state).
+  here (the whole point is making the race detectable *and rejectable*,
+  which requires new state either way).
 - **Alternatives:** accept the risk (permitted this time — `editor/autosave.ts`
   isn't a `PF-shipbar` boundary); discuss.
-- **Chosen: adopt.** → fold proceeds this pass: adds a monotonic version
-  counter to the draft record. Noted for next pass: this is itself a new
-  mechanism, so it gets full scrutiny like any other schema change.
+- **Chosen: adopt.** → fold proceeds this pass, and the adopted mechanism is
+  scoped explicitly (so nothing downstream has to infer its reach): a
+  monotonic version counter on the draft record, **plus** the write path
+  checking it on every save and rejecting a write whose counter doesn't
+  match what it last read — detection and rejection land together, one
+  mechanism, one fold. Noted for next pass: this is itself a new mechanism,
+  so it gets full scrutiny like any other schema change.
 
 ### Accounting table applied, this pass
 
@@ -169,15 +173,63 @@ two-sided pin: an edit *inside* a confirmation's named fields invalidates
 (AR-2); an edit *outside* them never does (AR-3), even within the same
 posture file, same pass, same review.
 
-**Reconstructability (interruption-crossing).** Nothing above depends on
-session memory: AR-2 and AR-3's descriptors and digests live in the pass log;
-`PF-blast`'s and `PF-audience`'s current text live in the posture source. A
-fresh session re-deriving both digests from just those two durable sources —
-whether that's the *same* session one pass later, or a *new* session resuming
-after an interruption — runs the identical recompute-and-compare and reaches
-the identical verdict (AR-2 invalidated, AR-3 stands). There is no
-resume-specific code path to verify separately; the reproducibility claim
-*is* the claim that this recomputation has no hidden session-local input.
+**A fourth accepted-risk, AR-4, pins the multi-field digest procedure
+(SKILL.md step 12) — the register-match digest generalizes to *one* entry;
+combining more than one field is its own explicit canonicalization, not a
+trivial extension.** AR-4's rationale relies on **two** fields, descriptor
+`["PF-blast", "PF-audience"]` (authored in that order — the procedure sorts
+lexicographically regardless, so this is deliberately not pre-sorted by the
+author). Per the procedure: extract each field's canonical content, sort ids
+lexicographically (`PF-audience` before `PF-blast`), build `<id>:\n<content>`
+per field, join with `\n---\n`, sha256 the result:
+
+```
+PF-audience:
+PF-audience: Internal editorial staff only, ~30 daily actives, behind company SSO.
+---
+PF-blast:
+PF-blast: A corrupted draft from a rapid-save race is recoverable via version history; cost is bounded to one draft, no data loss beyond that draft.
+```
+→ `f0465f9a920bd1bca32a67b8ded8ee624862a766bc9713f923f988c1f241c165`
+
+Confirmed this pass. **After the pass-3 `PF-blast` amendment** (same
+amendment as AR-2's, above), recomputing with the same procedure — sorted
+order and join unchanged, only `PF-blast`'s content differs — gives:
+`37e46b5756c2517a98c1677be559733e5bf0949f910f8d16be411847f2d8ecf0`. Different
+from the confirmed digest, so **AR-4 invalidates too**, for the same reason
+as AR-2 (one of its named fields changed) — a multi-field descriptor
+invalidates if *any* named field changes, not only if all of them do.
+
+**Reconstructability (interruption-crossing), demonstrated rather than
+asserted.** Walk through what a session actually has available, not just the
+claim that it would work: at the moment of the pass-1 checkpoint, the pass
+log durably records AR-2 as `confirmed`, descriptor `["PF-blast"]`, digest
+`0719a9a0576c51c3de74d8d67d3d48b1a81478b8effacf70f0822ec7d58eef73`; AR-3 as
+`confirmed`, descriptor `["PF-audience"]`, digest
+`65fb1786fc352fe9db6f2c9a92c21d26713f399cc272b23ffd6483661ffc4e46`; AR-4 as
+`confirmed`, descriptor `["PF-blast", "PF-audience"]`, digest
+`f0465f9a920bd1bca32a67b8ded8ee624862a766bc9713f923f988c1f241c165`. **The
+session then ends** — no session memory of *why* these were confirmed, what
+the reasoning was, or which fields mattered beyond what's written above.
+
+**A new session opens at pass 3**, after the human has independently amended
+`PF-blast` (unrelated to this review — a real incident elsewhere prompted
+it). This session's only inputs are: the pass log (the three lines above,
+verbatim) and the current posture source (`PF-blast`'s new text, `PF-audience`
+unchanged). It re-derives, per field id, from the current posture source:
+`PF-blast` → new text → new single-field digest
+`8117d86ae3515efdeff707f6561ad92c58a958899f4287d5d719dc805a73005b`;
+`PF-audience` → unchanged text → same digest as before. For AR-2 (descriptor
+`["PF-blast"]`): recomputed digest ≠ stored digest → invalidate. For AR-3
+(descriptor `["PF-audience"]`): recomputed digest == stored digest → stands.
+For AR-4 (descriptor `["PF-blast","PF-audience"]`): rebuild the sorted-join
+per the procedure using each field's *current* content → recomputed
+`37e46b5756c2517a98c1677be559733e5bf0949f910f8d16be411847f2d8ecf0` ≠ stored
+`f0465f9a920bd1bca32a67b8ded8ee624862a766bc9713f923f988c1f241c165` →
+invalidate. **These are the same three outcomes the same-session pass-3
+recomputation reached above** — because both computations are the identical
+procedure over the identical two durable inputs (pass log, posture source);
+nothing else fed either one.
 
 ## What a wrong result looks like
 
@@ -188,9 +240,12 @@ resume-specific code path to verify separately; the reproducibility claim
 | "Accept the risk" offered on finding 3's card | Card presents accept-the-risk as an option for `editor/approve.ts` | `PF-shipbar` names the approve/merge path as a trust boundary — this option must never be displayed there, matching the same exclusion as register-match's trust-boundary gate. |
 | AR-2's invalidation check recomputes the digest but doesn't compare against the *current* `PF-blast` — e.g. compares against a cached pass-1 value | AR-2 silently stays `confirmed` after the pass-3 amendment | The whole posture-dependency mechanism exists so a confirmation can't outlive the bound it was confirmed against; comparing against a stale cached value defeats it identically to Phase 1's register-match digest bug. |
 | Any edit to `docs/risk-posture.md` invalidates every confirmed `AR-<n>`, not just ones whose descriptor names the changed field | AR-3 also returns to `proposed` after the `PF-blast`-only edit | Over-invalidates: the whole reason the descriptor names specific field ids (rather than "the posture changed") is so an edit to one field doesn't retroactively unconfirm accepted risks that never depended on it — this would make posture editing itself costly in a way the design explicitly avoids. |
+| Multi-field digest built by naively concatenating field contents in *authoring* order, with no separator | AR-4's descriptor `["PF-blast","PF-audience"]` and a hypothetical descriptor `["PF-blastPF-audience"]`-shaped edge case, or the same two fields authored in the opposite order, can hash identically or hash differently across two sessions for the *same* logical descriptor | Two sessions reconstructing the same confirmation from the pass log alone must reach the same digest; order-dependence or missing separators between field contents breaks that determinism exactly the way an unspecified format would — this is the gap the qa lens found in Phase 2's first draft. |
+
+Real values above (single-field AR-2/AR-3 digests unchanged from Scenario 03's PF- examples; AR-4's are new) — none of this table is hand-waved.
 
 ## Lens run summary
 
-- senior-dev: REVISE (3 HIGH, 1 MEDIUM; two accepted-risk proposals — one
-  rejected/reopened/resolved, one confirmed/later-invalidated; two
-  mechanism-requiring escalations; one non-mechanism fold)
+- senior-dev: REVISE (3 HIGH, 1 MEDIUM; three accepted-risk proposals — one
+  rejected/reopened/resolved, two confirmed/later-invalidated (one single-field,
+  one multi-field); two mechanism-requiring escalations; one non-mechanism fold)
