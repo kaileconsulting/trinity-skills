@@ -161,7 +161,7 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     ```markdown
     ## Pass <N> — <YYYY-MM-DD HH:MM> [HISTORICAL]
 
-    **Scope:** <scope value> · **Diff size:** <N lines> · **Verdict:** <APPROVE/REVISE/BLOCK> (worst-of; note any FAILED lenses) · **Posture:** <used <source>|absent|malformed → <resolution>|both-present (plan wins; repo shadowed)|register-only (no PF- fields; N entries)> · **Lenses:** <senior-dev[, security][, qa]>
+    **Scope:** <scope value> · **Diff size:** <N lines> · **Verdict:** <APPROVE/REVISE/BLOCK> (worst-of; note any FAILED lenses) · **Posture:** <used <source>|absent|malformed → <resolution>|both-present (plan wins; repo fields shadowed)|register-only (no PF- fields; N entries)> · **Lenses:** <senior-dev[, security][, qa]>
 
     ### Findings
 
