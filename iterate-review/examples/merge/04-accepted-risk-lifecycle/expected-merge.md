@@ -131,7 +131,17 @@ free-form path, not a fifth listed option (recommendation + 3 alternatives =
   state, re-presented at the next checkpoint).
 - **(Discuss, via the harness's free-form response.)**
 
-**Branch A — chosen: reject.** → AR-1 moves to **`reopened`**: blocks
+**Persistence, two-phase (SKILL.md step 12):** before this card is presented
+to the human, it's appended to the pass log as `AR-1 confirmation (AR-1):
+recommendation — confirm, this review only; alternatives — confirm+register,
+reject, defer; chosen: (pending)`. If the session were interrupted right
+here — before any answer — a resumed session reads that line, sees
+`(pending)`, and re-presents the identical card; nothing about the choice
+is fabricated or lost. Once the human actually answers, the same log entry
+is updated in place, replacing `(pending)` with the real outcome:
+
+**Branch A — chosen: reject.** → the log entry becomes `chosen: reject
+(AR-1 -> reopened)`. AR-1 moves to **`reopened`**: blocks
 Converge exactly as `proposed` did, and immediately re-enters the open
 ledgers (HIGH guardrail no longer satisfied for this finding; non-convergence
 count re-includes it).
