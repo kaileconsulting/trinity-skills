@@ -28,6 +28,17 @@ PF-shipbar: Blocks ship: unauthenticated or duplicated writes on the
 
 ## Pass 1 — fold decisions
 
+**All four findings below are folded within this one pass, including two
+design-shaped-fold escalations (findings 3 and 4).** This is deliberate, and
+pins the halt-granularity distinction in SKILL.md step 12: a design-escalation
+pauses *the fold of that one finding* to get a live decision — it does not
+freeze the rest of the pass's already-returned findings. Once finding 3's
+card is answered, the editor continues folding findings 4 and (implicitly)
+would continue to any further findings in this same lens response; no new
+Codex call happens between them. Contrast with the step-14 loop-mode
+guardrails (max-pass, non-convergence, etc.), which halt *between* passes —
+a fundamentally different, coarser granularity.
+
 **Finding 1 — "Rapid double-save can corrupt an in-progress draft" (HIGH).**
 Pushback criteria met: the defect (autosave-path corruption, one draft,
 recoverable) falls exactly within `PF-blast`'s bound, and `PF-shipbar` doesn't
@@ -127,17 +138,24 @@ count re-includes it).
 
 ## Pass 2 (Branch A continues) — reopened finding gets a fresh disposition
 
-Now that finding 4's version counter landed in pass 1, the autosave race
-itself is deterministically detectable and — per the human's pass-1-checkpoint
-reasoning — no longer worth accepting as a residual risk; it should either be
-closed outright or re-argued. The editor re-evaluates AR-1's underlying
-finding with fresh evidence from the just-adopted mechanism:
-→ `disputed` — "superseded by the version-counter mechanism (finding 4,
-pass 1): the race is now detectable and the caller can reject a
-version-mismatched write outright, which is a stronger property than
-'bounded and recoverable.' Not the same defect as originally filed."
+Now that finding 4's version counter (plus reject-on-mismatch) landed in pass
+1, the autosave race is both detectable and rejected outright before it can
+corrupt anything — a different, later fold happened to close the finding
+this reopened item is about. The editor re-evaluates AR-1's underlying
+finding with fresh evidence from the just-adopted mechanism. **This is
+`incorporated`, not `disputed`** — the original finding was never wrong
+(a real race did exist), so `disputed`'s "Codex misread intent or a
+constraint not visible in the diff" doesn't apply; the defect really did get
+fixed, just as a side effect of a different finding's fold rather than a
+dedicated one:
+→ `incorporated (superseded by finding 4's mechanism)` — "finding 4's
+version counter plus reject-on-mismatch, adopted this same pass for a
+different finding, already closes this one: a write whose counter doesn't
+match is rejected outright rather than merely detected, which supersedes
+'bounded ≤one draft, recoverable via discard.' No additional code change
+needed for AR-1 specifically."
 
-This resolves the `reopened` item with a terminal disposition (`disputed`),
+This resolves the `reopened` item with a terminal disposition (`incorporated`),
 per the lifecycle rule that a `reopened` finding needs `incorporated`,
 `disputed`, or a **new** `AR-<n>` proposal — never a reuse of `AR-1`.
 
@@ -258,6 +276,9 @@ Real values above (single-field AR-2/AR-3 digests unchanged from Scenario 03's P
 
 ## Lens run summary
 
-- senior-dev: REVISE (3 HIGH, 1 MEDIUM; three accepted-risk proposals — one
-  rejected/reopened/resolved, two confirmed/later-invalidated (one single-field,
-  one multi-field); two mechanism-requiring escalations; one non-mechanism fold)
+- senior-dev: REVISE (3 HIGH, 1 MEDIUM; **four** accepted-risk proposals —
+  AR-1 rejected/reopened/resolved via a superseding fold; AR-2 confirmed
+  then invalidated (single-field descriptor); AR-3 confirmed and **still
+  valid** (untouched by the posture edit that invalidated AR-2); AR-4
+  confirmed then invalidated (multi-field descriptor); two
+  mechanism-requiring escalations; one non-mechanism fold)
