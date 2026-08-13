@@ -23,7 +23,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["title", "severity", "description", "suggested_action"],
+        "required": ["title", "severity", "description", "suggested_action", "register_ref"],
         "properties": {
           "title": {
             "type": "string",
@@ -46,9 +46,9 @@
             "description": "What the editor should consider doing about it. May be open-ended ('clarify the contract') or specific ('add a null check before line 42'). Describe intent, not the literal patch text."
           },
           "register_ref": {
-            "type": "string",
+            "type": ["string", "null"],
             "pattern": "^RR-[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+(-[a-z0-9]+)*$",
-            "description": "OPTIONAL. Set only when this finding is independently actionable AND its behavior falls within a specific entry's recorded bound/recovery in the accepted-risks register (docs/risk-posture.md, provided in the RISK POSTURE block when present). Do not set this to merely reference a posture decision — if a finding only restates something the register or posture already covers with no new evidence, don't file it at all. Do not set this if you are presenting evidence that the entry's bound or recovery path is false — that is a fresh finding, not a match, even if it concerns the same behavior. The editor validates every register_ref against the current register at fold time; an unknown, malformed, or non-matching ref is treated as untagged."
+            "description": "REQUIRED FIELD, but set it to null in the common case. Set to a register id ONLY when this finding is independently actionable AND its behavior falls within a specific entry's recorded bound/recovery in the accepted-risks register (docs/risk-posture.md, provided in the RISK POSTURE block when present). Do not set this to merely reference a posture decision — if a finding only restates something the register or posture already covers with no new evidence, don't file it at all. Do not set this if you are presenting evidence that the entry's bound or recovery path is false — that is a fresh finding, not a match, even if it concerns the same behavior. The editor validates every non-null register_ref against the current register at fold time; an unknown, malformed, or non-matching ref is treated as untagged."
           }
         }
       }

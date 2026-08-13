@@ -4,14 +4,16 @@
     {
       "title": "In-process cache makes an authorization decision incoherent across replicas",
       "severity": "HIGH",
-      "description": "api/permissions.py:8 caches allow/deny in a module-level dict with a 300s TTL. The service runs multiple replicas, so each process holds an independent view of a security decision: after a revocation, whether a request is allowed depends on which replica serves it, for up to five minutes. This inverts the fail-closed property an authorization check must have — the cache preserves a stale allow rather than falling back to a deny. The premise of caching this particular lookup in-process is not repairable by tuning the TTL.",
-      "suggested_action": "Do not cache the decision in-process. If lookup latency is the motivation, cache in a shared store with explicit invalidation on permission change, or cache the inputs rather than the decision."
+      "description": "api/permissions.py:8 caches allow/deny in a module-level dict with a 300s TTL. The service runs multiple replicas, so each process holds an independent view of a security decision: after a revocation, whether a request is allowed depends on which replica serves it, for up to five minutes. This inverts the fail-closed property an authorization check must have \u2014 the cache preserves a stale allow rather than falling back to a deny. The premise of caching this particular lookup in-process is not repairable by tuning the TTL.",
+      "suggested_action": "Do not cache the decision in-process. If lookup latency is the motivation, cache in a shared store with explicit invalidation on permission change, or cache the inputs rather than the decision.",
+      "register_ref": null
     },
     {
       "title": "Cache is unbounded",
       "severity": "MEDIUM",
-      "description": "api/permissions.py:5 — _PERM_CACHE has no size limit and no eviction beyond the TTL check on read. Entries for (user_id, resource_id) pairs that are never read again are retained for the process lifetime, so memory grows with the cardinality of that pair space.",
-      "suggested_action": "If a cache survives review at all, bound it and evict on write, not only on read."
+      "description": "api/permissions.py:5 \u2014 _PERM_CACHE has no size limit and no eviction beyond the TTL check on read. Entries for (user_id, resource_id) pairs that are never read again are retained for the process lifetime, so memory grows with the cardinality of that pair space.",
+      "suggested_action": "If a cache survives review at all, bound it and evict on write, not only on read.",
+      "register_ref": null
     }
   ],
   "code_corrections": [],

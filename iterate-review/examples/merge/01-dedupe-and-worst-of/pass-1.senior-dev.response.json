@@ -5,13 +5,15 @@
       "title": "Query parameter interpolated directly into SQL string",
       "severity": "HIGH",
       "description": "src/routes/admin.js:17 builds the WHERE clause by concatenating req.query.q into the SQL text. The fragment after LIKE '% is caller-determined, so the statement shape is not fixed at author time.",
-      "suggested_action": "Bind q as a query parameter rather than concatenating it into the statement text."
+      "suggested_action": "Bind q as a query parameter rather than concatenating it into the statement text.",
+      "register_ref": null
     },
     {
       "title": "Pooled DB connection is never released on the error path",
       "severity": "MEDIUM",
       "description": "src/routes/admin.js:16 awaits db.query inside the handler with no try/finally. If the query rejects, the rejection propagates out of the handler and the pooled connection is not returned, so repeated failures exhaust the pool.",
-      "suggested_action": "Wrap the query in try/finally and release in finally, or use the pool's managed-query helper."
+      "suggested_action": "Wrap the query in try/finally and release in finally, or use the pool's managed-query helper.",
+      "register_ref": null
     }
   ],
   "code_corrections": [

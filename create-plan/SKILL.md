@@ -119,9 +119,9 @@ Read the template at `~/.claude/skills/create-plan/template.md`. Apply these tra
 
 3. **Keep all inline `<!-- ... -->` guidance comments under section headers.** These are intentional authoring hints. The template comment header (which you stripped in transform #1) instructs the author to remove them before committing — they're scaffolding for the author, not noise to delete here.
 
-4. **Prune the unused Risk posture variant, under the `## Risk posture` H2.**
-   - **For `fix` type:** delete the `### Full variant (initiatives)` subsection (heading + its three `#### PF-` subsections, all the way until `### Lightweight variant (fixes)`). Keep the lightweight variant's `**PF-audience:** ... **PF-blast:** ... **PF-shipbar:** ...` stub intact.
-   - **For `initiative` type:** delete the `### Lightweight variant (fixes)` subsection (heading + body until the next H2 or comment block). Keep the full variant's three `#### PF-` subsections intact.
+4. **Prune the unused Risk posture variant, under the `## Risk posture` H2, and populate the surviving one with Step 3's answers.** Unlike TL;DR/Why/Approach (author-authored later, never asked about at scaffold time), Step 3 actively collects these three answers *during this same conversation* — so, unlike those sections, don't leave `...` placeholders here.
+   - **For `fix` type:** delete the `### Full variant (initiatives)` subsection (heading + its three `#### PF-` subsections, all the way until `### Lightweight variant (fixes)`). Keep the lightweight variant's structure, replacing its `**PF-audience:** ... **PF-blast:** ... **PF-shipbar:** ...` stub with the actual one-paragraph answer assembled in Step 3, each still labeled by its `PF-` id.
+   - **For `initiative` type:** delete the `### Lightweight variant (fixes)` subsection (heading + body until the next H2 or comment block). Keep the full variant's three `#### PF-` subsections, replacing each one's `...` placeholder with that question's Step 3 answer.
    - **Both types:** keep the "REGISTER SHAPE REFERENCE" comment block as-is — it documents `docs/risk-posture.md`'s shape and isn't type-specific.
 
 5. **Prune the unused phasing variant.**
@@ -153,7 +153,7 @@ Write the result to the target path via the Write tool.
 Tell the user:
 
 1. The absolute path of the file you wrote.
-2. The REQUIRED sections they need to fill in: TL;DR, Why/Context, Who/Use cases, **Risk posture**, Approach, Acceptance criteria, Risks, Open questions, Out of scope, **Closeout**, References. (For multi-phase plans: also fill in per-phase deliverables, acceptance, and time estimates.)
+2. The REQUIRED sections they need to fill in: TL;DR, Why/Context, Who/Use cases, Approach, Acceptance criteria, Risks, Open questions, Out of scope, **Closeout**, References. (For multi-phase plans: also fill in per-phase deliverables, acceptance, and time estimates.) **Risk posture is already filled in** from Step 3's answers — mention this so the author doesn't waste time hunting for a placeholder that isn't there.
 3. The RECOMMENDED sections to consider depending on plan type — see the inline `<!-- ... -->` comments in the file for guidance.
 4. **Status discipline.** Each phase / step has a `**Status:** not started` field. Update it as work progresses (`in progress` when started, `shipped` when commits land). For phases marked Iterate-review YES or CONDITIONAL, iterate-review will update Status to `reviewed` automatically on APPROVE.
 5. **Closeout discipline.** When all phases ship and acceptance is met, run the `## Closeout` checklist before declaring done. The final "git mv to archive" step is the canonical "this plan is done" signal — it makes plan state self-describing across session resumes and timeouts.

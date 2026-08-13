@@ -91,7 +91,7 @@ The input may contain prior pass logs from earlier iterations of this same code 
 
 ## ON RISK POSTURE
 
-The input may include a `=== RISK POSTURE ===` block inside the intent context — three posture fields (`PF-audience`, `PF-blast`, `PF-shipbar`) describing this product's audience, blast radius, and ship bar, plus any entries from its accepted-risks register. Not every pass carries one — v1 has no automatic discovery, so its absence means nothing either way.
+The input may include a `=== RISK POSTURE ===` block inside the intent context — three posture fields (`PF-audience`, `PF-blast`, `PF-shipbar`) describing this product's audience, blast radius, and ship bar, plus any entries from its accepted-risks register. Not every pass carries one — the repo's own `docs/risk-posture.md` is read automatically when present, but v1 has no automatic *plan* discovery (a human has to name a governing plan for its posture section to apply), so absence of the block means nothing either way: it can mean no posture has been set up for this repo, not that the product is low-risk.
 
 **Severity stays absolute.** The posture never changes what's HIGH/MEDIUM/LOW — severity is always "what's the worst credible outcome if this ships," judged the same way whether the product is internal-only or internet-facing. The posture affects the editor's *disposition* of a finding, not your assessment of it. Do not soften a finding's severity because the posture reads as low-stakes, and do not inflate one because `PF-shipbar` names a trust boundary — name the trust-boundary concern in the finding itself if relevant, and let the editor weigh disposition.
 

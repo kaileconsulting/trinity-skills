@@ -5,13 +5,15 @@
       "title": "Unguarded null deref on empty input",
       "severity": "HIGH",
       "description": "web/lib/parse.ts:42 calls input.split('-') without checking that input is non-null. The caller at web/app/page.tsx:128 passes `params.slug` which can legitimately be undefined when the route is hit without a slug segment. This will throw at runtime.",
-      "suggested_action": "Add an early return when input is null/undefined, or validate at the caller site. Whichever pattern is consistent with the rest of this codebase's null-handling convention."
+      "suggested_action": "Add an early return when input is null/undefined, or validate at the caller site. Whichever pattern is consistent with the rest of this codebase's null-handling convention.",
+      "register_ref": null
     },
     {
       "title": "Test assertion contradicts function name",
       "severity": "MEDIUM",
       "description": "web/lib/parse.test.ts:67 asserts that getActiveSlug() returns 'inactive' for archived rows. Either the function's name is wrong (it doesn't return only active slugs), or the assertion is testing the wrong condition.",
-      "suggested_action": "Decide which is right and align the other. If the function's contract is 'return slug regardless of active state', rename it; if it really should filter by active, fix the assertion."
+      "suggested_action": "Decide which is right and align the other. If the function's contract is 'return slug regardless of active state', rename it; if it really should filter by active, fix the assertion.",
+      "register_ref": null
     }
   ],
   "code_corrections": [
@@ -25,7 +27,7 @@
     {
       "question": "Is web/lib/parse.ts intended to be public API (it's exported and the path is in /lib) or internal helper? The lack of unit tests for the edge cases suggests internal, but the export suggests public.",
       "settled_by": "needs_human",
-      "why": "Import evidence shows current usage but not intended API status, and the question explicitly asks what is *intended* — the safe default applies."
+      "why": "Import evidence shows current usage but not intended API status, and the question explicitly asks what is *intended* \u2014 the safe default applies."
     }
   ]
 }
