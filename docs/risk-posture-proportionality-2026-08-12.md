@@ -164,7 +164,7 @@ docs/risk-posture.md (per-repo, downstream) # fallback posture for standalone re
 - Posture-dependency fixture, two-sided and interruption-crossing: a confirmed accepted-risk whose descriptor fields are then amended returns to `proposed`; one whose fields are untouched by an unrelated posture edit stays `confirmed`; both outcomes reproduce identically when the descriptor and digest are re-resolved from the pass log + posture source alone after a simulated session interruption; a descriptor that no longer resolves invalidates.
 
 **Iterate-review:** YES (rationale: changes the loop's safety guardrails — the exact machinery that keeps unattended runs honest)
-**Status:** not started
+**Status:** in progress (built 2026-08-13, commit `93ee247`; review deferred — Kyle's call is to batch iterate-review across all phases before merging, not per-phase)
 
 ### Phase 3 — Live validation on doc-bot (~1 review session)
 **Deliverables:**
@@ -257,7 +257,7 @@ iterate-review append/maintain these sections automatically.
 |-------|----------------|--------|-----------|----------|
 | Phase 0 | YES | reviewed | Pass 8, APPROVE×3 (2026-08-13) | `docs/reviews/code-review-branch-kyle-risk-posture-phase-0.md` |
 | Phase 1 | YES | reviewed | Pass 8, APPROVE×3 (2026-08-13) | `docs/reviews/code-review-branch-kyle-risk-posture-phase-0.md` |
-| Phase 2 | YES | not started | — | — |
+| Phase 2 | YES | in progress | — | — (built, review deferred to batched pass) |
 | Phase 3 | NO  | n/a | n/a | n/a |
 -->
 
