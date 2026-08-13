@@ -43,7 +43,29 @@ Reasoning to share with the user if they're unsure:
 - **Initiative** → uses `## Phasing` with `### Phase 0/1/2/...` sub-sections, each with explicit iterate-review markers. Right when work spans multiple days, has parallel tracks, or has natural review checkpoints between phases.
 - **Fix** → uses `## Step-by-step plan` with `### Step 1/2/3...` sub-sections. Right for single-session work where iterate-review (if used at all) runs once at the end.
 
-### Step 3 — For initiatives only: collect phase metadata
+### Step 3 — Capture risk posture (both plan types)
+
+Ask the user three questions, regardless of plan type — these apply to every plan:
+
+> 1. **Audience & reach** — who uses this, roughly how many, behind what perimeter?
+> 2. **Blast radius & recoverability** — what does a defect cost, and is the damage reversible? (e.g., "a lost draft is retypeable" vs "a wrong merge ships to customers")
+> 3. **Ship bar** — what class of defect blocks ship vs gets logged as an accepted risk? Name any trust boundaries where full rigor applies regardless (e.g., an auth boundary, an approve/merge path).
+
+**For initiative plans:** record each answer under its own `PF-` subsection in the Risk posture section's full variant (`PF-audience`, `PF-blast`, `PF-shipbar`).
+
+**For fix plans:** condense the three answers into the mandatory one-paragraph lightweight variant, labeling each inline by its `PF-` id.
+
+Share with the user why this isn't optional: the `PF-` ids are stable anchors that `iterate-review`'s posture-aware composition and the editor's `accepted-risk` disposition reference by id, never by prose — a plan without this section can't participate in that machinery. This step cannot be skipped for either plan type.
+
+**If the author dictates an existing accepted risk** while answering these questions (they already know of a real, disproportionate risk they're accepting), offer to seed the repo's accepted-risks register now:
+1. Resolve `<project-root>/docs/risk-posture.md` (same project-root resolution as Step 5).
+2. If it doesn't exist, create it with a `## Accepted risks` H2 and the new entry.
+3. If it exists, append the entry under that H2.
+4. Use the register shape from the template's "REGISTER SHAPE REFERENCE" comment: a stable `RR-<YYYY-MM-DD>-<slug>` id, the specific behavior, its bound, its recovery path, and the acceptance date. Never a blanket suppression ("ignore X findings") — if what the author describes reads as a category rather than a named behavior, push back and ask for the specific case.
+
+This is the one path where an accepted risk needs no separate confirmation step: the author is dictating it directly into the plan-authoring conversation, which is itself the confirmation. (Contrast with `iterate-review`'s `accepted-risk` disposition, which is an editor *proposal* during automated folding and does require a later human confirm.)
+
+### Step 4 — For initiatives only: collect phase metadata
 
 Skip this step entirely for fix-type plans.
 
@@ -76,7 +98,7 @@ Skip this default for: doc-only plans, plans that ship only data-pipeline / migr
 
 Offer this as a starting point but let the user override.
 
-### Step 4 — Resolve target file path
+### Step 5 — Resolve target file path
 
 1. Locate the project root: run `git rev-parse --show-toplevel` via Bash. If that fails (not a git repo), fall back to the current working directory and warn the user.
 2. Slugify the initiative name: lowercase, replace whitespace + non-alphanumerics with `-`, collapse multiple `-` into one, trim leading/trailing `-`.
@@ -87,7 +109,7 @@ Offer this as a starting point but let the user override.
 
 **Why the date suffix.** The dated filename makes the archived `docs/archive/` folder self-documenting — reviewers can see at a glance when each plan was drafted, which is useful for time-correlating plans with related ship commits, milestones-index entries (if the project tracks one), changelog updates, customer-feedback transcripts, or other external context. Reference / brainstorm / audit docs (non-plan documents in `docs/`) stay dateless; the suffix applies specifically to plans produced by this skill.
 
-### Step 5 — Generate the plan file
+### Step 6 — Generate the plan file
 
 Read the template at `~/.claude/skills/create-plan/template.md`. Apply these transforms before writing to the target path:
 
@@ -97,7 +119,12 @@ Read the template at `~/.claude/skills/create-plan/template.md`. Apply these tra
 
 3. **Keep all inline `<!-- ... -->` guidance comments under section headers.** These are intentional authoring hints. The template comment header (which you stripped in transform #1) instructs the author to remove them before committing — they're scaffolding for the author, not noise to delete here.
 
-4. **Prune the unused phasing variant.**
+4. **Prune the unused Risk posture variant, under the `## Risk posture` H2.**
+   - **For `fix` type:** delete the `### Full variant (initiatives)` subsection (heading + its three `#### PF-` subsections, all the way until `### Lightweight variant (fixes)`). Keep the lightweight variant's `**PF-audience:** ... **PF-blast:** ... **PF-shipbar:** ...` stub intact.
+   - **For `initiative` type:** delete the `### Lightweight variant (fixes)` subsection (heading + body until the next H2 or comment block). Keep the full variant's three `#### PF-` subsections intact.
+   - **Both types:** keep the "REGISTER SHAPE REFERENCE" comment block as-is — it documents `docs/risk-posture.md`'s shape and isn't type-specific.
+
+5. **Prune the unused phasing variant.**
    - **For `fix` type:** delete the entire `## Phasing` section (heading + all `### Phase N` sub-sections + their bodies, all the way until the next H2 heading). Keep `## Step-by-step plan` with the empty Step 1 / Step 2 stubs intact.
    - **For `initiative` type:** delete the entire `## Step-by-step plan` section (same rule — heading + body until next H2). Keep `## Phasing`, but **replace the three example phases** under it with one `### Phase N` entry per user-provided phase. Each generated phase should have:
 
@@ -117,16 +144,16 @@ Read the template at `~/.claude/skills/create-plan/template.md`. Apply these tra
 
    For `fix` type: the template's `## Step-by-step plan` already includes a `**Status:** not started` line under each Step heading — keep it as-is, no extra transform needed.
 
-5. **Leave the rest untouched** — Acceptance criteria, Risks, Open questions, Out of scope, Closeout, References, and the TOOLING-RESERVED tail (`## Review checkpoints`, `## Pre-flight review pass`, `## Codex review pass N`) all stay as the template provides them.
+6. **Leave the rest untouched** — Acceptance criteria, Risks, Open questions, Out of scope, Closeout, References, and the TOOLING-RESERVED tail (`## Review checkpoints`, `## Pre-flight review pass`, `## Codex review pass N`) all stay as the template provides them.
 
 Write the result to the target path via the Write tool.
 
-### Step 6 — Print next-step guidance
+### Step 7 — Print next-step guidance
 
 Tell the user:
 
 1. The absolute path of the file you wrote.
-2. The REQUIRED sections they need to fill in: TL;DR, Why/Context, Who/Use cases, Approach, Acceptance criteria, Risks, Open questions, Out of scope, **Closeout**, References. (For multi-phase plans: also fill in per-phase deliverables, acceptance, and time estimates.)
+2. The REQUIRED sections they need to fill in: TL;DR, Why/Context, Who/Use cases, **Risk posture**, Approach, Acceptance criteria, Risks, Open questions, Out of scope, **Closeout**, References. (For multi-phase plans: also fill in per-phase deliverables, acceptance, and time estimates.)
 3. The RECOMMENDED sections to consider depending on plan type — see the inline `<!-- ... -->` comments in the file for guidance.
 4. **Status discipline.** Each phase / step has a `**Status:** not started` field. Update it as work progresses (`in progress` when started, `shipped` when commits land). For phases marked Iterate-review YES or CONDITIONAL, iterate-review will update Status to `reviewed` automatically on APPROVE.
 5. **Closeout discipline.** When all phases ship and acceptance is met, run the `## Closeout` checklist before declaring done. The final "git mv to archive" step is the canonical "this plan is done" signal — it makes plan state self-describing across session resumes and timeouts.
@@ -144,6 +171,6 @@ Keep the message short — the file's inline comments carry the detailed authori
 
 ## Pointers
 
-- `template.md` — the canonical plan template (read by step 5).
+- `template.md` — the canonical plan template (read by step 6).
 - Sibling skill: `~/.claude/skills/iterate-plan/SKILL.md` — same architectural pattern, design-review focus.
 - Sibling skill: `~/.claude/skills/iterate-review/SKILL.md` — per-phase code review (reads the per-phase iterate-review markers this skill writes into the file).
