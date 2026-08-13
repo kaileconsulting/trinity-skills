@@ -1,0 +1,35 @@
+{
+  "verdict": "REVISE",
+  "findings": [
+    {
+      "title": "Rapid double-save can corrupt an in-progress draft",
+      "severity": "HIGH",
+      "description": "editor/autosave.ts:52 — two autosaves firing within the same debounce window race on the same draft file with no lock, occasionally interleaving partial writes.",
+      "suggested_action": "Bound the acceptable cost of this, or serialize writes per draft.",
+      "register_ref": null
+    },
+    {
+      "title": "Save handler dereferences an optional field without a null check",
+      "severity": "HIGH",
+      "description": "editor/autosave.ts:61 reads `req.body.clientMeta.deviceId` but `clientMeta` is optional per the request schema and can be absent, throwing on any client that omits it.",
+      "suggested_action": "Add a guard before dereferencing clientMeta.",
+      "register_ref": null
+    },
+    {
+      "title": "Approve endpoint can double-merge on a network-retried request",
+      "severity": "HIGH",
+      "description": "editor/approve.ts:41 — a client retry after a timed-out response re-runs the full merge with no de-duplication, so the same approval can apply twice if the first response was lost in transit.",
+      "suggested_action": "De-duplicate retried approvals so a lost response can't cause a double-merge.",
+      "register_ref": null
+    },
+    {
+      "title": "No deterministic way to detect the autosave race after the fact",
+      "severity": "MEDIUM",
+      "description": "editor/autosave.ts:52 — even with the race above bounded, there's currently no way to tell, from stored data alone, that two saves actually raced versus one simply arriving late.",
+      "suggested_action": "Consider a way to make racing saves detectable, not just less harmful.",
+      "register_ref": null
+    }
+  ],
+  "code_corrections": [],
+  "new_questions": []
+}

@@ -156,7 +156,57 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
       - **Sanity-check the label, don't trust it.** The `why` exists to be audited. If a question labelled `resolvable_in_fold` plainly needs the author's intent, treat it as `needs_human`; a mislabel that licenses a fabricated answer is the failure mode this routing exists to prevent.
     - **Aggregate verdict = worst-of** the lens verdicts (BLOCK > REVISE > APPROVE). A `FAILED` selected lens raises the aggregate to **at least REVISE** — BLOCK is preserved if any *completed* lens returned BLOCK — and blocks Converge (step 14).
 
-12. **Fold merged findings + append ONE HISTORICAL block to the pass log.** The editor is the sole writer: fold findings into the working code and `code_corrections` mechanically. **Append to the pass log via the Edit/Write tools, never shell heredocs** — log writes go through file-edit permissions, keeping the review's Bash surface to the single pre-approved runner rule. If the pass log doesn't exist, create it with a `# Code Review — <scope-tag>` H1 header — **load-bearing**: the runner reads an existing log as prior-pass context only when its first line is exactly that header for this scope tag (the format is the read capability; any file lacking the exact scope-tagged header is refused, and adopting another review's matching tag/header also adopts that same-repo review's identity — see `read_prior_passes`). Then append a single pass section (each finding tagged with its originating lens id):
+12. **Fold merged findings + append ONE HISTORICAL block to the pass log.** The editor is the sole writer: fold findings into the working code and `code_corrections` mechanically.
+
+    **Before folding any finding, check whether incorporating it requires a new mechanism.** If it does, do not fold it this pass — halt immediately (even in loop mode — continuing would commit to an unapproved design) and frame it as a design decision for the human via a decision card (format below), with a cheaper alternative sketched when one exists.
+
+    **"New mechanism" has an operational boundary** — these are the signals:
+    - a schema change or migration
+    - a new persisted or protocol field
+    - a new invariant that must hold beyond the current request (state outliving the call)
+    - a new background or timed process
+    - a new external dependency
+
+    **Non-mechanisms — fold normally, no escalation:** guard clauses, error-handling and message fixes, test additions, bounded refactors within existing types. On a genuinely ambiguous case, use the signals above as a checklist; if none clearly apply and you're still unsure, err toward escalating (the same asymmetry as `needs_human` — an unnecessary card costs one decision, a missed one costs a mid-loop design commitment nobody approved).
+
+    **Outcome mapping** (this is the first of the five decision-card types — shared format below): *adopt the mechanism* → the fold proceeds this pass, updating the plan or posture too if the mechanism changes either; *cheaper alternative* (when one exists) → the alternative is folded instead, recorded as `incorporated (via alternative)`, and re-reviewed next pass (Codex hasn't seen its implementation yet); *accept the risk* → routes to the `accepted-risk` lifecycle below — **excluded from the card entirely** when the finding concerns code named as a trust boundary by `PF-shipbar` (checked both current-pass and base-revision, same dual-check as step 11's register-match trust-boundary gate, so a same-diff posture edit can't make this option available either); *discuss* → loop stays paused, no fold this pass.
+
+    **New disposition: `accepted-risk`** — "real finding, disproportionate to this product's posture; not fixing." Requires a written rationale that references the posture via the dependency descriptor below — never a bare "not worth it."
+
+    **Identity and lifecycle.** Each proposal gets a stable id, `AR-<n>` — numbered sequentially across the *whole review* (read existing `AR-` mentions in the pass log to find the next number; the log is the sole allocator, so no concurrent-allocation problem arises within one review), minted when the editor writes the disposition into the pass log. Matching is by id, never by prose.
+    - `proposed` (editor, at fold time) → `confirmed` or `rejected` (human only, at a checkpoint).
+    - `rejected` → **`reopened`** — an explicitly unresolved state that blocks Converge exactly as `proposed` does, and immediately restores the finding to the open ledgers (re-enters the non-convergence count, fails the HIGH guardrail) the moment the rejection is recorded.
+    - A `reopened` finding needs a subsequent disposition on a later pass: `incorporated` or `disputed` (both terminal), or a fresh `accepted-risk` proposal under a **new** `AR-<n>` id — itself resolved only through its own proposed → confirmed lifecycle; prior confirmation never carries over.
+    - A **materially changed** finding (different location, behavior, or bound) is always a new proposal under a new id, never a reuse of a prior one.
+
+    **Posture-dependency descriptor — the confirmation's evidentiary basis.** Every confirmation persists (1) the list of posture *field ids* the rationale relies on (`PF-shipbar`, `RR-2026-08-06-seq-poison`, …) and (2) a canonical-content digest of exactly those fields as confirmed — the same sha256-of-complete-logical-content recipe step 11 uses for register-match, generalized to whichever posture element the descriptor names (a `PF-` field's full text, or an `RR-` entry's complete logical bullet). On any later pass or resume, the descriptor re-selects the same fields **by id** from the current posture source and recomputes the digest: a mismatch, or a field that no longer resolves (removed, or ambiguous), invalidates the confirmation and returns the item to `proposed` for fresh confirmation. Posture edits **outside** the descriptor's named fields never invalidate — this is why the descriptor names specific ids rather than treating "the posture changed at all" as the trigger. Because the descriptor and digest live in the pass log and fields are selected by id, this reconstructs identically whether checked mid-session or after an interruption — no prose interpretation, nothing living only in session memory.
+
+    **Converge predicate**: zero items in `proposed` or `reopened` state. Confirmed ids are written to the final state file (step 16).
+
+    **Pushback guidance.** The editor is expected to spend `disputed` and `accepted-risk` when warranted — this loop's findings are real, but not everything real is worth fixing here, and pretending otherwise is its own failure mode. Criteria (any one is sufficient): the finding contradicts the documented posture (a defect class the ship bar explicitly logs as accepted, or a register bound the finding gives no new evidence is false); the fix's cost clearly exceeds the defect's own bounded blast radius; the finding re-litigates a register entry without new evidence. **Anti-criteria (never push back for these reasons):** never on code named as a trust boundary in the ship bar (`accepted-risk` is unavailable there entirely — same exclusion as the escalation card above and the register-match trust-boundary gate); never to avoid a small, honest fix — proportionality argues against over-building, not against a fix that's cheap and correct.
+
+    **Accounting is defined per ledger, per state — one table, three consumers.** Three distinct accounting contexts exist: the per-pass HIGH guardrail (*may the loop continue this pass?*), the HIGH+MEDIUM non-convergence counter (*is the review stalling?*), and the Converge predicate (*may the review end?*). Every lifecycle state has explicit, normative standing in each — this table is authoritative; the lifecycle prose, card outcome mappings, and dispositions paragraph below all defer to it:
+
+    | State | HIGH guardrail | Non-convergence count | Converge |
+    |---|---|---|---|
+    | `proposed` (incl. deferred) | satisfied — loop may continue | excluded (dispositioned, not open) | **blocks** |
+    | `confirmed` | satisfied | excluded | clear |
+    | `reopened` | **not satisfied** — fresh disposition required | **re-included** | **blocks** |
+    | register-match, all step-11 gates valid | satisfied | excluded | clear |
+    | register-match, any gate broken/missing on recheck | treated as `reopened` | treated as `reopened` | **blocks** |
+
+    Accepting a risk therefore can't read as a stall (`proposed`/`confirmed` items leave the non-convergence count) while remaining impossible to converge past unconfirmed.
+
+    **Decision cards — the shared contract for every human-judgment moment.** Whenever the loop hands back to the human with something needing judgment, it arrives in a fixed shape: (1) the editor's **recommendation**, with a one-line why; (2) **2–3 genuine alternatives**, each with its trade-off; (3) an always-present **discuss** option. Options are decisions, not descriptions — selecting any option other than *discuss* resumes the loop deterministically per that card type's outcome mapping, with no follow-up prose needed. *Discuss* is deliberately non-resuming: it transitions into a paused conversation, and when it concludes, the card is re-presented with the agreed direction as the new recommendation — "pick-one-resumes" governs every option except the one whose purpose is to pause.
+
+    **Persistence and construction, uniformly across all five card types below:** the card is appended to the pass log **before** it is presented, so an interrupted session re-presents pending cards on resume; **context-sensitive omission** applies alike — an option whose transition is prohibited for this specific item is never displayed (every displayed option is a legal continuation); in interactive sessions, present via the harness's structured-question mechanism (recommendation listed first and marked, free-form "Other" built in); in the pass log, the same card is recorded as text regardless of session type.
+
+    **The five named human-judgment moments and their outcome mappings** (design-shaped-fold escalation specified above; malformed posture source specified in step 9 — both under this same shared contract):
+    - **Accepted-risk confirmation**: *confirm, this review only* → `confirmed` (pass log + state file; register untouched); *confirm + add to register* → `confirmed` and the `RR-` entry published to `docs/risk-posture.md` **as part of the transition** (a write failure surfaces at the checkpoint and the confirmation does not complete); *reject* → `reopened` (resolved credit reversed immediately, per the accounting table); *defer* → the item **stays `proposed`** under the same `AR-<n>` — no new state, re-presented at every subsequent checkpoint; *discuss* → paused.
+    - **`needs_human` question**: *adopt the recommendation* or *pick an alternative* → recorded in the pass log and the plan's Open questions, loop resumes; *defer* → stays open and Converge-blocking, re-presented next checkpoint; *discuss* → paused.
+    - **Non-convergence stall**: *continue anyway* → loop resumes with a fresh two-transition comparison window; *switch to manual* → loop mode ends, per-pass checkpoints resume; *abort* → review ends per the abort path; *discuss* → paused.
+
+    **Append to the pass log via the Edit/Write tools, never shell heredocs** — log writes go through file-edit permissions, keeping the review's Bash surface to the single pre-approved runner rule. If the pass log doesn't exist, create it with a `# Code Review — <scope-tag>` H1 header — **load-bearing**: the runner reads an existing log as prior-pass context only when its first line is exactly that header for this scope tag (the format is the read capability; any file lacking the exact scope-tagged header is refused, and adopting another review's matching tag/header also adopts that same-repo review's identity — see `read_prior_passes`). Then append a single pass section (each finding tagged with its originating lens id):
 
     ```markdown
     ## Pass <N> — <YYYY-MM-DD HH:MM> [HISTORICAL]
@@ -166,7 +216,7 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     ### Findings
 
     1. **<title>** — <severity> · lens: <lensid(s)>: <description>
-       → Editor: <incorporated|skipped|disputed> — <reasoning, written by the editor when folding>
+       → Editor: <incorporated|skipped|disputed|accepted-risk (AR-<n>)|register-match (RR-<n>, entry-digest <hash>)> — <reasoning, written by the editor when folding>
     2. ...
 
     ### Code corrections applied
@@ -177,6 +227,14 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
 
     - <question> — <settled_by> (lens: <lensid>): <resolution — the answer if `resolvable_in_fold`/`needs_lookup`, or "escalated to the user" if `needs_human`. Note any label you overrode, and why.>
 
+    ### Decision cards
+
+    <!-- Only present when a card was presented this pass — design-shaped-fold
+    escalation, accepted-risk confirmation, needs_human question, non-convergence
+    stall, or malformed posture source. One entry per card. -->
+
+    - **<card type>** (<item id, e.g. AR-2 or finding title>): recommendation — <text>; alternatives — <text>; chosen: <option> (<one-line outcome>).
+
     ### Lens run summary
 
     - senior-dev: <APPROVE|REVISE|BLOCK|FAILED>[ · security: <...>][ · qa: <...>]
@@ -186,13 +244,15 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     Diff captured at <YYYY-MM-DD HH:MM>; head SHA `<git rev-parse HEAD>` (or PR head SHA for `--scope=pr:<n>`).
     ```
 
-    Dispositions: **`incorporated`** — apply the code edit (required for HIGH unless explicitly disputed with reasoning; recommended for MEDIUM; optional for LOW). **`skipped`** — acknowledge, don't act (typically LOW). **`disputed`** — reject with reasoning (Codex misread intent or a constraint not visible in the diff). **`register-match (RR-<n>, entry-digest <hash>)`** — the finding matches a recorded accepted risk in `docs/risk-posture.md` (validated per step 11); no code edit, no fresh human confirmation. If a match is later invalidated (any of the three gates in step 11 fails on recheck — digest mismatch, entry removed, behavior no longer fits, or a trust-boundary change), it reverts to needing a fresh disposition and blocks Converge until one is given. `code_corrections` are applied mechanically.
+    Dispositions: **`incorporated`** — apply the code edit (required for HIGH unless explicitly disputed with reasoning; recommended for MEDIUM; optional for LOW). **`skipped`** — acknowledge, don't act (typically LOW). **`disputed`** — reject with reasoning (Codex misread intent or a constraint not visible in the diff). **`accepted-risk (AR-<n>)`** — real finding, disproportionate to posture; not fixing (full lifecycle above). **`register-match (RR-<n>, entry-digest <hash>)`** — the finding matches a recorded accepted risk in `docs/risk-posture.md` (validated per step 11); no code edit, no fresh human confirmation. If a match is later invalidated (any of the three gates in step 11 fails on recheck — digest mismatch, entry removed, behavior no longer fits, or a trust-boundary change), it reverts to needing a fresh disposition and blocks Converge until one is given. `code_corrections` are applied mechanically.
 
 13. **Recompute pass log content.** The pass log now reflects the latest pass for subsequent passes' `=== PRIOR PASSES ===` context.
 
 14. **Checkpoint — Continue / Converge / Abort / (L)oop**, with a recommendation:
 
-    - Recommend **Converge** when aggregate `verdict == APPROVE`, no lens is `FAILED`, no further folds are pending, and no `register-match` was invalidated this pass without receiving a fresh disposition.
+    **Batched accepted-risk confirmation, before the Continue/Converge/Abort choice.** Surface every `AR-<n>` currently in `proposed` state as a decision card (per the accepted-risk confirmation outcome mapping in step 12) — this happens at **every** checkpoint where a proposed item exists, not only at Converge, but confirmation is only *required* before Converge can succeed; deferring is a legitimate outcome that leaves the item queued for the next checkpoint.
+
+    - Recommend **Converge** when aggregate `verdict == APPROVE`, no lens is `FAILED`, no further folds are pending, no `register-match` was invalidated this pass without receiving a fresh disposition, and **no `AR-<n>` remains in `proposed` or `reopened` state** (the accounting table's Converge predicate, step 12).
     - Recommend **Continue** otherwise. Never auto-decide convergence.
 
     Surface a brief summary: "Pass <N>: <verdict> across <lenses>, <X> findings, <Y> corrections. Recommendation: <Continue|Converge>. Choose: (C)ontinue / (V)Converge / (A)bort[ / (L)oop]."
@@ -202,7 +262,7 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     - **Max-pass cap** (default 6, `--max-passes=N`) — a *fresh per-activation budget* counting auto-continued passes (the activating pass doesn't count; manual/historical passes don't deplete it) → stop, "hit cap without converging."
     - **BLOCK verdict** → stop.
     - **Non-convergence** — the merged **HIGH+MEDIUM** finding count fails to strictly decrease across two consecutive transitions (LOW / `FAILED` / open-questions excluded; a `FAILED`-lens pass is skipped in the comparison but still counts toward the cap) → stop, surface the stall.
-    - **Fold needs human judgment** — any HIGH finding was *not incorporated*, or a `new_question` classified **`needs_human`** survived the fold (after the label sanity-check and any override in step 11) → stop, escalate. `resolvable_in_fold` and `needs_lookup` questions do **not** halt the loop: the editor resolves them and continues. If a `needs_lookup` resolution *fails*, it becomes `needs_human` and then halts. This is the whole point of the classification — an unattended loop shouldn't stop for a question it could have answered, and must never continue past one only the user can.
+    - **Fold needs human judgment** — any HIGH finding was *not incorporated*, *not* a fresh `accepted-risk` proposal, and *not* a valid `register-match` (i.e. it's `disputed`, or awaiting a design-shaped-fold escalation card), or a `new_question` classified **`needs_human`** survived the fold (after the label sanity-check and any override in step 11) → stop, escalate. A HIGH dispositioned `accepted-risk (proposed)` or a valid `register-match` does **not**, by itself, halt the loop — per Q1, accepted-risk proposals continue and batch for confirmation at the next checkpoint (no HIGH silently vanishes: the proposal is persisted immediately under a stable id and blocks Converge until confirmed). A **design-shaped-fold escalation does halt immediately**, unlike an accepted-risk proposal — continuing there would commit to an unapproved mechanism, which is exactly what the immediate halt exists to prevent. `resolvable_in_fold` and `needs_lookup` questions do **not** halt the loop: the editor resolves them and continues. If a `needs_lookup` resolution *fails*, it becomes `needs_human` and then halts. This is the whole point of the classification — an unattended loop shouldn't stop for a question it could have answered, and must never continue past one only the user can.
 
 15. **If `--once` was set**, skip the checkpoint entirely — write the state file (step 16) with `final_action: "once-mode-exit"` and exit immediately after step 13, regardless of verdict. (`--once` and `--loop` are mutually exclusive — reject both together.)
 
@@ -219,9 +279,19 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
       "last_verdict": "<APPROVE/REVISE/BLOCK>",
       "final_action": "<converged|aborted|once-mode-exit>",
       "started_at": "<ISO timestamp of pass 1>",
-      "completed_at": "<ISO timestamp of final action>"
+      "completed_at": "<ISO timestamp of final action>",
+      "confirmed_accepted_risks": [
+        {
+          "id": "AR-<n>",
+          "register_ref": "<RR-<id> if confirmed with confirm + add to register, else null>",
+          "dependency_descriptor": ["<posture field id>", "..."],
+          "dependency_digest": "<sha256 hex over the descriptor's fields as confirmed>"
+        }
+      ]
     }
     ```
+
+    `confirmed_accepted_risks` is empty when the review never proposed one. Converge is impossible (per step 12's accounting table) while any `AR-<n>` remains `proposed` or `reopened`, so every entry here is `confirmed` at Converge time by construction — `Abort` may still leave `proposed`/`reopened` items unresolved, in which case this array reflects only what *was* confirmed before the abort, and the pass log remains the authority on anything left pending.
 
     **On Converge, additionally prune the scope's state directory** — the pass log is the durable audit record; the per-pass inputs, responses, and summaries under `state/<scope-hash>/` are intermediates:
 
@@ -243,9 +313,12 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
 - **Skill never decides convergence.** Suggests when verdict=APPROVE + the editor reports no further folds; human always confirms. **Loop mode never auto-converges** — it stops at APPROVE and presents the Converge decision.
 - **Fan-out is one Codex call per selected lens.** The editor merges (semantic dedupe, worst-of verdict, lens attribution). A selected lens that fails after one retry is `FAILED` metadata that forces at-least-REVISE (BLOCK preserved) and blocks Converge. Exactly one HISTORICAL block and one checkpoint per pass, regardless of lens count.
 - **v1 is standalone-only.** Refuse `--plan` / `--phase` flags with a clear "deferred to v2" message and exit. Don't half-implement plan-bound features.
-- **the editor folds findings.** Codex provides findings; the editor (you) reads them and applies code edits via Edit/Write tools to the working code, then writes the disposition (`incorporated|skipped|disputed|register-match`) into the pass log's HISTORICAL block. This is the same the editor-as-sole-writer discipline as iterate-plan.
+- **the editor folds findings.** Codex provides findings; the editor (you) reads them and applies code edits via Edit/Write tools to the working code, then writes the disposition (`incorporated|skipped|disputed|accepted-risk|register-match`) into the pass log's HISTORICAL block. This is the same the editor-as-sole-writer discipline as iterate-plan.
 - **Pass log lives next to where you invoked from**, not inside the skill directory. The skill directory holds machinery (prompt, schema, state); the pass log is a project artifact the user owns.
 - **Posture composition is editor-side; the runner never changes for it.** The `=== RISK POSTURE ===` block (when a source resolves) is composed by the editor into the intent file's content before `run-pass` runs — `bin/review_runner.py`'s `compose_input()` and its `INTENT`/`DIFF`/`PRIOR PASSES` structure are untouched by this feature. A malformed posture source halts before fan-out with a decision card rather than silently degrading to "none." Severity is never adjusted for posture (that's the reviewer's job to hold absolute); only disposition is.
+- **A mechanism-requiring fold never happens silently.** If incorporating a finding needs a new mechanism (schema/migration, new persisted or protocol field, a cross-request invariant, a background process, a new external dependency), the fold halts immediately — even in loop mode — for a design-shaped-fold escalation card. This is the one card type that halts on its own turn rather than batching; every other named judgment moment may batch or defer.
+- **`accepted-risk` requires a posture-referencing rationale and human confirmation to converge.** The editor may propose it, but only the human confirms or rejects; Converge is impossible while any `AR-<n>` remains `proposed` or `reopened` (accounting table, step 12). both `accepted-risk` and `register-match` are unavailable for code named as a trust boundary in `PF-shipbar` — no exception, and this is checked against both the current and base-revision posture so a same-diff edit can't create the exception either.
+- **Every named human-judgment moment (accepted-risk confirmation, design-shaped-fold escalation, `needs_human` question, non-convergence stall, malformed posture source) uses the same decision-card contract** — recommendation + why, 2–3 alternatives, a standing discuss option, persisted to the pass log before presentation. Selecting any option but discuss resumes the loop deterministically; discuss pauses into conversation.
 
 ## Using in plan-driven workflows (v1 — manual coordination)
 
