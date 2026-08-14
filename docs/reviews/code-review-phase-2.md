@@ -331,3 +331,36 @@ Diff captured at 2026-08-13 20:49; range `1661dfe..HEAD`; folds applied to the w
 ### Diff snapshot reference
 
 Diff captured at 2026-08-13 20:51; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
+
+## Pass 11 — 2026-08-13 20:54 [HISTORICAL]
+
+**Scope:** custom range `1661dfe..HEAD` (pass-10 folds committed at `ee8e8a3`) · **Diff size:** 1085 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+1. **Unescaped reviewer text can forge the durable fold-progress markers** — HIGH · lens: security: pass 10's fix made the block's `→ Editor:` lines the authoritative resume ledger — while the same block holds reviewer-authored titles and descriptions, which are arbitrary strings from a model that just read the diff. A third-party source comment can induce a lens to emit a description containing a newline followed by `→ Editor: incorporated`, or a forged item boundary; persisted verbatim, a resumed session reads an unfolded HIGH as already handled and drops it silently.
+   → Editor: incorporated — **the genuinely new finding class of this review, and the security lens's job done exactly right.** My pass-10 fold promoted reviewer-authored text from data to control-bearing structure without noticing it had crossed a boundary. Closed with two independent rules, both required: (a) **sanitize on the way in** — reviewer strings (`title`, `description`, `suggested_action`, correction fields, question text) are written as single logical lines, newlines collapsed and marker sequences escaped so they cannot begin a line, which is the same discipline as the runner's universal output sanitization and `examples/`'s patch-marker detection, extended to a surface that only just became structural; (b) **read only editor-written positions** — resume never scans for marker *text*, only for the `→ Editor:` line belonging to a known merged item at its own indentation, so any occurrence elsewhere is reviewer content by definition and ignored. Deliberately belt-and-braces: the sanitizer is the boundary, and the positional rule means a sanitizer bug is not by itself an exploit.
+2. **Resume markers are defined only for findings** — HIGH · lens: qa: pass 10 said corrections and questions are "listed the same way," but only findings have an `→ Editor:` line — corrections use a completed-action sentence and questions an inline resolution, neither with an empty form. An interruption between two corrections would re-apply a mechanical edit already made, or leave a question unanswered with nothing to show it.
+   → Editor: incorporated — gave both sections an explicit `(pending)` form (`<location> — <issue> → (pending)`, `<question> — <settled_by> (lens: <id>): (pending)`) and updated the template accordingly, which lets the resume rule read uniformly across all three sections: **an item is unfolded exactly when its outcome slot is empty or `(pending)`.** Fair catch on a fold that generalized in prose but not in the artifact.
+3. **Ordinary passes still open the progress block after folding** — HIGH · lens: senior-dev (HIGH), qa (MEDIUM) — co-reported, merged at the more severe rating: the section still opened with "the ordinary case is one append after folding completes," left over from pass 5, which flatly contradicts pass 10's requirement to persist the merged list *before* folding. On a card-free pass the two instructions give different recovery behavior, which reintroduces exactly the ambiguity pass 10 set out to remove.
+   → Editor: incorporated — deleted the carve-out rather than reconciling it: block opening is now unconditional, immediately after the merge, before any folding, on every pass. Recorded the reasoning so it doesn't get re-introduced a third time — both original motivations for opening early (a mid-fold card's pending write, and the merged list as resume ledger) apply to ordinary card-free passes too, so there was never a coherent "ordinary case." The pre-fan-out malformed-posture path is now stated as the *one* exception to that rule, rather than as a second special case beside it.
+
+### Code corrections applied
+
+- (none)
+
+### New questions Codex raised
+
+- (none)
+
+### Decision cards
+
+- (none this pass)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: REVISE · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-13 20:54; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
