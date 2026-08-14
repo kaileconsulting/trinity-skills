@@ -237,7 +237,7 @@ Diff captured at 2026-08-13 20:33; range `1661dfe..HEAD`; folds applied to the w
 
 ## Pass 8 — 2026-08-13 20:38 [HISTORICAL]
 
-**Scope:** custom range `1661dfe..HEAD` (pass-7 folds committed at `30260db`) · **Diff size:** 933 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, security, qa
+**Scope:** custom range `1661dfe..HEAD` (pass-7 folds committed at `307c511`) · **Diff size:** 933 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, security, qa
 
 *(This block was written `[IN PROGRESS]` while finding 3's decision card was pending at the checkpoint — the exact ordering this pass's own finding 1 established — and sealed to `[HISTORICAL]` when the card was answered. Unplanned dogfood of a rule created in the same pass; it worked.)*
 
@@ -364,3 +364,35 @@ Diff captured at 2026-08-13 20:51; range `1661dfe..HEAD`; folds applied to the w
 ### Diff snapshot reference
 
 Diff captured at 2026-08-13 20:54; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
+
+## Pass 12 — 2026-08-13 20:58 [HISTORICAL]
+
+**Scope:** custom range `1661dfe..HEAD` (pass-11 folds committed at `1b45445`) · **Diff size:** 1117 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, security, qa
+
+**First pass with two APPROVEs** — senior-dev and security both clean, qa carrying the only finding.
+
+### Findings
+
+1. **Crash between applying a fold and recording its outcome can duplicate the edit on resume** — HIGH · lens: qa: the pass-10/11 progress markers track *recorded disposition*, not *file mutation*. The working-tree edit and the outcome write are separate acts, so a crash between them leaves the fix applied and the slot empty — and the resume rule ("empty slot means unfolded") re-applies it. Harmless for an idempotent edit; corrupting for an appended declaration, a counter bump, or a migration.
+   → Editor: incorporated — a real gap in the resume contract I built over passes 10–11, and the last one standing at this pass. Added a reconcile-before-reapply protocol: for each pending item in order, read the relevant file *first*, and if the change is already present, complete the outcome slot instead of re-applying — noting in the disposition that it was recovered rather than re-done. Where presence genuinely can't be determined by inspection, that's a `needs_human` card, never a guess, because the two possible guesses are destructive in opposite directions. Also recorded why the obvious inversion doesn't work: writing the outcome before applying the edit moves the same window and makes the log claim work that hasn't happened, which is worse given the log is the authority.
+
+### Code corrections applied
+
+- `docs/risk-posture-proportionality-2026-08-12.md:Phase 2 status + review-status table` (lens: senior-dev) — both still said Phase 2's review was "deferred to a batched pass," which twelve completed passes contradict. Updated to describe the review as in progress with its pass count, log path, and scope range, and noted how the batching call actually played out (Phase 0+1 as one batch, Phase 2 as its own).
+- `docs/reviews/code-review-phase-2.md:Pass 8 Scope` (lens: senior-dev) — recorded the pass-7 fold commit as `30260db`, which no longer exists: that commit was amended to fix its own timestamp, becoming `307c511`. A good catch on a self-inflicted trap — amending a commit whose SHA is already cited in a document.
+
+### New questions Codex raised
+
+- (none)
+
+### Decision cards
+
+- (none this pass)
+
+### Lens run summary
+
+- senior-dev: **APPROVE** · security: **APPROVE** · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-13 20:58; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
