@@ -300,3 +300,34 @@ Diff captured at 2026-08-13 20:38; range `1661dfe..HEAD`; all three findings fol
 ### Diff snapshot reference
 
 Diff captured at 2026-08-13 20:49; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
+
+## Pass 10 — 2026-08-13 20:51 [HISTORICAL]
+
+**Scope:** custom range `1661dfe..HEAD` (pass-9 folds committed at `afe9980`) · **Diff size:** 1063 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+1. **Once mode leaves the completed pass marked resumable** — HIGH · lens: senior-dev, qa (co-reported): pass 8 moved the `[HISTORICAL]` seal to *after* the step-14 checkpoint, but step 15's `--once` mode skips the checkpoint entirely and exits after step 13. So a normal, fully successful once-mode pass writes `final_action: once-mode-exit` while its block stays `[IN PROGRESS]` — which the resume contract reads as interrupted work and would offer to resume. A second interaction between rules I wrote two passes apart, neither wrong alone.
+   → Editor: incorporated — step 15 now seals the block explicitly, and the ordering is stated: seal first, then write the state file, so the two artifacts can never disagree about whether the pass finished. Also recorded *why* sealing early is safe here rather than leaving it as a bare exception: the cards that legitimately hold a block open are checkpoint cards, and once mode has none, so a `(pending)` card at step 15 could only mean a genuine mid-fold interruption — in which case step 15 was never reached.
+2. **Resume cannot reliably derive fold progress from unkeyed lens responses** — HIGH · lens: senior-dev: pass 6's resume rule said remaining work is recoverable by diffing the immutable `pass-N.<lens>.response.json` artifacts against the partial block. But those artifacts hold *per-lens* findings with no stable ids, while step 11's merge is semantic — dedupes across lenses, takes worst-of severity, rewrites titles. There is no deterministic correspondence between a raw response item and a partially-recorded merged finding, so a resuming session re-running the merge can classify differently and either double-fold an item or skip one as already handled.
+   → Editor: incorporated, and this retires a claim I'd been leaning on since pass 6 — "no ledger needed, the responses are already durable" was true about *durability* and wrong about *identity*. Fixed without adding a ledger, by moving one existing write earlier: the block's `### Findings` section is now populated with the full merged list — numbered, severity, lens attribution, `→ Editor:` lines empty — **before folding begins**, with corrections and questions listed the same way. Folding fills the empty lines in. Resume becomes a lookup ("any item whose `→ Editor:` line is empty is unfolded") instead of a re-derivation, so the semantic merge happens exactly once and is durable the moment it exists. The block's own structure is the progress record.
+
+### Code corrections applied
+
+- (none)
+
+### New questions Codex raised
+
+- (none)
+
+### Decision cards
+
+- (none this pass)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: **APPROVE** (second consecutive) · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-13 20:51; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
