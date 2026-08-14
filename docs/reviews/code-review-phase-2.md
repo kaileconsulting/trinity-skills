@@ -396,3 +396,32 @@ Diff captured at 2026-08-13 20:54; range `1661dfe..HEAD`; folds applied to the w
 ### Diff snapshot reference
 
 Diff captured at 2026-08-13 20:58; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
+
+## Pass 13 — 2026-08-13 21:03 [HISTORICAL]
+
+**Scope:** custom range `1661dfe..HEAD` (pass-12 folds committed at `bf73fa5`) · **Diff size:** 1143 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+1. **Resume rule still excludes pending corrections and questions** — HIGH · lens: senior-dev, qa (co-reported, same defect): the paragraph defines the uniform rule ("unfolded exactly when its outcome slot is empty or `(pending)`") and then *ends* with the older, narrower sentence "any listed item whose `→ Editor:` line is still empty is unfolded" — and only findings have `→ Editor:` lines. A reader following the concluding, more specific sentence skips unapplied corrections and unresolved questions, reintroducing the exact defect pass 11 closed.
+   → Editor: incorporated — and the cause is worth naming, because it's the third time this shape has appeared (pass 11 finding 3, pass 12's correction, now this): **my pass-11 and pass-12 edits interleaved into one paragraph without my re-reading the result**, leaving stale fragments in place and even a dangling "Folding fills those lines in" stranded after the text it referred to. Fixed structurally rather than by patching the sentence: the whole resume procedure is now stated once, in one place, as two ordered steps — (1) identify pending items by outcome slot uniformly across all three sections, explicitly *not* by `→ Editor:` alone, with the reason given inline; (2) reconcile before re-applying. Framed so a later narrower restatement can't quietly override it, which is what kept happening.
+
+### Code corrections applied
+
+- (none)
+
+### New questions Codex raised
+
+- (none)
+
+### Decision cards
+
+- (none this pass)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: **APPROVE** (fourth of the last five passes) · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-13 21:03; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
