@@ -1,5 +1,188 @@
 # Changelog
 
+## 2.3.0 — 2026-08-14 — risk posture & proportionality
+
+Plan: `docs/risk-posture-proportionality-2026-08-12.md` (converged after 9
+iterate-plan passes). **Kyle initiated this one**, after a week of heavy use
+raised a specific complaint: review cost was running 2–3× build cost and
+phases were taking 5–10 passes, because the loop had no way to know that a
+finding — while real — was disproportionate to what the thing being built
+actually needed. Every prior release made the reviewer *find more*; this one
+gives the editor a principled, recorded way to **not fix something**, and
+gives the reviewer the project's own risk posture so it stops re-litigating
+decisions already made.
+
+Four phases: posture capture at plan time (0), posture flowing to the lenses
+plus a single-home accepted-risks register (1), the `accepted-risk` lifecycle
+and the decision-card contract (2), and a read-only retrospective validating
+the premise against a week of real doc-bot review logs (3).
+
+### Changed — **breaking** (reviewer output schema)
+
+- Findings carry a new `register_ref` field: `["string", "null"]`, matching
+  `^RR-\d{4}-\d{2}-\d{2}-[a-z0-9-]+$`, set only when a finding's behavior
+  falls inside a specific register entry's recorded bound. **It is in
+  `required` and nullable, not optional** — a constraint neither of us knew
+  going in and worth writing down: under `additionalProperties: false`,
+  `codex exec --output-schema` requires *every* property to appear in
+  `required`, so an "optional" field must be nullable-and-required or the
+  call fails outright. Found by invoking the real API, not by schema
+  validation — `tools/check-all.sh` was 58/58 green while this was broken,
+  because it never invokes Codex.
+- Migration: reviewers must emit `register_ref` on every finding; `null` is
+  the correct and common value. The editor validates every non-null ref and
+  treats unknown, malformed, or non-matching refs as untagged.
+
+### Added (Phase 2 — `accepted-risk` lifecycle + editor pushback)
+
+- **New disposition `accepted-risk`** — "real finding, disproportionate to
+  this product's posture; not fixing" — with a full lifecycle: `proposed`
+  (editor, at fold time) → `confirmed`/`rejected` (human only, at a
+  checkpoint), `rejected` → `reopened` (blocks Converge exactly as `proposed`
+  does, and re-enters the open ledgers immediately). Ids are `AR-<n>`,
+  allocated by the pass log, matched by id and never by prose.
+- **Posture-dependency descriptor** — every confirmation persists the posture
+  *field ids* its rationale relies on plus a sha256 digest of exactly those
+  fields' content. A later pass re-selects by id and recomputes: a mismatch
+  invalidates the confirmation and returns the item to `proposed` under the
+  same id. Edits *outside* the named fields never invalidate. Multi-field
+  descriptors use length-prefixed (netstring) framing so no byte of field
+  content can ever be misread as a delimiter.
+- **Design-shaped-fold escalation** — before folding any finding, the editor
+  checks whether incorporating it requires a *new mechanism* (schema change or
+  migration, new persisted or protocol field, invariant outliving the request,
+  background process, external dependency). If so it pauses at that finding
+  and asks. The halt is mid-fold and finding-scoped — deliberately a finer
+  granularity than step 14's between-pass guardrails.
+- **One decision-card contract across all five human-judgment moments**
+  (design-shaped fold, accepted-risk confirmation, `needs_human` question,
+  non-convergence stall, malformed posture source): recommendation + up to 3
+  alternatives + an always-available `discuss`. Cardinality is bound by the
+  harness's real 4-option cap, with `discuss` realized as free-form response
+  so it never competes for a slot. **A card is never skipped and never
+  auto-proceeded past**, including the degenerate zero-alternative case.
+- **Accounting stated once, as a table** — three consumers (per-pass HIGH
+  guardrail, non-convergence counter, Converge predicate) × every lifecycle
+  state, so accepting a risk can't read as a stall while remaining impossible
+  to converge past unconfirmed.
+- **Pushback criteria and anti-criteria.** The editor is expected to spend
+  `disputed` and `accepted-risk` when warranted. Never on code named as a
+  trust boundary by `PF-shipbar`, and never to avoid a small honest fix.
+- Fixture `examples/merge/04-accepted-risk-lifecycle/` with real computed
+  sha256 digests, two-sided invalidation, single- and multi-field descriptors,
+  a demonstrated session boundary, and mechanism/non-mechanism boundary cases
+  including a deliberately ambiguous one.
+
+### Hardened (Phase 2's 14-pass review — APPROVE×3 at pass 14, 0 disputed)
+
+HIGH+MEDIUM trajectory 5,3,3,3,3,3,3,3,2,2,3,1,1,0. The flat-at-3 stretch ran
+seven passes and tripped the stall guardrail twice; continuing was right both
+times, since the two most valuable findings arrived after it. Most of what
+follows is a **resume and persistence contract that did not exist in the
+Phase 2 design** — it was discovered entirely by the review.
+
+- **Pass-log blocks became a state machine.** A block opens unconditionally
+  right after the merge, before any folding, and carries a three-valued tag:
+  `[IN PROGRESS]` (resumable), `[HISTORICAL]` (complete *through* the
+  checkpoint, not merely through folding), `[ABORTED]` (a pass deliberately
+  ended while open — terminal, never resumed). `--once` seals explicitly since
+  it has no checkpoint. Aborting the *review* after a complete pass leaves
+  that pass `[HISTORICAL]`; the review-level outcome is `final_action`.
+- **The merged findings list is written before folding begins**, with empty
+  outcome slots that folding fills in. Resume is a lookup, never a
+  re-derivation — re-running the semantic merge after an interruption can
+  legitimately land differently and double-fold or skip. Corrections and
+  questions have their own `(pending)` form, so one rule covers all three
+  sections.
+- **Reconcile before re-applying.** An empty outcome slot means "not
+  recorded," which is not "not applied": read the file first, complete the
+  slot if the change is already there, and escalate rather than guess when
+  presence can't be determined — both guesses are destructive in one
+  direction.
+- **A trust boundary between reviewer text and control state.** Making
+  `→ Editor:` lines the durable progress ledger put model-authored titles and
+  descriptions into control-bearing structure; a crafted source comment could
+  induce a lens to emit a forged `→ Editor: incorporated` line and make a
+  resuming session drop an unfolded HIGH. Closed two ways: reviewer strings
+  are sanitized to single logical lines with markers escaped, *and*
+  dispositions are recognized only at editor-written structural positions,
+  never by scanning for marker text.
+- **A resolved card authorizes the option chosen, never the options
+  declined.** Found twice, in different guises: once as a zero-alternative
+  escape valve that could silently adopt an unapproved mechanism (pass 4), and
+  once as a failed alternative falling through to the mechanism the human had
+  declined (pass 9). The fixture now demonstrates the second case ending
+  correctly — the cheaper alternative is folded provisionally, loses on
+  re-review, and escalates again with its own card.
+- Decision-card cardinality reconciled with the harness's real cap; the
+  multi-field digest given collision-safe framing; terminal dispositions
+  required to name what actually happened (`incorporated (superseded by …)`,
+  never `disputed` for convenience).
+
+### Added (Phase 1 — posture flows to the lenses)
+
+- Posture reaches reviewers as an intent block, and findings can point back at
+  it via `register_ref` (schema change above).
+- **Single-home accepted-risks register**, `docs/risk-posture.md`, with
+  allocation-free `RR-<date>-<slug>` ids. Publication happens **only** through
+  an explicit human confirm — the editor never writes an entry on its own.
+- **Register-match validation, three gates in order**: id resolves, behavior
+  fits the recorded bound, and the entry is not a trust boundary — then a
+  sha256 digest of the entry's *complete logical bullet*, every wrapped
+  continuation line included. A matched finding needs no code edit and no
+  fresh confirmation; the entry's own owner and date stand as its
+  confirmation.
+- **Provenance gate against same-diff self-authorization.** Register entries
+  and `PF-shipbar` are checked at both the current pass and the base revision,
+  so a change cannot edit the posture that would excuse it — or quietly narrow
+  a trust boundary — inside the same diff.
+
+### Added (Phase 0 — risk posture capture)
+
+- `create-plan` captures posture at plan time via `PF-` fields (both plan
+  types): what ships, what the blast radius is, what the ship bar is, and
+  which code is a trust boundary. This is the input everything above consumes.
+
+### Hardened (Phase 0+1's 8-pass review — APPROVE×3 at pass 8, 0 disputed)
+
+Reviewed as one batch rather than per-phase (Kyle's call), which paid off
+directly: it surfaced a cross-phase integration bug neither phase showed
+alone — Phase 0's register-seeding path produced a `docs/risk-posture.md`
+that Phase 1's own malformed-source detection would immediately reject.
+
+- The `additionalProperties`/`required` schema constraint described above.
+- A register-match digest that hashed only an entry's first physical line,
+  silently missing amendments to wrapped text — the template's own canonical
+  example wraps, so this would have bitten on the first realistic entry.
+- Two distinct same-diff self-authorization attacks (security lens): editing
+  the register entry itself, and separately narrowing `PF-shipbar` to remove a
+  trust boundary. Both closed by the base-revision provenance check.
+- SHA-1 → **SHA-256** for the register digest: it is an adversarial integrity
+  boundary, unlike the state-file scope hash elsewhere, which has no
+  adversarial model and stays sha1.
+
+### Validated (Phase 3 — retrospective, read-only)
+
+Scope changed mid-plan from live validation to mining existing evidence: the
+doc-bot write-path week (62 commits; Phase 0 alone took 10 review passes; 57
+folds vs 7 disputes) was read without touching that repo.
+
+- **Convergent invention.** At write-path Phase 3 pass 10 — a day before this
+  release's Phase 2 shipped the mechanism — Kyle hand-wrote a proportionality
+  doctrine in prose: dispute when a scenario needs scale the deployment won't
+  reach and the failure is inconvenience rather than dishonesty; fold anything
+  where the app would lie or that's in the merge path. That is essentially
+  `accepted-risk`'s pushback criteria and `PF-shipbar`'s exemption, arrived at
+  independently.
+- **The register's case, concretely.** The "no app-level auth" dispute (an
+  accepted posture: Tailscale perimeter, bounded blast radius) recurred
+  **three times** across write-path Phases 0, 1, and 3, re-argued from scratch
+  each time because no cross-phase memory existed.
+- Classified as a **premise check**, not success/inconclusive/regression — no
+  live posture-aware review has run yet. It validates strongly on premise; the
+  pass-count question stays open until a real future phase is reviewed against
+  an applied posture file.
+
 ## 2.2.0 — 2026-08-11 — runner scripts + artifact hygiene
 
 Plan: `docs/archive/runner-scripts-artifact-hygiene-2026-08-06.md` (converged
