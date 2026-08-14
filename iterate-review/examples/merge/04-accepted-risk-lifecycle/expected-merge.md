@@ -66,8 +66,16 @@ applied? — state outliving the call, also a mechanism signal). The fold
 halts immediately (not batched — continuing would commit to an unapproved
 mechanism) with a decision card:
 - **Recommendation:** cheaper alternative — the approve handler already logs
-  a request id for audit; check-and-skip against that existing log needs no
-  new persisted field.
+  a request id for audit; **adding a uniqueness constraint on that existing
+  column and letting the insert itself be the claim** needs no new persisted
+  field. Note what makes this a legitimate alternative rather than a
+  hand-wave: the merge proceeds only for the request whose insert *won*, so
+  the exclusion is atomic. A read-then-act "check the log, skip if present"
+  would **not** qualify — two concurrent retries can both read absent and
+  both merge, which is the original defect wearing a check. On trust-boundary
+  code an alternative must supply the same invariant as the mechanism it
+  replaces, only more cheaply; an alternative that merely narrows the race is
+  a different, weaker fold and must be recorded as one.
 - **Alternatives:** adopt a dedicated idempotency-key mechanism (more
   robust, more surface). *(accept the risk would normally be a third
   alternative here, but it's excluded entirely — `editor/approve.ts` is
@@ -75,8 +83,9 @@ mechanism) with a decision card:
   displayed on this card at all, not even to be declined.)*
 - **(Discuss, via the harness's free-form response.)**
 - **Chosen: cheaper alternative.** → `incorporated (via alternative)` —
-  reused the existing audit-log request id for check-and-skip de-dup;
-  re-reviewed next pass (Codex hasn't seen this implementation yet).
+  constrained the existing audit-log request id to be unique and made the
+  insert the merge's admission ticket; re-reviewed next pass (Codex hasn't
+  seen this implementation yet).
 
 **Finding 4 — "No deterministic way to detect the autosave race after the
 fact" (MEDIUM). Genuinely ambiguous at first glance — resolved via the

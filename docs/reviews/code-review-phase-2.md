@@ -201,3 +201,36 @@ Diff captured at 2026-08-13 20:00; range `1661dfe..HEAD`; folds applied to the w
 ### Diff snapshot reference
 
 Diff captured at 2026-08-13 20:23; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
+
+## Pass 7 — 2026-08-13 20:33 [HISTORICAL]
+
+**Scope:** custom range `1661dfe..HEAD` (pass-6 folds committed at `3d11a01`) · **Diff size:** 885 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+1. **Intentional abort is indistinguishable from an interrupted pass** — HIGH · lens: senior-dev: pass 6 introduced `[IN PROGRESS]` as the authoritative "folding was interrupted, resume it" signal and separately said an abort at the malformed-posture card leaves the block `[IN PROGRESS]`. Those two statements make a deliberate ending and a crash produce byte-identical durable state, so a later invocation can resume a pass the human deliberately terminated.
+   → Editor: incorporated — the completeness tag now has three values instead of two: `[IN PROGRESS]` (resumable), `[HISTORICAL]` (complete), **`[ABORTED]`** (terminal, never resumed, written as the last act of the abort path with a one-line reason beneath the header). A deliberate ending now records a decision rather than looking like a crash. One extra value on an existing field, no new artifact — the alternative shape Codex offered (a separate durable abort marker that resume consults to override the tag) would put the same fact in two places and create a way for them to disagree.
+2. **Pre-fan-out block has no valid timestamp source** — HIGH · lens: qa (HIGH), senior-dev (MEDIUM) — co-reported, merged at the more severe rating: pass 6's fix let the malformed-posture card open a block in step 9 *and* defined the block's timestamp as the `pass-N.summary.json` mtime — an artifact that does not exist before fan-out. The `(pending)` allowance covered `Verdict` and `Lenses` only, so a conforming implementation had to either invent a timestamp or skip the block it was required to write.
+   → Editor: incorporated — same bug class as pass 6's finding 1 and, notably, in the *fix for* pass 6's finding 1: I extended the pending-field treatment to the fields I was thinking about and not to the one in the header itself. `(pending)` now covers the timestamp on equal footing (`## Pass <N> — (pending) [IN PROGRESS]`), filled in when the summary lands. The abort case is called out separately because it's the one place the summary-mtime rule genuinely cannot apply — an `[ABORTED]` pre-fan-out block is stamped with the abort's wall-clock time and says so inline, since no summary will ever exist for it.
+3. **Audit-log lookup does not establish replay-safe approval deduplication** — HIGH · lens: security: the lifecycle fixture's finding-3 card offers "the approve handler already logs a request id; check-and-skip against that existing log" as the chosen cheaper alternative on `editor/approve.ts` — code the fixture's own `PF-shipbar` names as a trust boundary. Read-then-act is not atomic: two concurrent retries can both observe no prior id and both merge, so the fixture records a replay defect as `incorporated (via alternative)` without the alternative ever establishing the property it claims.
+   → Editor: incorporated. Worth being explicit about why this wasn't pushed back on, since it's a fixture rather than shipping code and the proportionality criteria could superficially seem to reach it: the pushback **anti-criteria** rule this out twice over — never on code named as a trust boundary in the ship bar, and never to avoid a small honest fix. A fixture that models a hand-wave as an acceptable trust-boundary alternative teaches exactly the wrong lesson, and the fix is one sentence. Changed the alternative to an atomic claim (a uniqueness constraint on the existing audit-log request id, with the insert itself acting as the merge's admission ticket — still no new persisted field, so it remains genuinely cheaper), and used the contrast to state a general rule the fixture previously only implied: on trust-boundary code an alternative must supply the *same* invariant as the mechanism it replaces, only more cheaply; one that merely narrows the race is a weaker fold and must be recorded as one.
+
+### Code corrections applied
+
+- (none)
+
+### New questions Codex raised
+
+- (none)
+
+### Decision cards
+
+- (none this pass)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: REVISE (first finding from this lens since pass 1 — and a domain-level one about the fixture's content, not the machinery) · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-13 20:33; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
