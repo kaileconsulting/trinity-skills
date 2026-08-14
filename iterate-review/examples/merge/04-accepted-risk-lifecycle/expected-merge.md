@@ -159,7 +159,7 @@ constraint not visible in the diff" doesn't apply; the defect really did get
 fixed, just as a side effect of a different finding's fold rather than a
 dedicated one:
 → `incorporated (superseded by finding 4's mechanism)` — "finding 4's
-version counter plus reject-on-mismatch, adopted this same pass for a
+version counter plus reject-on-mismatch, adopted in the prior pass for a
 different finding, already closes this one: a write whose counter doesn't
 match is rejected outright rather than merely detected, which supersedes
 'bounded ≤one draft, recoverable via discard.' No additional code change
@@ -199,6 +199,15 @@ the descriptor's field (`PF-blast`) no longer resolves to the same content, so
 AR-2 returns to `proposed` for fresh confirmation under the *new* posture
 text — the human's original confirmation was against a bound that no longer
 holds.
+
+**AR-2 keeps its id — deliberately, and this is the case that distinguishes
+the two "changed bound" rules.** The lifecycle's new-id rule fires on a
+materially changed *finding* (different location, behavior, or claimed
+bound); nothing about the Export finding changed here — only `PF-blast`'s
+wording did. So this is posture-dependency invalidation, which always
+preserves the id: same `AR-2`, back to `proposed`, history intact. Minting an
+`AR-5` here would be wrong, and would discard the record that a human once
+confirmed this item against the older posture text.
 
 **Contrast — a third accepted-risk, AR-3, descriptor `["PF-audience"]`**,
 confirmed the same pass as AR-2. `PF-audience` digest:

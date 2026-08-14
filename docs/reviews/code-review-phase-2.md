@@ -135,3 +135,36 @@ Diff captured at 2026-08-13 19:35; range `1661dfe..HEAD`; folds applied to the w
 ### Diff snapshot reference
 
 Diff captured at 2026-08-13 21:25; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
+
+## Pass 5 — 2026-08-13 20:18 [HISTORICAL]
+
+**Scope:** custom range `1661dfe..HEAD` (pass-4 folds committed at `092de54`; pass log checkpointed at `2919a59`) · **Diff size:** 791 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+1. **Posture invalidation conflicts with the new-id rule for changed bounds** — HIGH · lens: senior-dev: the accepted-risk lifecycle says a materially changed finding with a "different location, behavior, or bound" always gets a new `AR-` id, while the posture-dependency rule says a digest mismatch returns the item to `proposed` under its existing id. The word *bound* carries a different referent in each, so when the fixture's `PF-blast` is amended from recoverable to not-reliably-recoverable, both rules can claim the event and they disagree about identity — two conforming implementations would produce different AR ledgers, and therefore different answers to the Converge predicate.
+   → Editor: incorporated — real collision, not a wording nitpick, precisely because AR identity feeds the accounting table. Disambiguated both sides rather than one: the lifecycle rule now says "bound" there means the *finding's own claimed* bound (what the reviewer alleges the blast radius to be) and never the posture text a rationale rests on, and states the two triggers explicitly — finding changed → **new** id; posture changed → **same** id, back to `proposed`. Added the mirror statement at the posture-dependency rule ("invalidation always preserves the `AR-<n>` id"), so a reader arriving from either direction sees it. Also added a framing note to the fixture at the AR-2 invalidation, since the fixture is where Codex actually hit the ambiguity: neither finding changed, only `PF-blast`'s wording did, so AR-2/AR-4 keep their ids, and minting an AR-5 there would discard the record of a human confirmation that really happened.
+2. **Abort-state array has no defined treatment for invalidated confirmations** — MEDIUM · lens: senior-dev: step 16's `confirmed_accepted_risks` says that on Abort it reflects what "was confirmed before the abort" — a historical reading — but never says whether an item confirmed and then invalidated back to `proposed` remains in the array. Historical and current-state readings both fit the prose and produce different state files.
+   → Editor: incorporated — chose **current-state** semantics, per Codex's own recommendation and for the reason it gave: the array exists so a resume can act on it. An item lists only if its `confirmed` state still holds at write time; an item invalidated by a posture-digest mismatch or a rejection is absent even though it "was confirmed" at some point. Stated the rationale in the text rather than just the rule (a resume trusting an invalidated confirmation would act on a human decision that no longer applies to the current posture), and kept the pass log as the authority on both pending items and the history the array now deliberately drops.
+3. **Mid-fold decision cards lack a defined durable pass-log location** — MEDIUM · lens: qa: pass 4's two-phase card persistence requires a `(pending)` write *before* presentation, but step 12 still described appending the single HISTORICAL block *after* folding — so at the moment the pending write must happen, the block it belongs in does not exist. An interruption exactly at the card is the failure the pending write was built to survive, and the spec left it undefined whether the block had been opened, or how resume avoids appending a second one.
+   → Editor: incorporated — a direct consequence of pass 4's own fix, and the fourth consecutive pass to file against the previous pass's fix surface. Defined block creation as incremental: the block opens the moment anything needs durable recording, starting with the `## Pass <N>` header plus the full Scope/Diff-size/Verdict/Posture/Lenses line — every field of which is already known then, since the worst-of verdict is fixed by step 11's merge before the first finding is folded — and its sections fill in as folding proceeds. Made explicit that "append ONE block" constrains the block count, not the number of writes. Added the resume rule: a session finding a `## Pass <N>` block for the pass in progress completes it and never appends a second; the `(pending)` card is the finer-grained signal for *where* folding stopped, the block header the signal for *which* block to write into; a duplicate `## Pass <N>` block is always a bug.
+
+### Code corrections applied
+
+- `iterate-review/examples/merge/04-accepted-risk-lifecycle/expected-merge.md:Pass 2 Branch A` (lens: senior-dev, qa — co-reported, same location) — AR-1's resolution text said finding 4's mechanism was "adopted this same pass," but the scenario adopts it in pass 1 and resolves AR-1 in pass 2. Corrected to "adopted in the prior pass."
+
+### New questions Codex raised
+
+- (none)
+
+### Decision cards
+
+- (none this pass)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: **APPROVE** (zero findings — first clean lens of this review) · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-13 20:18; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
