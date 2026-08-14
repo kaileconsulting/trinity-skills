@@ -234,3 +234,38 @@ Diff captured at 2026-08-13 20:23; range `1661dfe..HEAD`; folds applied to the w
 ### Diff snapshot reference
 
 Diff captured at 2026-08-13 20:33; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
+
+## Pass 8 — 2026-08-13 20:38 [IN PROGRESS]
+
+**Scope:** custom range `1661dfe..HEAD` (pass-7 folds committed at `30260db`) · **Diff size:** 933 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, security, qa
+
+*(Block is `[IN PROGRESS]` because finding 3's decision card is pending at the checkpoint — the exact ordering this pass's own finding 1 established. It seals to `[HISTORICAL]` when that card is answered.)*
+
+### Findings
+
+1. **Checkpoint cards occur after the pass block is marked complete** — HIGH · lens: senior-dev: passes 6–7 defined `[HISTORICAL]` as "every finding, question, and card outcome recorded," written as the last pass write after folding. But two of the five card types — accepted-risk confirmation and non-convergence stall — are presented at **step 14's checkpoint**, after folding is finished, and the persistence contract requires them written to that same block *before* presentation. So the spec required writing a card into a block it had already declared sealed, and an interruption at a checkpoint card would leave a "complete" block with unresolved work.
+   → Editor: incorporated — resolved by moving the seal rather than adding a location: "fully complete" now explicitly means *through the checkpoint*, so the block stays `[IN PROGRESS]` across step 14 and flips to `[HISTORICAL]` only once the checkpoint's cards are answered and recorded. A block is never finalized and then reopened. Also clarified that step 13's "the pass log reflects the latest pass" is about content availability, not finalization — the block is readable as prior-pass context throughout; it simply hasn't been sealed. **This pass's own block is written under the new rule** — see the note above.
+2. **The abort tag conflates aborting an incomplete pass with aborting the review** — MEDIUM · lens: senior-dev: pass 7 added `[ABORTED]` for "a pass that deliberately ended without completing," written as the last act of "the abort path" — but step 14 also offers Abort at a checkpoint, where the current pass may be fully complete and correctly `[HISTORICAL]`. The general wording would retag a finished pass as unfinished.
+   → Editor: incorporated — scoped the tag explicitly, per Codex's suggested_action, which was right: `[ABORTED]` answers "did *this pass* finish?" and applies only to a pass ended while still open (the pre-fan-out malformed-posture abort being the canonical case). Aborting the review after a complete pass leaves that pass `[HISTORICAL]`, with the review-level outcome recorded by `final_action: aborted` in the step-16 state file. Stated the separation as a rule — one marker per question, never overload one to mean the other.
+3. **Atomic claim can permanently suppress an approval that never merged** — HIGH · lens: security, qa (co-reported, independently, same failure) — **NOT YET FOLDED; escalated as a decision card at this checkpoint.** Pass 7's fix made the fixture's cheaper alternative an atomic claim (unique insert on the audit-log request id, insert = admission ticket). That closes the concurrent-duplicate race but creates a new one: the claim is durable *before* the merge outcome is known, so a crash or failure after the insert leaves every retry losing the uniqueness race and skipping a merge that never happened — a dropped approval on the same trust boundary, at-most-once admission mistaken for replay-safe completion. The finding is correct on its own terms.
+   → Editor: **card pending.** Reasoning for escalating rather than folding directly is recorded with the card below.
+
+### Code corrections applied
+
+- (none)
+
+### New questions Codex raised
+
+- (none)
+
+### Decision cards
+
+- **Design-shaped fold — fixture domain fidelity** (finding 3): recommendation — restructure the fixture so the cheaper alternative is folded *provisionally* and its next-pass re-review surfaces this exact claim-before-merge gap, escalating back to the dedicated idempotency mechanism, which makes the fixture teach "cheap alternatives on a trust boundary get re-reviewed and sometimes lose" and stops the regress at its source; alternatives — patch one more layer (couple claim state to merge completion with a recoverable retry path), or record the finding as `disputed` on the grounds that the fixture demonstrates card *mechanics* and its example's domain depth beyond the illustrated point isn't load-bearing; chosen: (pending).
+
+### Lens run summary
+
+- senior-dev: REVISE · security: REVISE · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-13 20:38; range `1661dfe..HEAD`; findings 1–2 folded to the working tree, finding 3 pending the card above.
