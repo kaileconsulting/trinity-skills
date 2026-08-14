@@ -45,6 +45,92 @@ gap on PI attribution."
 Initiative-style example: list 2-5 named use cases with the user/persona
 + the workflow + the success condition. -->
 
+## Risk posture
+
+<!-- REQUIRED for every plan, both types. Captures the product's risk
+tolerance once at planning time so iterate-review's Codex lenses judge
+findings against the actual product instead of an imagined
+internet-facing one, and so the editor has grounds — via the
+`accepted-risk` disposition — to push back on disproportionate
+findings instead of building a fix for everything real.
+
+**Initiatives** use the full variant: answer all three questions,
+each under its own `PF-` subsection. **Fixes** use the lightweight
+variant: one short paragraph covering the same three answers, each
+labeled inline by its `PF-` id. Delete whichever variant doesn't
+apply — don't leave both.
+
+The `PF-audience` / `PF-blast` / `PF-shipbar` ids are stable
+structural anchors, not cosmetic headers: iterate-review's posture
+composition and the editor's accepted-risk confirmation-dependency
+digests point at posture content by these ids, never by prose. Once
+a plan is drafted, don't rename, renumber, or merge them.
+
+This section holds only the three posture *fields*. It never holds a
+register of accepted risks — the accepted-risks register has exactly
+one home per repo: `docs/risk-posture.md` (see the register shape
+comment below). If drafting this plan surfaces a risk the author is
+accepting right now, that entry is scaffolded or appended to that
+file, never written into this section. -->
+
+### Full variant (initiatives)
+
+<!-- Delete this subsection for fix-type plans; keep the Lightweight
+variant below instead. -->
+
+#### PF-audience — Audience & reach
+
+<!-- Who uses this, roughly how many, behind what perimeter (public
+internet, authenticated users only, internal network, single
+operator)? -->
+
+...
+
+#### PF-blast — Blast radius & recoverability
+
+<!-- What does a defect cost, and is the damage reversible? E.g., "a
+lost draft is retypeable" vs "a wrong merge ships to customers." -->
+
+...
+
+#### PF-shipbar — Ship bar
+
+<!-- What class of defect blocks ship vs gets logged as an accepted
+risk? Name the trust boundaries where full rigor applies regardless
+of posture (e.g., an approve/merge path, an auth boundary, a payments
+path) — these are exempt from `accepted-risk` entirely. -->
+
+...
+
+### Lightweight variant (fixes)
+
+<!-- Delete the Full variant above for fix-type plans and use this
+instead: one short paragraph answering all three questions inline,
+each labeled by its PF- id so the ids remain machine-referenceable
+even in prose form. -->
+
+**PF-audience:** ... **PF-blast:** ... **PF-shipbar:** ...
+
+<!-- ─────────────────────────────────────────────────────────────
+REGISTER SHAPE REFERENCE (not part of this plan — informational).
+The accepted-risks register lives at `docs/risk-posture.md` in this
+repo, created or appended to by create-plan when an author dictates
+an accepted risk at scaffold time (author action is its own
+confirmation — no separate human-confirm step, unlike an editor's
+`accepted-risk` fold proposal in iterate-review, which does require
+one). Entries are narrow and named, never blanket suppressions, and
+use allocation-free date-slug ids so concurrent branches can't
+collide on a counter:
+
+  ## Accepted risks
+
+  - **RR-2026-08-06-seq-poison** — client-supplied seq can poison one
+    draft for ≤24h; recoverable via discard; accepted 2026-08-06.
+
+Duplicate ids in the file are a malformed source; ids are never
+reused or renamed once referenced.
+───────────────────────────────────────────────────────────────── -->
+
 ## Goals (MVP)
 
 <!-- RECOMMENDED for initiatives. Bulleted list of what we ARE delivering

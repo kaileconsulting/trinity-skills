@@ -27,10 +27,14 @@ reviewing a change to either skill's merge prose.
 |---|---|---|---|
 | [`01-dedupe-and-worst-of`](01-dedupe-and-worst-of/) | REVISE, REVISE, **APPROVE** | REVISE | Co-report collapses to one finding retaining both lens ids; two findings at the *same location* with *different defects* stay separate (R4, both directions); an approving lens does not pull the aggregate up |
 | [`02-failed-lens-preserves-block`](02-failed-lens-preserves-block/) | **BLOCK**, **`FAILED`**, REVISE | BLOCK | `FAILED` is a REVISE **floor, not an assignment** — it must not downgrade a completed BLOCK; Converge unavailable; `(R)etry` offered; partial output from a failed lens is not salvaged |
+| [`03-register-match-gates`](03-register-match-gates/) | REVISE | REVISE | `register_ref` validation's three gates (provenance, behavior, trust-boundary) evaluated **per-finding, not per-register-entry** — two findings sharing one `register_ref` get different dispositions; the complete-logical-bullet digest recipe, computed concretely, correctly changes when a wrapped continuation line is amended |
+| [`04-accepted-risk-lifecycle`](04-accepted-risk-lifecycle/) | REVISE | REVISE | `accepted-risk` full lifecycle (`proposed`→`confirmed`/`rejected`→`reopened`, then terminal re-disposition — `incorporated`/`disputed` resolve the reopened item under its existing id, and only a *fresh* accepted-risk proposal takes a new `AR-` id) against the accounting table state by state; design-shaped-fold escalation halts *immediately* (unlike accepted-risk's continue-and-batch), with mechanism/non-mechanism boundary cases including a genuinely-ambiguous one; posture-dependency digest invalidation is two-sided (single- *and* multi-field descriptors, real sha256 values) and demonstrated across a simulated session boundary, not just asserted |
 
 Between them they cover every merge-side item in the plan's acceptance criteria:
 dedupe, worst-of, `FAILED` handling, attribution, one HISTORICAL block, one
 checkpoint, and both loop-mode halt conditions that depend on merge output.
+Scenarios 03 and 04 cover the Risk Posture & Proportionality initiative's
+register-match (Phase 1) and accepted-risk/escalation (Phase 2) mechanisms.
 
 ## File conventions
 

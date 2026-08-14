@@ -50,6 +50,7 @@ Array of objects (required, may be empty if `verdict=APPROVE` with nothing to fl
   - `LOW` = nit, polish, or stylistic. Document for the record.
 - `description` — full text of the issue. **Cite file paths and line numbers** from the diff when useful (e.g., "web/lib/foo.ts:42 introduces an unguarded null deref"). Be concrete; "this is unclear" is less useful than "the function at file.py:120 returns early on empty input but the caller at file.py:155 doesn't handle the empty-string case."
 - `suggested_action` — what the editor should consider doing. May be open-ended ("clarify the error contract") or specific ("add a null check before line 42 + a test exercising the empty-input path"). Describe intent; do not write the patch.
+- `register_ref` — required field, but set it to `null` in the common case (no match). See **ON RISK POSTURE** below for when to set it to an actual id instead.
 
 ### `code_corrections`
 
@@ -88,6 +89,18 @@ If you're at `APPROVE` but want to flag low-severity polish items, include them 
 
 The input may contain prior pass logs from earlier iterations of this same code review (or, in plan-bound mode in v2, prior passes for adjacent phases). Read them — they're your own prior work and the editor's responses, and they give you continuity across the iteration loop. Do NOT re-issue findings that prior passes already resolved unless the editor's incorporation was demonstrably insufficient.
 
+## ON RISK POSTURE
+
+The input may include a `=== RISK POSTURE ===` block inside the intent context — three posture fields (`PF-audience`, `PF-blast`, `PF-shipbar`) describing this product's audience, blast radius, and ship bar, plus any entries from its accepted-risks register. Not every pass carries one — the repo's own `docs/risk-posture.md` is read automatically when present, but v1 has no automatic *plan* discovery (a human has to name a governing plan for its posture section to apply), so absence of the block means nothing either way: it can mean no posture has been set up for this repo, not that the product is low-risk.
+
+**Severity stays absolute.** The posture never changes what's HIGH/MEDIUM/LOW — severity is always "what's the worst credible outcome if this ships," judged the same way whether the product is internal-only or internet-facing. The posture affects the editor's *disposition* of a finding, not your assessment of it. Do not soften a finding's severity because the posture reads as low-stakes, and do not inflate one because `PF-shipbar` names a trust boundary — name the trust-boundary concern in the finding itself if relevant, and let the editor weigh disposition.
+
+**Using the register.** If a finding is independently actionable (you'd file it regardless) and its behavior falls within a specific register entry's recorded bound and recovery path — not merely the same general area — set `register_ref` to that entry's id. Two things are NOT a match:
+1. **A finding that only restates a documented posture or register decision with no new evidence** (e.g., re-filing "the publish endpoint has no auth" when `PF-shipbar`/the register already documents that perimeter as the accepted posture, and nothing in this diff changes it) — don't file this at all. Filing it costs the editor a fold cycle for something already settled.
+2. **Evidence that a register entry's stated bound or recovery path is false** — e.g., the entry says a defect is recoverable via discard but this diff removes the discard path. This is a fresh, real finding — file it normally, without `register_ref`, even though it concerns the same behavior the entry names.
+
+The distinction is evidence: restating what's already decided isn't a finding; showing the existing decision no longer holds is.
+
 ## ON DRIFT
 
 You are explicitly the drift-elimination layer. Two flavors of drift to watch for:
@@ -121,6 +134,12 @@ Your response must be valid JSON conforming to the schema. The orchestrator will
 === INTENT ===
 <commit message, PR description, or plan content if provided; may be empty>
 
+=== RISK POSTURE ===
+<PF-audience / PF-blast / PF-shipbar fields plus accepted-risks register entries,
+ when a posture source was resolved for this pass; absent entirely otherwise —
+ its presence or absence carries no signal about the product, only about
+ whether posture has been set up for this repo>
+
 === DIFF ===
 <unified git diff>
 
@@ -128,4 +147,4 @@ Your response must be valid JSON conforming to the schema. The orchestrator will
 <HISTORICAL sections from prior iterate-review passes on this same scope; may be empty>
 ```
 
-Treat HISTORICAL prior-passes content as context, not as work to redo.)
+The `=== RISK POSTURE ===` block, when present, is nested inside the intent context the editor composed — treat it as part of "intent," the same trust level as the commit message above it. Treat HISTORICAL prior-passes content as context, not as work to redo.)

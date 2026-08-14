@@ -1,0 +1,21 @@
+{
+  "verdict": "REVISE",
+  "findings": [
+    {
+      "title": "Draft content can be poisoned by a crafted seq value",
+      "severity": "HIGH",
+      "description": "editor/autosave.ts:88 accepts a client-supplied seq without an upper bound. A seq near i64 max causes every subsequent legitimate autosave to be rejected as stale, effectively poisoning the draft for any future edit until the client discards and restarts.",
+      "suggested_action": "Bound seq to a clock-skew-tolerant window, or discard and restart the draft when the anomaly is detected.",
+      "register_ref": "RR-2026-08-06-seq-poison"
+    },
+    {
+      "title": "Approve endpoint accepts an unbounded seq with no authorization check",
+      "severity": "HIGH",
+      "description": "editor/approve.ts:41 — the approve/merge path (named in PF-shipbar as a trust boundary requiring full rigor regardless of posture) has the same unbounded-seq shape as the finding above, but here it governs which draft version actually ships to readers, not just which autosave is accepted.",
+      "suggested_action": "Bound seq the same way, and add the missing authorization check before this path applies a merge.",
+      "register_ref": "RR-2026-08-06-seq-poison"
+    }
+  ],
+  "code_corrections": [],
+  "new_questions": []
+}
