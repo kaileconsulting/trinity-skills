@@ -235,11 +235,11 @@ Diff captured at 2026-08-13 20:23; range `1661dfe..HEAD`; folds applied to the w
 
 Diff captured at 2026-08-13 20:33; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
 
-## Pass 8 — 2026-08-13 20:38 [IN PROGRESS]
+## Pass 8 — 2026-08-13 20:38 [HISTORICAL]
 
 **Scope:** custom range `1661dfe..HEAD` (pass-7 folds committed at `30260db`) · **Diff size:** 933 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, security, qa
 
-*(Block is `[IN PROGRESS]` because finding 3's decision card is pending at the checkpoint — the exact ordering this pass's own finding 1 established. It seals to `[HISTORICAL]` when that card is answered.)*
+*(This block was written `[IN PROGRESS]` while finding 3's decision card was pending at the checkpoint — the exact ordering this pass's own finding 1 established — and sealed to `[HISTORICAL]` when the card was answered. Unplanned dogfood of a rule created in the same pass; it worked.)*
 
 ### Findings
 
@@ -248,7 +248,7 @@ Diff captured at 2026-08-13 20:33; range `1661dfe..HEAD`; folds applied to the w
 2. **The abort tag conflates aborting an incomplete pass with aborting the review** — MEDIUM · lens: senior-dev: pass 7 added `[ABORTED]` for "a pass that deliberately ended without completing," written as the last act of "the abort path" — but step 14 also offers Abort at a checkpoint, where the current pass may be fully complete and correctly `[HISTORICAL]`. The general wording would retag a finished pass as unfinished.
    → Editor: incorporated — scoped the tag explicitly, per Codex's suggested_action, which was right: `[ABORTED]` answers "did *this pass* finish?" and applies only to a pass ended while still open (the pre-fan-out malformed-posture abort being the canonical case). Aborting the review after a complete pass leaves that pass `[HISTORICAL]`, with the review-level outcome recorded by `final_action: aborted` in the step-16 state file. Stated the separation as a rule — one marker per question, never overload one to mean the other.
 3. **Atomic claim can permanently suppress an approval that never merged** — HIGH · lens: security, qa (co-reported, independently, same failure) — **NOT YET FOLDED; escalated as a decision card at this checkpoint.** Pass 7's fix made the fixture's cheaper alternative an atomic claim (unique insert on the audit-log request id, insert = admission ticket). That closes the concurrent-duplicate race but creates a new one: the claim is durable *before* the merge outcome is known, so a crash or failure after the insert leaves every retry losing the uniqueness race and skipping a merge that never happened — a dropped approval on the same trust boundary, at-most-once admission mistaken for replay-safe completion. The finding is correct on its own terms.
-   → Editor: **card pending.** Reasoning for escalating rather than folding directly is recorded with the card below.
+   → Editor: incorporated, via the card below (Kyle chose the recommendation). Escalated rather than folded directly because the choice was a scope judgment — how much domain fidelity a narrative fixture owes — not a technical one; the finding itself was never in doubt. **Restructured the fixture so the cheaper alternative loses on re-review rather than patching it one layer deeper.** Pass 1 now folds finding 3's alternative *provisionally*, and pass 2 is the re-review the card contract already promised: the `security` lens files this exact claim-before-merge finding, the editor notes that making the claim recoverable (claimed-vs-completed state, stale-claim reconciliation, retry semantics) *is* a dedicated idempotency mechanism arrived at by accretion, and **withdraws the alternative** — recorded as an ordinary `incorporated` on the original finding under the original escalation, no new `AR-` id. Added a short section naming the three things this pins that a plausible-alternative-and-stop version cannot: that `incorporated (via alternative)` is provisional by construction, that "same invariant, only cheaper" is a test an alternative can fail on the *second* look, and that conceding an alternative is a normal outcome rather than an error state. This ends the regress at its source: the fixture no longer asserts the cheap path is sufficient, so there is no next layer to find.
 
 ### Code corrections applied
 
@@ -260,7 +260,7 @@ Diff captured at 2026-08-13 20:33; range `1661dfe..HEAD`; folds applied to the w
 
 ### Decision cards
 
-- **Design-shaped fold — fixture domain fidelity** (finding 3): recommendation — restructure the fixture so the cheaper alternative is folded *provisionally* and its next-pass re-review surfaces this exact claim-before-merge gap, escalating back to the dedicated idempotency mechanism, which makes the fixture teach "cheap alternatives on a trust boundary get re-reviewed and sometimes lose" and stops the regress at its source; alternatives — patch one more layer (couple claim state to merge completion with a recoverable retry path), or record the finding as `disputed` on the grounds that the fixture demonstrates card *mechanics* and its example's domain depth beyond the illustrated point isn't load-bearing; chosen: (pending).
+- **Design-shaped fold — fixture domain fidelity** (finding 3): recommendation — restructure the fixture so the cheaper alternative is folded *provisionally* and its next-pass re-review surfaces this exact claim-before-merge gap, escalating back to the dedicated idempotency mechanism, which makes the fixture teach "cheap alternatives on a trust boundary get re-reviewed and sometimes lose" and stops the regress at its source; alternatives — patch one more layer (couple claim state to merge completion with a recoverable retry path), or record the finding as `disputed` on the grounds that the fixture demonstrates card *mechanics* and its example's domain depth beyond the illustrated point isn't load-bearing; chosen: **restructure so the fixture loses the argument** (Kyle, at the pass-8 checkpoint — "let the fixture lose the argument"; the regress stops at its source rather than at its current depth, and the fixture ends up teaching something true that it previously only promised).
 
 ### Lens run summary
 
@@ -268,4 +268,4 @@ Diff captured at 2026-08-13 20:33; range `1661dfe..HEAD`; folds applied to the w
 
 ### Diff snapshot reference
 
-Diff captured at 2026-08-13 20:38; range `1661dfe..HEAD`; findings 1–2 folded to the working tree, finding 3 pending the card above.
+Diff captured at 2026-08-13 20:38; range `1661dfe..HEAD`; all three findings folded; finding 3 resolved via the checkpoint card above.

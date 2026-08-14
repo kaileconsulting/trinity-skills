@@ -84,8 +84,10 @@ mechanism) with a decision card:
 - **(Discuss, via the harness's free-form response.)**
 - **Chosen: cheaper alternative.** → `incorporated (via alternative)` —
   constrained the existing audit-log request id to be unique and made the
-  insert the merge's admission ticket; re-reviewed next pass (Codex hasn't
-  seen this implementation yet).
+  insert the merge's admission ticket; **provisional pending re-review next
+  pass** (Codex hasn't seen this implementation yet). See "the alternative
+  loses on re-review" below — this fixture deliberately follows that thread to
+  its end rather than leaving the promise of re-review unexercised.
 
 **Finding 4 — "No deterministic way to detect the autosave race after the
 fact" (MEDIUM). Genuinely ambiguous at first glance — resolved via the
@@ -177,6 +179,49 @@ needed for AR-1 specifically."
 This resolves the `reopened` item with a terminal disposition (`incorporated`),
 per the lifecycle rule that a `reopened` finding needs `incorporated`,
 `disputed`, or a **new** `AR-<n>` proposal — never a reuse of `AR-1`.
+
+### The alternative loses on re-review — finding 3's promise, kept
+
+Pass 1 folded finding 3's *cheaper alternative* provisionally, with the card
+contract's standing promise attached: Codex hadn't seen the implementation, so
+it gets re-reviewed. Pass 2 is that re-review, and the alternative does not
+survive it. The `security` lens files a fresh HIGH:
+
+> The unique insert is durable **before** the merge outcome is known. If the
+> process dies, times out, or the merge fails after the claim lands, every
+> retry loses the uniqueness race and skips a merge that never happened. This
+> is at-most-once *admission*, not replay-safe *completion* — on the approve
+> boundary it converts an interrupted approval into a permanently dropped one.
+
+The finding is correct, and the fix is not another layer: making the claim
+recoverable means distinguishing claimed-but-unfinished from completed,
+expiring or reconciling stale claims, and defining retry semantics against
+each — which is a dedicated idempotency mechanism, arrived at by accretion
+instead of by decision. So:
+
+→ `incorporated` — "the cheaper alternative is withdrawn. Finding 3's
+original card offered a dedicated idempotency-key mechanism as the
+alternative to this one; re-review shows it was the correct choice, and the
+mechanism is adopted now under the same escalation. The audit-log uniqueness
+constraint stays as defense in depth, but it is no longer what makes approve
+replay-safe."
+
+**Why this fixture follows the thread instead of stopping at a plausible
+alternative.** Three things it pins that the shorter version can't:
+1. **`incorporated (via alternative)` is provisional by construction.** The
+   re-review clause in the card's outcome mapping is not a formality — this is
+   what it looks like when it fires and the alternative loses.
+2. **On trust-boundary code, "supplies the same invariant, only cheaper" is a
+   test an alternative can *fail on the second look*.** The pass-1 card
+   correctly rejected read-then-act dedup for missing atomicity; the atomic
+   claim then failed a property nobody had named yet. Cheapness is judged
+   against the invariant, and the invariant can turn out to be larger than the
+   first framing of it.
+3. **Withdrawing an alternative is a normal outcome, not an error state.** It
+   is recorded as an ordinary `incorporated` on the original finding, under the
+   original escalation — no new `AR-` id, no reopening, no special disposition.
+   Getting this wrong is what tempts an editor to keep patching a losing
+   alternative rather than conceding it.
 
 ## Branch B — confirmed, then invalidated by a posture amendment (two-sided)
 
