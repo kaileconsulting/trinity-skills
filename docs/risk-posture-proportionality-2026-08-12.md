@@ -164,7 +164,7 @@ docs/risk-posture.md (per-repo, downstream) # fallback posture for standalone re
 - Posture-dependency fixture, two-sided and interruption-crossing: a confirmed accepted-risk whose descriptor fields are then amended returns to `proposed`; one whose fields are untouched by an unrelated posture edit stays `confirmed`; both outcomes reproduce identically when the descriptor and digest are re-resolved from the pass log + posture source alone after a simulated session interruption; a descriptor that no longer resolves invalidates.
 
 **Iterate-review:** YES (rationale: changes the loop's safety guardrails — the exact machinery that keeps unattended runs honest)
-**Status:** in progress (built 2026-08-13, commit `93ee247`; its own dedicated `iterate-review` is **in progress** — 12 passes run so far against scope-tag `phase-2`, range `1661dfe..HEAD`, log at `docs/reviews/code-review-phase-2.md`. Kyle's call was to batch across phases rather than review per-phase; in practice Phase 0+1 converged as one batch and Phase 2 is being reviewed as its own)
+**Status:** reviewed (built 2026-08-13, commit `93ee247`; its own dedicated `iterate-review` **CONVERGED at pass 14 — APPROVE×3, zero findings** — 14 passes against scope-tag `phase-2`, range `1661dfe..HEAD`, log at `docs/reviews/code-review-phase-2.md`. Kyle's call was to batch across phases rather than review per-phase; in practice Phase 0+1 converged as one batch and Phase 2 was reviewed as its own)
 
 ### Phase 3 — Live validation on doc-bot (~1 review session)
 **Deliverables:**
@@ -313,7 +313,7 @@ iterate-review append/maintain these sections automatically.
 |-------|----------------|--------|-----------|----------|
 | Phase 0 | YES | reviewed | Pass 8, APPROVE×3 (2026-08-13) | `docs/reviews/code-review-branch-kyle-risk-posture-phase-0.md` |
 | Phase 1 | YES | reviewed | Pass 8, APPROVE×3 (2026-08-13) | `docs/reviews/code-review-branch-kyle-risk-posture-phase-0.md` |
-| Phase 2 | YES | in progress | — | review in progress — 12 passes, `docs/reviews/code-review-phase-2.md` |
+| Phase 2 | YES | reviewed | — | converged at pass 14 (APPROVE×3), `docs/reviews/code-review-phase-2.md` |
 | Phase 3 | NO  | n/a | n/a | n/a |
 -->
 

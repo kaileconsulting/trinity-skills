@@ -425,3 +425,48 @@ Diff captured at 2026-08-13 20:58; range `1661dfe..HEAD`; folds applied to the w
 ### Diff snapshot reference
 
 Diff captured at 2026-08-13 21:03; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
+
+## Pass 14 — 2026-08-13 21:05 [HISTORICAL] — **CONVERGED**
+
+**Scope:** custom range `1661dfe..HEAD` (pass-13 folds committed at `e12abfe`) · **Diff size:** 1156 lines · **Verdict:** **APPROVE** (worst-of; no FAILED lenses) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, security, qa
+
+**APPROVE ×3, zero findings across all three lenses.** The review converged on its own condition, not on a budget expiring.
+
+### Findings
+
+- (none — all three lenses clean)
+
+### Code corrections applied
+
+- `docs/risk-posture-proportionality-2026-08-12.md:Phase 2 status + review-status table` (lens: senior-dev, qa — co-reported, identical) — both locations still said 12 review passes; pass 13 had since landed. Updated to 14 and to `reviewed` / converged, which is the accurate terminal state now that this pass closes the review.
+
+### New questions Codex raised
+
+- (none)
+
+### Decision cards
+
+- (none this pass)
+
+### Lens run summary
+
+- senior-dev: **APPROVE** · security: **APPROVE** · qa: **APPROVE**
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-13 21:05; range `1661dfe..HEAD`; corrections applied to the working tree, not yet committed.
+
+---
+
+## Review summary — converged at pass 14
+
+**14 passes, APPROVE×3 at pass 14, 0 disputed findings** (one `disputed` at pass 1 stands: the request to convert the read-only merge fixture into executable test infrastructure). Scope: `1661dfe..HEAD`, Phase 2's own commits, deliberately excluding Phase 0+1 which converged separately in an 8-pass review.
+
+**HIGH+MEDIUM trajectory:** 5, 3, 3, 3, 3, 3, 3, 3, 2, 2, 3, 1, 1, 0. Flat at 3 for seven consecutive passes before breaking — worth recording, because that flat stretch tripped the stall guardrail twice and both continue decisions turned out to be right: every finding in it was real, and two of the most valuable findings of the whole review (passes 9 and 11) came after it.
+
+**Lens behavior:** `security` returned APPROVE at passes 5, 6, 9, 10, 12, 13, 14 — and REVISE at 7, 8, 11, each time with a finding no other lens raised. A lens being quiet is not a lens being idle; its two substantive findings were a real trust-boundary flaw in the fixture's example (7–8) and a real injection surface in the resume ledger (11).
+
+**Three things this review is worth remembering for:**
+1. **A consistency frontier that ran six passes deep.** Passes 6, 7, 8 each filed primarily against the previous pass's own fix, and 10→11→13 repeated the pattern on a second contract. Neither was a sign to stop; both terminated on their own.
+2. **The editor reintroduced, twice, the exact failure the machinery prevents.** Pass 4 caught a fold that opened a path to silently adopting an unapproved mechanism; pass 9 caught the same class again in the fixture restructure. Reviewing your own machinery does not make you immune to its failure modes — it makes you likelier to hit them, since you're editing the surface that defines them.
+3. **Editor pushback got spent deliberately and sparingly.** One `disputed` (pass 1, executable-fixture scope), one declined suggested_action recorded with reasoning (pass 6, a confirmation-revocation workflow nothing needed), and one explicit refusal to push back where the anti-criteria forbid it (pass 7, trust-boundary code). Three uses, three different outcomes, all reasoned in the log rather than silently taken.
