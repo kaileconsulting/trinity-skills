@@ -197,14 +197,44 @@ The finding is correct, and the fix is not another layer: making the claim
 recoverable means distinguishing claimed-but-unfinished from completed,
 expiring or reconciling stale claims, and defining retry semantics against
 each — which is a dedicated idempotency mechanism, arrived at by accretion
-instead of by decision. So:
+instead of by decision.
 
-→ `incorporated` — "the cheaper alternative is withdrawn. Finding 3's
-original card offered a dedicated idempotency-key mechanism as the
-alternative to this one; re-review shows it was the correct choice, and the
-mechanism is adopted now under the same escalation. The audit-log uniqueness
+**This is a fresh finding and it gets its own accounting.** Finding 3 was
+terminally dispositioned in pass 1 as `incorporated (via alternative)`; the
+pass-2 defect is a *new* returned finding, call it finding 6, and step 12
+requires every returned finding to be dispositioned in the pass that returned
+it. It is not folded into finding 3's entry, and finding 3's pass-1 record is
+not rewritten — the pass log is append-only history, so pass 2 records what
+pass 2 learned.
+
+**And it escalates again — the pass-1 card does not carry authorization
+forward.** This is the trap worth naming: the human's pass-1 choice
+authorized *the cheaper alternative*, not the dedicated mechanism. Adopting
+that mechanism now is a mechanism-requiring fold under step 12's own signals
+(a new persisted field, a cross-request invariant), so it pauses for its own
+card. "The alternative failed, therefore the alternative we didn't pick is
+now approved" is exactly the silent-mechanism adoption the escalation rule
+exists to prevent — a resolved card authorizes the option chosen, never the
+options declined:
+
+- **Recommendation:** adopt the dedicated idempotency-key mechanism — the
+  option offered and declined in pass 1, now with evidence the cheaper path
+  can't supply the invariant.
+- **Alternatives:** none remaining that are legal here — the cheaper path is
+  the one that just failed, and `accept the risk` stays excluded because
+  `editor/approve.ts` is still a `PF-shipbar` trust boundary. A card with
+  zero listed alternatives is still a real two-way decision (adopt, or
+  discuss) and is presented exactly like any other.
+- **(Discuss, via the harness's free-form response.)**
+- **Chosen: adopt the mechanism.** Written `chosen: (pending)` before
+  presentation, updated in place after — the same two-phase persistence as
+  every other card, in pass 2's own block.
+
+→ finding 6: `incorporated` — "adopted the dedicated idempotency-key
+mechanism via a fresh design-shaped-fold card. The audit-log uniqueness
 constraint stays as defense in depth, but it is no longer what makes approve
-replay-safe."
+replay-safe. Finding 3's pass-1 `incorporated (via alternative)` record
+stands as written; this entry supersedes the alternative it chose."
 
 **Why this fixture follows the thread instead of stopping at a plausible
 alternative.** Three things it pins that the shorter version can't:
@@ -217,11 +247,16 @@ alternative.** Three things it pins that the shorter version can't:
    claim then failed a property nobody had named yet. Cheapness is judged
    against the invariant, and the invariant can turn out to be larger than the
    first framing of it.
-3. **Withdrawing an alternative is a normal outcome, not an error state.** It
-   is recorded as an ordinary `incorporated` on the original finding, under the
-   original escalation — no new `AR-` id, no reopening, no special disposition.
-   Getting this wrong is what tempts an editor to keep patching a losing
-   alternative rather than conceding it.
+3. **Withdrawing an alternative is a normal outcome, not an error state — but
+   it is never a free pass to the option that lost.** The failed re-review
+   arrives as its own returned finding with its own disposition, and adopting
+   the mechanism the human declined in pass 1 requires its own card. No new
+   `AR-` id and no reopening are involved (nothing here is an accepted risk),
+   and pass 1's record is never rewritten. Getting this wrong in either
+   direction is the real hazard: an editor who won't concede keeps patching a
+   losing alternative, and an editor who concedes *too smoothly* slides into
+   a mechanism nobody approved — the same silent adoption the escalation rule
+   exists to prevent.
 
 ## Branch B — confirmed, then invalidated by a posture amendment (two-sided)
 

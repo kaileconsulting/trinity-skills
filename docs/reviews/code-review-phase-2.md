@@ -269,3 +269,34 @@ Diff captured at 2026-08-13 20:33; range `1661dfe..HEAD`; folds applied to the w
 ### Diff snapshot reference
 
 Diff captured at 2026-08-13 20:38; range `1661dfe..HEAD`; all three findings folded; finding 3 resolved via the checkpoint card above.
+
+## Pass 9 — 2026-08-13 20:49 [HISTORICAL]
+
+**Scope:** custom range `1661dfe..HEAD` (pass-8 folds committed at `7b78b41`, `e3ab811`) · **Diff size:** 1021 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+1. **Failed alternative silently adopts the previously unchosen mechanism** — HIGH · lens: senior-dev, qa (co-reported, independently, same failure): pass 8's new "the alternative loses on re-review" section had the editor withdraw the cheaper alternative and adopt the dedicated idempotency mechanism *"under the same escalation."* But the human's pass-1 card authorized the cheaper alternative — not the mechanism it declined. Adopting a persisted cross-request idempotency mechanism is a mechanism-requiring fold on its own signals, so treating the resolved card as continuing authorization is exactly the silent adoption step 12's hard rule forbids.
+   → Editor: incorporated — and this is the finding of the whole review to sit with. **My fold for pass 8's finding 3 reintroduced the precise failure mode this machinery exists to prevent, inside the fixture that demonstrates the machinery** — the same class pass 4 caught in the zero-alternative escape valve. Both lenses found it independently, which is the strongest signal available here that it's real. Fixed by making the failed re-review escalate again: a fresh design-shaped-fold card in pass 2, with `(pending)` → resolved persistence shown, zero listed alternatives (the cheap path just failed; `accept the risk` stays excluded on a `PF-shipbar` trust boundary) — which is a legitimate card shape per the cardinality rule, not a reason to skip presentation. Stated the general rule the fixture now teaches: **a resolved card authorizes the option chosen, never the options declined.** Also extended the section's third lesson to name the hazard in both directions — an editor who won't concede keeps patching a losing alternative; one who concedes too smoothly slides into a mechanism nobody approved.
+2. **Fresh pass-2 finding is dispositioned against the wrong ledger item** — HIGH · lens: senior-dev: pass 8's section called the claim-before-merge defect a "fresh HIGH" and then recorded the outcome as an ordinary `incorporated` *on the original finding* — but finding 3 was already terminally dispositioned in pass 1 as `incorporated (via alternative)`, and the newly returned pass-2 finding never got a disposition of its own. Step 12 requires every returned finding to be accounted for; as written, a HIGH could go unrecorded while the pass looked clear.
+   → Editor: incorporated — gave the pass-2 defect its own identity (finding 6) and its own disposition, and stated the accounting rule explicitly: the pass log is append-only history, so a later pass records what that pass learned rather than rewriting an earlier entry. Finding 3's pass-1 record stands as written; finding 6's entry names what it supersedes. This also removes the temptation the original phrasing created — folding a new finding into an old entry makes the ledger look tidier and the accounting wrong.
+
+### Code corrections applied
+
+- `iterate-review/examples/merge/README.md:scenario 04 table row` (lens: senior-dev, qa — co-reported) — the row advertised the lifecycle as "terminal re-disposition under a new id," but the fixture resolves reopened AR-1 as `incorporated` under its *existing* id; only a fresh accepted-risk proposal takes a new `AR-` id. Corrected to state both paths separately, since the conflated version described the fixture's own headline case wrongly.
+
+### New questions Codex raised
+
+- (none)
+
+### Decision cards
+
+- (none this pass)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: **APPROVE** · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-13 20:49; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
