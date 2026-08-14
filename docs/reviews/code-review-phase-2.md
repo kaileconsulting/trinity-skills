@@ -1,6 +1,6 @@
 # Code Review — phase-2
 
-## Pass 1 — 2026-08-13 19:14 [HISTORICAL]
+## Pass 1 — 2026-08-13 15:01 [HISTORICAL]
 
 **Scope:** custom range `1661dfe..eb30c6a` (Phase 2's commits only — Phase 0+1 already converged separately, `docs/reviews/code-review-branch-kyle-risk-posture-phase-0.md`) · **Diff size:** 435 lines / 5 files · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, qa
 
@@ -35,9 +35,9 @@
 
 ### Diff snapshot reference
 
-Diff captured at 2026-08-13 19:14; range `1661dfe..eb30c6a`; folds applied to the working tree, not yet committed.
+Diff captured at 2026-08-13 15:01; range `1661dfe..eb30c6a`; folds applied to the working tree, not yet committed.
 
-## Pass 2 — 2026-08-13 19:21 [HISTORICAL]
+## Pass 2 — 2026-08-13 15:16 [HISTORICAL]
 
 **Scope:** custom range `1661dfe..HEAD` (pass-1 folds committed at `654eaf8`) · **Diff size:** 592 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, qa
 
@@ -68,9 +68,9 @@ Diff captured at 2026-08-13 19:14; range `1661dfe..eb30c6a`; folds applied to th
 
 ### Diff snapshot reference
 
-Diff captured at 2026-08-13 19:21; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
+Diff captured at 2026-08-13 15:16; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
 
-## Pass 3 — 2026-08-13 19:35 [HISTORICAL]
+## Pass 3 — 2026-08-13 15:23 [HISTORICAL]
 
 **Scope:** custom range `1661dfe..HEAD` (pass-2 folds committed at `d6a7906`) · **Diff size:** 605 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, qa
 
@@ -101,9 +101,9 @@ Diff captured at 2026-08-13 19:21; range `1661dfe..HEAD`; folds applied to the w
 
 ### Diff snapshot reference
 
-Diff captured at 2026-08-13 19:35; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
+Diff captured at 2026-08-13 15:23; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
 
-## Pass 4 — 2026-08-13 21:25 [HISTORICAL]
+## Pass 4 — 2026-08-13 15:56 [HISTORICAL]
 
 **Scope:** custom range `1661dfe..HEAD` (pass-3 folds committed at `142d716`) · **Diff size:** 628 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, qa
 
@@ -134,9 +134,9 @@ Diff captured at 2026-08-13 19:35; range `1661dfe..HEAD`; folds applied to the w
 
 ### Diff snapshot reference
 
-Diff captured at 2026-08-13 21:25; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
+Diff captured at 2026-08-13 15:56; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
 
-## Pass 5 — 2026-08-13 20:18 [HISTORICAL]
+## Pass 5 — 2026-08-13 20:00 [HISTORICAL]
 
 **Scope:** custom range `1661dfe..HEAD` (pass-4 folds committed at `092de54`; pass log checkpointed at `2919a59`) · **Diff size:** 791 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, security, qa
 
@@ -167,4 +167,37 @@ Diff captured at 2026-08-13 21:25; range `1661dfe..HEAD`; folds applied to the w
 
 ### Diff snapshot reference
 
-Diff captured at 2026-08-13 20:18; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
+Diff captured at 2026-08-13 20:00; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
+
+## Pass 6 — 2026-08-13 20:23 [HISTORICAL]
+
+**Scope:** custom range `1661dfe..HEAD` (pass-5 folds committed at `ca39d60`) · **Diff size:** 839 lines · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+1. **Malformed-posture cards cannot satisfy the uniform persistence contract** — HIGH · lens: senior-dev: pass 5's block-opening fix justified writing the full Scope/Diff-size/Verdict/Posture/Lenses header line up front on the grounds that "every field is already known at that point, since the worst-of verdict is fixed by the merge in step 11." That holds for four of the five card types — but the malformed-posture-source card halts in **step 9, before fan-out**, when no lens has run and no verdict exists. So the one persistence rule I had just declared uniform across all five card types had no valid durable location for one of them, defeating the interruption guarantee exactly where it was claimed.
+   → Editor: incorporated — my own pass-5 fold's bug, and a good demonstration that a rule justified by "this is always known" deserves a check of every entry point, not just the one in front of you. Fixed by making the header line obey the same two-phase discipline the card itself uses rather than inventing a second location: the block opens with the fields that *are* known at step 9 (`Scope`, `Diff size`, `Posture`) and `(pending)` for those that aren't (`Verdict`, `Lenses`), each replaced in place once the merge determines it. Template updated to show both fields' `(pending)` form. Explicitly reaffirmed the property Codex was defending — no card type is exempt from persistence-before-presentation, and none needs a location outside the pass block — and stated what an abort at that card leaves behind (a block with `(pending)` header fields, marked incomplete), so the degenerate case is a documented outcome rather than an undefined one.
+2. **Rejection cannot invalidate an already-confirmed item under the defined transitions** — MEDIUM · lens: senior-dev: pass 5's step-16 wording cited two ways a confirmation becomes invalid — posture-digest mismatch, or "to `reopened` by a rejection." But the lifecycle defines `rejected`/`reopened` as a transition out of `proposed`, taken *instead of* confirming; confirmed items are never re-presented and have no revocation transition. My example was unreachable, and implied a workflow that doesn't exist.
+   → Editor: incorporated **by narrowing, not by building** — deleted the rejection clause and stated the invariant positively: posture invalidation is the *only* path out of `confirmed`. Codex's suggested_action offered "or explicitly define who may revoke a confirmed item, when that card is surfaced, and how the transition is persisted" — that alternative is a new state transition, a new card type, and new persistence for a capability nothing has asked for, to fix a sentence that was simply wrong. Took the cheap correct option and recorded why the expensive one was declined: the one thing that legitimately undoes a confirmation is the posture text it was granted against changing underneath it, which the dependency descriptor already detects.
+3. **Resolved-card interruption has no unambiguous resume marker** — MEDIUM · lens: qa: `(pending)` is the resume signal, but it disappears the moment a card is answered. An interruption *after* the answer but *before* the resulting disposition and remaining findings are folded leaves an apparently-settled card in a block that a resuming session cannot distinguish from a complete pass — so remaining findings get silently skipped.
+   → Editor: incorporated, and the fix reuses two things that already exist rather than adding a progress ledger. (a) The block's own header tag becomes the completeness marker: `[IN PROGRESS]` from first durable write, flipped to `[HISTORICAL]` as the last write of the pass — the tag covers the whole interruption window, where `(pending)` covers only the sub-window before an answer. The tag is now stated to be the *authoritative* signal, with `(pending)` explicitly finer-grained and subordinate. (b) Recovering *where* folding stopped needs no new bookkeeping at all: the pass's `pass-N.<lens>.response.json` artifacts are already durable and immutable in the state dir, so remaining work is exactly the merged findings/corrections/questions those responses contain that the block doesn't yet record — diff the two. Also pinned the failure mode Codex was worried about: a block left `[IN PROGRESS]` after a pass ends means interrupted, never converged.
+
+### Code corrections applied
+
+- `docs/reviews/code-review-phase-2.md:Pass 4 and Pass 5 headings` (lens: senior-dev) — Pass 4 was stamped 21:25 while the *later* Pass 5 was stamped 20:18, contradicting the documented pass order. Investigated rather than patching the one visible pair: the state dir's `pass-N.summary.json` mtimes are ground truth for when each pass's Codex calls actually ran (15:01, 15:16, 15:23, 15:56, 20:00), and **every** logged timestamp for passes 1–5 was wrong — earlier blocks drifted ~4h ahead, pass 4 ~5.5h, which is what made the inversion visible at pass 5 rather than creating it. Restamped all five blocks and their `Diff captured at` lines to the true run times, and added a template note that the timestamp is the pass's Codex-run time (`pass-N.summary.json` mtime), not the block-write time — the ambiguity that produced the drift.
+
+### New questions Codex raised
+
+- (none)
+
+### Decision cards
+
+- (none this pass)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: **APPROVE** (zero findings — second consecutive clean pass for this lens) · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-13 20:23; range `1661dfe..HEAD`; folds applied to the working tree, not yet committed.
