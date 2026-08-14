@@ -2,7 +2,7 @@
 
 ## 2.3.0 — 2026-08-14 — risk posture & proportionality
 
-Plan: `docs/risk-posture-proportionality-2026-08-12.md` (converged after 9
+Plan: `docs/archive/risk-posture-proportionality-2026-08-12.md` (converged after 9
 iterate-plan passes). **Kyle initiated this one**, after a week of heavy use
 raised a specific complaint: review cost was running 2–3× build cost and
 phases were taking 5–10 passes, because the loop had no way to know that a
@@ -160,6 +160,33 @@ that Phase 1's own malformed-source detection would immediately reject.
 - SHA-1 → **SHA-256** for the register digest: it is an adversarial integrity
   boundary, unlike the state-file scope hash elsewhere, which has no
   adversarial model and stays sha1.
+
+### Known gaps
+
+Acceptance criteria at ship: **2 of 6 met, 3 built-and-fixture-pinned but never
+exercised live, 1 deliberately not met** — annotated individually in the
+archived plan. Stated plainly here because this release's whole subject is not
+overstating what a review has established:
+
+- **No live review has run against a real posture file.** Both reviews that
+  validated this work were of *this* repo, which has no `docs/risk-posture.md`.
+  The no-posture path is evidenced 22 times over (every pass block records
+  `Posture: absent`); the with-posture path is pinned by fixture only.
+- **`accepted-risk` has never fired on a live finding.** Across 22 passes, no
+  finding was disproportionate enough to decline. The lifecycle is pinned
+  state-by-state by `04-accepted-risk-lifecycle`, but the mechanism this
+  release exists for has not yet been used in anger.
+- **One of five decision-card moments has been exercised live** (design-shaped
+  fold, at Phase 2 review pass 8 — the escalation, the pending persistence, and
+  the resume signal all behaved as specified). The other four are specified and
+  fixture-pinned only.
+- **The pass-count claim is unmeasured.** Phase 3 became a read-only
+  retrospective, so whether posture-awareness actually reduces review passes
+  remains an open question, answerable only by a future real phase reviewed
+  against an applied posture file.
+
+Treat the fixtures as evidence the design is coherent, not as evidence it works
+in the field.
 
 ### Validated (Phase 3 — retrospective, read-only)
 

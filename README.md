@@ -4,7 +4,7 @@ Three Claude Code skills that formalize the **Claude ⇄ Codex review loop** for
 
 | Skill | What it does |
 |---|---|
-| **`create-plan`** | Scaffold a new plan markdown file in `docs/` using a canonical template (phases, iterate-review markers, HISTORICAL stubs). |
+| **`create-plan`** | Scaffold a new plan markdown file in `docs/` using a canonical template (phases, iterate-review markers, HISTORICAL stubs) — including the project's **risk posture**: what ships, what the blast radius is, what the ship bar is, which code is a trust boundary. |
 | **`iterate-plan`** | Iterate a plan between Claude (the editor — whichever model drives the session) and Codex (structured reviewer) until APPROVE. Runs an **architect** and a **product-manager** lens per pass, each fed the plan sections it needs, and merges their findings into one list. Codex never edits — it returns JSON-schema-validated findings + plan corrections + question answers; the editor folds them in. |
 | **`iterate-review`** | Same loop applied to **code changes** — a working-tree diff, a feature branch, or a PR (open or merged). Deterministically selects **senior-dev** (always) plus **security** and **QA** based on what the diff touches, then merges their findings. The editor folds them into the working code. |
 
@@ -28,6 +28,7 @@ Sending a plan or diff to Codex for review is high-value but tedious to do by ha
 - **Claude is the sole editor.** Codex runs in a `-s read-only -a never` sandbox with `--output-schema` enforcement. It returns structured findings; the editor (the Claude session driving the skill) does every file edit.
 - **No silent iteration.** After every pass the human is prompted to Continue / Converge / Abort. The skills never decide convergence themselves.
 - **HISTORICAL audit trail.** Every pass appends a `[HISTORICAL]` block to the plan (or pass log) so subsequent passes see the full review history and can spot regressions or unfolded findings.
+- **Not everything real is worth fixing here.** A reviewer with no sense of what you're building will file correct findings that are wrong for your project. The editor can decline them — but only against a written risk posture, with the reasoning recorded (see [Risk posture](#risk-posture--proportionality)).
 
 ## Persona lenses
 
@@ -75,6 +76,41 @@ A reviewer that raises a question classifies it by **who can settle it**, and th
 
 Without this, the guardrail read "a question the editor can't answer from the plan + repo context," which lumped all three together: an unattended loop would stop to ask something one file read would have answered. **When a reviewer is unsure, the contract requires `needs_human`** — an unnecessary escalation costs a question, while mislabeling your decision as machine-resolvable invites a fabricated answer. Each label carries a one-line `why` so it can be audited rather than trusted, and the editor overrides a label it doesn't believe.
 
+## Risk posture & proportionality
+
+Every version before this one made the reviewer **find more**. That has a cost the loop couldn't see: a finding can be entirely correct and still be disproportionate to what you're actually building — hardening for a scale you'll never reach, an auth boundary your deployment topology already provides, an edge case whose worst outcome is mild inconvenience. Folding those anyway is how review cost ends up 2–3× build cost, and how a phase takes ten passes instead of four.
+
+The fix is not a laxer reviewer. It's giving the loop **the project's own risk posture**, and giving the editor a principled, recorded way to say *no*.
+
+```
+create-plan                iterate-review
+────────────               ────────────────────────────────────────────
+PF- posture fields ──────▶ RISK POSTURE block in every lens's input
+(what ships, blast                     │
+ radius, ship bar,                     ▼
+ trust boundaries)         reviewer files a finding
+                                       │
+docs/risk-posture.md ────▶ ┌───────────┴───────────┐
+(accepted risks,           ▼                       ▼
+ RR- entries)      register-match          accepted-risk (AR-<n>)
+                   already accepted,       new proposal → YOU confirm
+                   no edit, no re-ask      or reject at a checkpoint
+```
+
+**Posture is captured once, at plan time.** `create-plan` asks for it as `PF-` fields, so it exists before any code does and isn't invented mid-argument to win one.
+
+**It reaches the reviewer.** Lenses see the posture, so the `security` lens stops re-filing "this endpoint has no auth" against a deployment whose perimeter is documented — a real dispute that recurred three times across one project's phases before this existed, re-argued from scratch every time.
+
+**Two ways a finding can be declined, and they're different.** `register-match` means *you already decided this* — the finding falls inside a recorded entry's bound, so it needs no code edit and no fresh confirmation. `accepted-risk` means *this is new* — the editor proposes it with a written rationale, and it stays open, blocking convergence, until you confirm or reject it at a checkpoint. **The editor can propose; only you can accept.**
+
+**A confirmation knows what it rests on.** Every confirmed risk records the posture fields its rationale depends on, plus a digest of their content. Edit one of those fields and the confirmation invalidates itself and comes back for a fresh decision; edit anything else and it stands. Your acceptance was of a specific bound, not of a topic.
+
+**Trust boundaries are exempt from all of it.** Code you named in `PF-shipbar` can never be declined — not via `accept the risk`, not via register-match, not via editor pushback. And posture is read at both the current revision and the base revision, so a change can't edit the posture that would excuse it, or quietly narrow a trust boundary, inside the same diff.
+
+**When the editor must stop and ask.** Before folding any finding, it checks whether incorporating it needs a *new mechanism* — a schema change or migration, a new persisted or protocol field, an invariant outliving the request, a background process, a new dependency. If so it pauses **at that finding** and presents a decision card rather than quietly designing something. Cards are the same shape everywhere the loop needs judgment: a recommendation, up to three alternatives, and an always-available *discuss*. A card is never skipped, and **a resolved card authorizes the option you chose — never the ones you declined.**
+
+What this does **not** do: decide anything for you. Nothing is accepted without your confirmation, nothing on a trust boundary is negotiable, and every declined finding leaves a written rationale in the pass log pointing at the posture field it rests on. The goal is fewer passes spent arguing about things you already settled — not fewer things fixed.
+
 ## Prerequisites
 
 - [Claude Code](https://claude.com/claude-code) (the skills run inside it)
@@ -106,7 +142,7 @@ Inside any Claude Code session:
 /create-plan refactor-payments
 ```
 
-walks you through plan-type selection (`initiative` or `fix`), phase metadata, and writes `docs/refactor-payments-YYYY-MM-DD.md`. Fill in TL;DR / Why / Approach, then:
+walks you through plan-type selection (`initiative` or `fix`), phase metadata, and the project's [risk posture](#risk-posture--proportionality), then writes `docs/refactor-payments-YYYY-MM-DD.md`. Fill in TL;DR / Why / Approach, then:
 
 ```
 /iterate-plan docs/refactor-payments-2026-05-19.md
@@ -177,8 +213,11 @@ trinity-skills/
 │   └── state/                      # gitignored at runtime
 ├── v1/                             # frozen single-reviewer skills (see below)
 ├── tools/                          # dev-time checks (see below)
-└── docs/                           # plans; archive/ holds shipped ones
+└── docs/                           # plans; archive/ holds shipped ones,
+                                    # reviews/ holds in-flight pass logs
 ```
+
+Two files live in **your** repo rather than this one: `docs/<plan>.md` (written by `create-plan`, carrying the `PF-` posture fields) and `docs/risk-posture.md` (the accepted-risks register, written only when you confirm an entry). Neither is created speculatively — the register appears the first time you accept a risk.
 
 `state/` directories hold per-invocation run state (per-lens Codex response JSON, final state files). They're populated at runtime through the symlink and excluded from version control.
 
@@ -222,6 +261,7 @@ Each iterate-* skill invokes Codex as one subprocess **per selected lens**, each
 1. **Sandbox** — `codex -a never exec -s read-only --skip-git-repo-check` makes file writes structurally impossible from Codex's side.
 2. **Output schema** — `--output-schema <reviewer-output.schema.json>` forces Codex's response into a strict JSON shape (verdict + findings + corrections + answers). Free-form prose is rejected by Codex's runtime before it reaches the editor.
 3. **Patch-marker rejection** — the editor scans each response for `*** Begin Patch`, unified-diff markers, and merge-conflict markers before folding. Defense in depth against a Codex response that smuggles a patch into a description field.
+4. **Reviewer text is data, never control.** Findings are model-authored strings written into a pass log that also carries the review's own progress markers. They're sanitized to single logical lines with marker sequences escaped, and progress is only ever read from editor-written structural positions — so a crafted source comment can't induce a lens to emit a line that makes a resuming session think an unfixed HIGH was already handled.
 
 This makes the editor/reviewer separation a structural property of the system, not a trust property. Even an out-of-contract response gets caught at the gateway.
 

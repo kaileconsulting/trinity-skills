@@ -164,7 +164,7 @@ docs/risk-posture.md (per-repo, downstream) # fallback posture for standalone re
 - Posture-dependency fixture, two-sided and interruption-crossing: a confirmed accepted-risk whose descriptor fields are then amended returns to `proposed`; one whose fields are untouched by an unrelated posture edit stays `confirmed`; both outcomes reproduce identically when the descriptor and digest are re-resolved from the pass log + posture source alone after a simulated session interruption; a descriptor that no longer resolves invalidates.
 
 **Iterate-review:** YES (rationale: changes the loop's safety guardrails — the exact machinery that keeps unattended runs honest)
-**Status:** reviewed (built 2026-08-13, commit `93ee247`; its own dedicated `iterate-review` **CONVERGED at pass 14 — APPROVE×3, zero findings** — 14 passes against scope-tag `phase-2`, range `1661dfe..HEAD`, log at `docs/reviews/code-review-phase-2.md`. Kyle's call was to batch across phases rather than review per-phase; in practice Phase 0+1 converged as one batch and Phase 2 was reviewed as its own)
+**Status:** reviewed (built 2026-08-13, commit `93ee247`; its own dedicated `iterate-review` **CONVERGED at pass 14 — APPROVE×3, zero findings** — 14 passes against scope-tag `phase-2`, range `1661dfe..HEAD`, log at `docs/archive/code-review-phase-2.md`. Kyle's call was to batch across phases rather than review per-phase; in practice Phase 0+1 converged as one batch and Phase 2 was reviewed as its own)
 
 ### Phase 3 — Live validation on doc-bot (~1 review session)
 **Deliverables:**
@@ -238,12 +238,16 @@ Not proposed as a register entry: the deferred ruleset-ref-scoping finding (Phas
 
 ## Acceptance criteria
 
-- [ ] Fresh plans of **both types** scaffolded by create-plan carry their Risk posture variant — initiative: all three answers under `PF-` ids; fix: the mandatory lightweight paragraph — with any register entries landing in `docs/risk-posture.md`, and an iterate-plan pass raises no posture-specific format findings against either.
-- [ ] iterate-review passes include the posture block in the lens inputs when a posture source exists (correct precedence and source attribution when multiple sources exist); with no source, the intent file carries zero posture-specific bytes.
-- [ ] `accepted-risk` exists end-to-end with stable ids and the full lifecycle (`proposed` → `confirmed`, or → `rejected` → `reopened`): disposition → batched checkpoint confirmation → recorded in pass log and state file; Converge is impossible while any item is `proposed` or `reopened`.
-- [ ] Mechanism-requiring folds halt the loop with a design-decision framing instead of being built silently, per the operational boundary (signals + examples) in SKILL.md.
-- [ ] Every named human-judgment moment (accepted-risk confirmation, design-shaped-fold escalation, `needs_human` questions, non-convergence stalls, malformed-posture-source resolution) produces a decision card — recommendation, 2–3 alternatives, standing discuss option — persisted in the pass log, where selecting any non-discuss option alone resumes the loop per that card type's outcome mapping (discuss deliberately pauses into conversation and re-presents).
-- [ ] One live doc-bot review runs as the Phase 3 case study, with its outcome classified against the pre-defined success/inconclusive/regression classes and its dimensions recorded.
+**Status at ship (2026-08-14): 2 of 6 met, 3 built-and-fixture-pinned but never exercised live, 1 deliberately not met.** Recorded honestly rather than ticked — this plan's whole subject is not overstating what a review has established, and the same standard applies to its own closeout. Every criterion below carries its evidence or its gap.
+
+- [ ] **Fresh plans of both types carry their Risk posture variant.** — **UNVERIFIED.** The capture surface shipped and was reviewed (Phase 0, converged), but no fresh plan of either type has been scaffolded through `create-plan` since. First real use of `/create-plan` closes this; nothing further needs building.
+- [x] **Posture reaches the lens inputs when a source exists; zero posture bytes when it doesn't.** — **Half demonstrated live, half by fixture.** The no-source half is evidenced 22 times over: this repo has no `docs/risk-posture.md`, and every pass log block across both reviews records `Posture: absent`, with the composed inputs carrying no posture bytes. The with-source half (precedence + attribution across multiple sources) is pinned by fixture `03-register-match-gates` only — no live review has yet run against a real posture file.
+- [ ] **`accepted-risk` end-to-end with the full lifecycle.** — **BUILT, NOT EXERCISED.** The lifecycle, accounting table, and Converge predicate all shipped and are pinned state-by-state by fixture `04-accepted-risk-lifecycle` (real sha256 digests, two-sided invalidation, a demonstrated session boundary). But across 22 review passes, **no accepted-risk proposal ever arose** — no finding in this project was disproportionate enough to decline. The mechanism has never run on a live finding.
+- [x] **Mechanism-requiring folds halt with a design-decision framing.** — **MET, exercised live.** Phase 2 review pass 8 finding 3: rather than fold or dispute, the editor escalated a genuine scope judgment (how much domain fidelity a narrative fixture owes) as a design decision card, recorded it `chosen: (pending)` before presenting, left the pass block `[IN PROGRESS]`, and sealed it after Kyle answered. The halt, the persistence, and the resume signal all behaved as specified — on machinery that had shipped hours earlier.
+- [ ] **All five named human-judgment moments produce a decision card.** — **1 of 5 live.** Design-shaped-fold escalation is evidenced above. Accepted-risk confirmation, `needs_human` questions, non-convergence stalls, and malformed-posture-source resolution are specified and fixture-pinned but never fired in a real pass. Note also that this criterion's own wording — "2–3 alternatives" — was **superseded during the review**: the shipped rule is *up to* 3, with a floor of zero listed alternatives, since context-sensitive omission can legitimately remove them all and the recommendation plus `discuss` is still a real decision. The criterion is stale, not the implementation.
+- [ ] **One live doc-bot review as the Phase 3 case study.** — **DELIBERATELY NOT MET.** Kyle changed Phase 3's scope mid-plan from live validation to read-only retrospective mining, because doc-bot's write-path had already converged and sat in an open PR by the time Phase 3 started. The retrospective is recorded above and classified as a **premise check** — strongly validating on premise, silent on pass count. The pass-count question this criterion was written to answer remains genuinely open.
+
+**What that adds up to.** The machinery is built, reviewed to APPROVE×3 twice, and pinned by fixtures. What it has *not* had is a live review of a real project against a real posture file — which is the only thing that can answer whether it reduces pass count. Treat the fixtures as evidence the design is coherent, not as evidence it works in the field.
 
 ## Risks
 
@@ -282,11 +286,11 @@ Training the editor that pushback is available could swing the 89% fold rate too
 
 ## Closeout
 
-- [ ] Append entry to `CHANGELOG.md`: what shipped, ship commit, key delta, link to archived plan.
-- [ ] Update memory (`trinity-expansion.md`): posture/proportionality shipped, link ship commits; note the doc-bot validation outcome and pass-count delta.
-- [ ] Re-run `install.sh` so `~/.claude/skills/` picks up the changed skills; confirm doc-bot's next review uses them.
-- [ ] Move plan to archive: `git mv docs/risk-posture-proportionality-2026-08-12.md docs/archive/`.
-- [ ] Final commit with a "shipped" message referencing this plan.
+- [x] Append entry to `CHANGELOG.md`: **v2.3.0** (`bba6842`), merged to main at `3e9eacc` 2026-08-14.
+- [x] Update memory (`trinity-expansion.md`): shipped + merged, ship commits linked. **Pass-count delta is not measurable yet** — Phase 3 became a read-only retrospective, so no live posture-aware review has run; the doc-bot outcome is recorded as a *premise check* (strongly validating on premise, pass-count question still open).
+- [x] `install.sh` re-run not needed — the skills are symlinked, so merging to main (the checked-out branch) installed them immediately. Confirming doc-bot's next review uses them is still outstanding, and happens naturally on its next phase.
+- [x] Plan archived, along with its handoff prompt and both pass logs (`code-review-branch-kyle-risk-posture-phase-0.md`, `code-review-phase-2.md`).
+- [x] Shipped: release commit `bba6842`, merge `3e9eacc`.
 
 ## References
 
@@ -311,9 +315,9 @@ iterate-review append/maintain these sections automatically.
 
 | Phase | Iterate-review | Status | Last pass | Pass log |
 |-------|----------------|--------|-----------|----------|
-| Phase 0 | YES | reviewed | Pass 8, APPROVE×3 (2026-08-13) | `docs/reviews/code-review-branch-kyle-risk-posture-phase-0.md` |
-| Phase 1 | YES | reviewed | Pass 8, APPROVE×3 (2026-08-13) | `docs/reviews/code-review-branch-kyle-risk-posture-phase-0.md` |
-| Phase 2 | YES | reviewed | — | converged at pass 14 (APPROVE×3), `docs/reviews/code-review-phase-2.md` |
+| Phase 0 | YES | reviewed | Pass 8, APPROVE×3 (2026-08-13) | `docs/archive/code-review-branch-kyle-risk-posture-phase-0.md` |
+| Phase 1 | YES | reviewed | Pass 8, APPROVE×3 (2026-08-13) | `docs/archive/code-review-branch-kyle-risk-posture-phase-0.md` |
+| Phase 2 | YES | reviewed | — | converged at pass 14 (APPROVE×3), `docs/archive/code-review-phase-2.md` |
 | Phase 3 | NO  | n/a | n/a | n/a |
 -->
 
