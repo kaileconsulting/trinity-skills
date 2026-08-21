@@ -1,7 +1,7 @@
 # Runtime state (per-pass Codex responses, final state files).
 # Each skill writes here through the symlink at runtime.
 **/state/*
-!**/state/example.json
+!**/state/example*.json
 
 # Python bytecode from the dev checkers in tools/
 __pycache__/

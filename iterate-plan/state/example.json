@@ -1,5 +1,5 @@
 {
-  "_comment": "Example state file — illustrates the schema. Real state files are named by SHA1(absolute_plan_path) and live in this directory. This example is the only file in state/ that's tracked in git; real state files are gitignored.",
+  "_comment": "Example state file — illustrates the schema. Real state files are named by SHA1(absolute_plan_path) and live in this directory. This example is tracked in git (per .gitignore's !**/state/example*.json exception); real state files are gitignored. This one shows the Converge path — see example-aborted.json for the Abort path.",
   "plan_abs_path": "/path/to/your/project/docs/some-plan-2026-05-19.md",
   "plan_path_sha1": "abc123def456...",
   "plan_content_hash": "sha256:0123456789abcdef...",
@@ -7,39 +7,62 @@
   "last_verdict": "APPROVE",
   "started_at": "2026-04-29T12:38:00Z",
   "last_pass_at": "2026-04-29T13:15:00Z",
+  "summary_schema": 1,
+  "scope_class": null,
   "passes": [
     {
-      "n": 1,
+      "pass": 1,
       "verdict": "REVISE",
+      "high_medium_count": 3,
+      "findings_total": 5,
+      "fold_caused_count": 0,
+      "dispositions": {
+        "incorporated": 3,
+        "skipped": 2,
+        "disputed": 0,
+        "accepted-risk": 0,
+        "register-match": 0
+      },
       "started_at": "2026-04-29T12:38:00Z",
-      "completed_at": "2026-04-29T12:42:00Z",
-      "response_file": "pass-1.response.json",
-      "findings_count": 5,
-      "corrections_count": 0
+      "completed_at": "2026-04-29T12:42:00Z"
     },
     {
-      "n": 2,
+      "pass": 2,
       "verdict": "REVISE",
+      "high_medium_count": 1,
+      "findings_total": 1,
+      "fold_caused_count": 1,
+      "dispositions": {
+        "incorporated": 1,
+        "skipped": 0,
+        "disputed": 0,
+        "accepted-risk": 0,
+        "register-match": 0
+      },
       "started_at": "2026-04-29T12:55:00Z",
-      "completed_at": "2026-04-29T12:58:00Z",
-      "response_file": "pass-2.response.json",
-      "findings_count": 1,
-      "corrections_count": 0
+      "completed_at": "2026-04-29T12:58:00Z"
     },
     {
-      "n": 3,
+      "pass": 3,
       "verdict": "APPROVE",
+      "high_medium_count": 0,
+      "findings_total": 1,
+      "fold_caused_count": 0,
+      "dispositions": {
+        "incorporated": 1,
+        "skipped": 0,
+        "disputed": 0,
+        "accepted-risk": 0,
+        "register-match": 0
+      },
       "started_at": "2026-04-29T13:12:00Z",
-      "completed_at": "2026-04-29T13:15:00Z",
-      "response_file": "pass-3.response.json",
-      "findings_count": 1,
-      "corrections_count": 0
+      "completed_at": "2026-04-29T13:15:00Z"
     }
   ],
   "convergence": {
     "suggested_at": "2026-04-29T13:16:00Z",
     "trigger": "verdict=APPROVE + opus_no_further_changes",
-    "human_confirmed": null,
-    "handoff_decision": null
+    "human_confirmed": true,
+    "handoff_decision": "stay"
   }
 }

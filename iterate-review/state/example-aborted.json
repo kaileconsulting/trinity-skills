@@ -1,0 +1,58 @@
+{
+  "_comment": "Example state file — Abort path, scope_class=non-production. Illustrates that Abort produces the passes array exactly as Converge does (Trinity v2.4 Phase 0 §5), and exercises §3's rollback-cohort query: pass 3 lands HIGH/MEDIUM findings after pass 2 in a non-production review — exactly the condition that would revert §3's reduced default in a real run. Tracked in git per .gitignore's !**/state/example*.json exception.",
+  "scope": "working",
+  "scope_tag": "working",
+  "pass_log_path": "/path/to/your/project/docs/reviews/code-review-working.md",
+  "pass_count": 3,
+  "last_verdict": "REVISE",
+  "final_action": "aborted",
+  "started_at": "2026-05-12T10:00:00Z",
+  "completed_at": "2026-05-12T10:50:00Z",
+  "summary_schema": 1,
+  "scope_class": "non-production",
+  "passes": [
+    {
+      "pass": 1,
+      "verdict": "REVISE",
+      "high_medium_count": 1,
+      "findings_total": 2,
+      "fold_caused_count": 0,
+      "dispositions": {
+        "incorporated": 1,
+        "skipped": 1,
+        "disputed": 0,
+        "accepted-risk": 0,
+        "register-match": 0
+      }
+    },
+    {
+      "pass": 2,
+      "verdict": "REVISE",
+      "high_medium_count": 1,
+      "findings_total": 1,
+      "fold_caused_count": 1,
+      "dispositions": {
+        "incorporated": 1,
+        "skipped": 0,
+        "disputed": 0,
+        "accepted-risk": 0,
+        "register-match": 0
+      }
+    },
+    {
+      "pass": 3,
+      "verdict": "REVISE",
+      "high_medium_count": 2,
+      "findings_total": 2,
+      "fold_caused_count": 0,
+      "dispositions": {
+        "incorporated": 1,
+        "skipped": 0,
+        "disputed": 1,
+        "accepted-risk": 0,
+        "register-match": 0
+      }
+    }
+  ],
+  "confirmed_accepted_risks": []
+}

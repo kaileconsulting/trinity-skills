@@ -202,7 +202,7 @@ performed by the runner, deterministically.
 
    ### Findings
    1. **<title>** — <severity> · lens: <architect|product-manager|both>: <description>
-      → Editor: <incorporated|skipped|disputed> — <reasoning>
+      → Editor: <incorporated|skipped|disputed> — <reasoning> [introduced_by_pass: <N | null>]
    ...
 
    ### Plan corrections applied
@@ -219,6 +219,19 @@ performed by the runner, deterministically.
    ### Lens run summary
    - architect: <APPROVE|REVISE|BLOCK|FAILED> · product-manager: <APPROVE|REVISE|BLOCK|FAILED>
    ```
+
+   **`introduced_by_pass` — fold-provenance, per finding.** `N` when the
+   defect this finding describes was created by an edit a previous pass's
+   fold made; `null` when the defect pre-existed this review or arrived
+   with the plan's original draft. This is the same judgment call every
+   long loop's pass log already recorded in prose — make it at fold time,
+   while the causal chain from "what did pass N-1 change" to "what does
+   this finding complain about" is freshest. When genuinely uncertain,
+   record `null` with a one-line note rather than guessing `N` — under-
+   claiming keeps the data conservative. This is data collection only
+   (the issue #6 decision it feeds): no guardrail, checkpoint, or budget
+   in this skill consults `introduced_by_pass`, and none may until that
+   issue is resolved.
 
 9. **Recompute `plan_content_hash` post-fold.** Stash for the next pass's
    manual-edit detection.
@@ -258,7 +271,10 @@ performed by the runner, deterministically.
     On **Converge**: enter the Sonnet-handoff sub-flow (Phase 3, below).
     On **Abort**: write the state file with final values (`pass_count`,
     `last_verdict`, `plan_abs_path`, `plan_content_hash`, `started_at`,
-    `last_pass_at`, `convergence.handoff_decision="aborted"`), exit.
+    `last_pass_at`, `convergence.handoff_decision="aborted"`), **plus the
+    `summary_schema`/`scope_class`/`passes` fields defined in step 15 —
+    Abort produces that array exactly as Converge does**, covering every
+    pass that completed before the abort, exit.
 
 ## On Converge — Sonnet-handoff sub-flow (Phase 3)
 
@@ -323,6 +339,48 @@ performed by the runner, deterministically.
     `convergence.handoff_decision` ∈ `{handoff, stay, aborted}`,
     `convergence.handoff_path` if applicable).
 
+    **Per-pass summary (`summary_schema: 1`) — the data half of issue #6.**
+    At Converge and Abort alike, the state file additionally carries:
+    - `summary_schema: 1` — versions this row shape so a future change
+      (e.g. Phase 1's proportionality port) populates existing keys rather
+      than reshaping the row.
+    - `scope_class: null` — iterate-plan has no diff to classify. The
+      field exists in both skills' schemas (iterate-review's is
+      `production`/`non-production`, per its own §3) so the cross-skill
+      `jq` recipe never has to branch on which skill produced the file.
+    - `passes` — an array with one row per pass that actually ran (a
+      `FAILED`-lens pass still gets a row). Each row: `pass` (int),
+      `verdict` (string), `high_medium_count` (int — that pass's merged
+      HIGH+MEDIUM findings), `findings_total` (int — all severities),
+      `fold_caused_count` (int — findings in that pass with a non-null
+      `introduced_by_pass`), and `dispositions` (object) — a **fixed key
+      set present in both skills' rows**: `incorporated`, `skipped`,
+      `disputed`, `accepted-risk`, `register-match`, every key always an
+      int, zero when unused. iterate-plan has no `accepted-risk` or
+      `register-match` disposition until Phase 1 ships — those two keys
+      carry `0` until then, so Phase 1 populates keys that already exist
+      instead of reshaping the row.
+
+      Rows are **derived from the plan's own HISTORICAL blocks** by a
+      deterministic, idempotent procedure (re-deriving the same blocks
+      always produces the same rows) — never hand-authored, and the plan
+      file remains the durable authority the rows are only a summary of.
+      **Abort produces the array exactly as Converge does**, covering
+      every pass that completed before the abort. One stated limitation:
+      a run interrupted before reaching Converge or Abort has no state-
+      file row at all — it's represented only by its HISTORICAL blocks in
+      the plan file, which is acceptable for instrumentation and said
+      here rather than discovered later.
+
+    See `state/example.json` (Converge path) and `state/example-aborted.json`
+    (Abort path) for worked examples, and the shared
+    `tools/provenance-recipe.jq` recipe (Pointers) for the documented `jq`
+    query that reproduces per-pass tallies from these rows across both
+    skills' state files. **No guardrail, checkpoint, or budget in this
+    skill consults `introduced_by_pass`, `fold_caused_count`, or any field
+    defined in this paragraph** — this ships data collection only; the
+    stop-condition decision stays with [issue #6](https://github.com/kaileconsulting/trinity-skills/issues/6).
+
     **On Converge (Handoff or Stay), additionally prune the scope's state
     directory** — the plan's HISTORICAL sections are the durable audit
     record; the per-pass inputs, responses, and summaries under
@@ -363,7 +421,12 @@ for standalone `run-lens` output. Pruned at Converge (step 15) unless
 - `lenses/` — persona lens records + the selection rules (`lenses/README.md`).
 - `state/<plan-path-hash>.json` — per-plan iteration state (written at
   convergence/abort only; never touched by `prune-state`).
-- `state/example.json` — illustrative state file showing the schema.
+- `state/example.json` / `state/example-aborted.json` — illustrative state
+  files showing the schema, Converge and Abort paths respectively.
+- `../tools/provenance-recipe.jq` — the `jq` recipe (shared with
+  `iterate-review`) that reproduces per-pass tallies — pass counts,
+  fold-caused share, disposition mix — from the `passes` rows above;
+  fixture-pinned by `tools/check-provenance-recipe.py`.
 - `state/<scope-hash>/` — the runner's per-scope state directory (see the
   State-file-shape paragraph above); pruned at Converge unless `--keep-state`.
 - `bin/` — the runner scripts steps 5–7 invoke: `run-pass` (selection +
@@ -404,3 +467,8 @@ for standalone `run-lens` output. Pruned at Converge (step 15) unless
 - Sonnet-handoff at convergence is fully user-driven: skill writes
   the handoff prompt to disk, user copies into a fresh session and
   performs the `/clear` + model swap themselves.
+- **`introduced_by_pass` is data collection only.** No guardrail,
+  checkpoint, or budget in this skill consults `introduced_by_pass`,
+  `fold_caused_count`, or any field of the per-pass summary schema —
+  Phase 0 of Trinity v2.4 ships instrumentation, not a stop condition;
+  that decision stays with issue #6 until the data warrants revisiting it.

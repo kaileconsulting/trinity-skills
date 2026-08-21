@@ -276,7 +276,7 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     ### Findings
 
     1. **<title>** — <severity> · lens: <lensid(s)>: <description>
-       → Editor: <incorporated|skipped|disputed|accepted-risk (AR-<n>)|register-match (RR-<n>, entry-digest <hash>)> — <reasoning, written by the editor when folding>
+       → Editor: <incorporated|skipped|disputed|accepted-risk (AR-<n>)|register-match (RR-<n>, entry-digest <hash>)> — <reasoning, written by the editor when folding> [introduced_by_pass: <N | null>]
     2. ...
 
     ### Code corrections applied
@@ -309,6 +309,19 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     ```
 
     Dispositions: **`incorporated`** — apply the code edit (required for HIGH unless explicitly disputed with reasoning; recommended for MEDIUM; optional for LOW). **`skipped`** — acknowledge, don't act (typically LOW). **`disputed`** — reject with reasoning (Codex misread intent or a constraint not visible in the diff). **`accepted-risk (AR-<n>)`** — real finding, disproportionate to posture; not fixing (full lifecycle above). **`register-match (RR-<n>, entry-digest <hash>)`** — the finding matches a recorded accepted risk in `docs/risk-posture.md` (validated per step 11); no code edit, no fresh human confirmation. If a match is later invalidated (any of the three gates in step 11 fails on recheck — digest mismatch, entry removed, behavior no longer fits, or a trust-boundary change), it reverts to needing a fresh disposition and blocks Converge until one is given. `code_corrections` are applied mechanically.
+
+    **`introduced_by_pass` — fold-provenance, per finding.** `N` when the
+    defect this finding describes was created by an edit a previous pass's
+    fold made; `null` when the defect pre-existed this review or arrived
+    with the diff under review. This is the same judgment call every long
+    loop's pass log already recorded in prose — make it at fold time,
+    while the causal chain from "what did pass N-1 change" to "what does
+    this finding complain about" is freshest. When genuinely uncertain,
+    record `null` with a one-line note rather than guessing `N` — under-
+    claiming keeps the data conservative. This is data collection only
+    (the issue #6 decision it feeds): no guardrail, checkpoint, or budget
+    in this skill consults `introduced_by_pass`, and none may until that
+    issue is resolved.
 
 13. **Recompute pass log content.** The pass log now reflects the latest pass for subsequent passes' `=== PRIOR PASSES ===` context.
 
@@ -346,6 +359,21 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
       "final_action": "<converged|aborted|once-mode-exit>",
       "started_at": "<ISO timestamp of pass 1>",
       "completed_at": "<ISO timestamp of final action>",
+      "summary_schema": 1,
+      "scope_class": "<production|non-production, per §3's setup-time classification>",
+      "passes": [
+        {
+          "pass": "<N, int>",
+          "verdict": "<APPROVE|REVISE|BLOCK>",
+          "high_medium_count": "<int -- that pass's merged HIGH+MEDIUM findings>",
+          "findings_total": "<int -- all severities>",
+          "fold_caused_count": "<int -- findings with a non-null introduced_by_pass>",
+          "dispositions": {
+            "incorporated": "<int>", "skipped": "<int>", "disputed": "<int>",
+            "accepted-risk": "<int>", "register-match": "<int>"
+          }
+        }
+      ],
       "confirmed_accepted_risks": [
         {
           "id": "AR-<n>",
@@ -356,6 +384,45 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
       ]
     }
     ```
+
+    **Per-pass summary (`summary_schema: 1`) — the data half of issue #6,
+    shared with `iterate-plan`.** Written at Converge, Abort, and
+    once-mode-exit alike:
+    - `summary_schema: 1` — versions this row shape so a future change
+      (e.g. `iterate-plan`'s Phase 1 proportionality port) populates
+      existing keys rather than reshaping the row.
+    - `scope_class` — this run's `production`/`non-production`
+      classification (§3, computed once at setup). The field exists in
+      both skills' schemas — `iterate-plan`'s is always `null`, since it
+      has no diff to classify — so the cross-skill `jq` recipe never has
+      to branch on which skill produced the file.
+    - `passes` — an array with one row per pass that actually ran (a
+      `FAILED`-lens pass still gets a row). Each row's `dispositions`
+      object is a **fixed key set present in both skills' rows**:
+      `incorporated`, `skipped`, `disputed`, `accepted-risk`,
+      `register-match`, every key always an int, zero when unused.
+
+      Rows are **derived from the pass log** — which remains the durable
+      authority — by a deterministic, idempotent procedure, never
+      hand-authored. **Abort produces the array exactly as Converge
+      does**, covering every pass that completed before the abort. One
+      stated limitation: a run interrupted before reaching Converge,
+      Abort, or once-mode-exit has no state-file row at all — it's
+      represented only by its pass-log blocks, which is acceptable for
+      instrumentation and said here rather than discovered later.
+
+    See `state/example.json` (Converge path) and
+    `state/example-aborted.json` (Abort path, `scope_class:
+    "non-production"`) for worked examples, and the shared
+    `../tools/provenance-recipe.jq` recipe (Pointers) for the documented
+    `jq` query that reproduces per-pass tallies from these rows across
+    both skills' state files — including §3's rollback-cohort query
+    (HIGH/MEDIUM findings landing after pass 2 in non-production
+    reviews). **No guardrail, checkpoint, or budget in this skill
+    consults `introduced_by_pass`, `fold_caused_count`, or any field
+    defined in this paragraph** — this ships data collection only; the
+    stop-condition decision stays with
+    [issue #6](https://github.com/kaileconsulting/trinity-skills/issues/6).
 
     `confirmed_accepted_risks` is empty when the review never proposed one. Converge is impossible (per step 12's accounting table) while any `AR-<n>` remains `proposed` or `reopened`, so every entry here is `confirmed` at Converge time by construction — `Abort` may still leave `proposed`/`reopened` items unresolved. **The array is current-state, not historical: it lists exactly those items whose `confirmed` state still holds at the moment the file is written.** An item confirmed earlier and then returned to `proposed` by a posture-digest mismatch is **absent**, even though it "was confirmed" at some point during the review. **Posture invalidation is the only path out of `confirmed`** — `rejected`/`reopened` is a transition out of `proposed`, taken instead of confirming, never a revocation of a confirmation already given. There is deliberately no revoke-a-confirmation card: the one thing that can undo a confirmation is the posture text it was granted against changing underneath it, which the descriptor already detects. The field name is the contract: these are confirmations a consumer may act on, and a resume that trusted an invalidated one would proceed on a human decision that no longer applies to the current posture text. The pass log remains the authority on anything left pending — and on the fact that an absent item was ever confirmed at all.
 
@@ -385,6 +452,11 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
 - **A mechanism-requiring fold never happens silently.** If incorporating a finding needs a new mechanism (schema/migration, new persisted or protocol field, a cross-request invariant, a background process, a new external dependency), that finding's fold pauses immediately — even in loop mode — for a design-shaped-fold escalation card, rather than batching to the next checkpoint like every other named judgment moment. This pause is scoped to that one finding, not the whole pass: once answered, folding continues with the pass's remaining findings (already returned by Codex), no new Codex call needed — it never freezes work already in hand the way a step-14 between-pass guardrail does.
 - **`accepted-risk` requires a posture-referencing rationale and human confirmation to converge.** The editor may propose it, but only the human confirms or rejects; Converge is impossible while any `AR-<n>` remains `proposed` or `reopened` (accounting table, step 12). both `accepted-risk` and `register-match` are unavailable for code named as a trust boundary in `PF-shipbar` — no exception, and this is checked against both the current and base-revision posture so a same-diff edit can't create the exception either.
 - **Every named human-judgment moment (accepted-risk confirmation, design-shaped-fold escalation, `needs_human` question, non-convergence stall, malformed posture source) uses the same decision-card contract** — recommendation + why, up to 3 alternatives (context-sensitive omission can reduce this to zero listed alternatives; recommendation + discuss is the floor and is always presented, never skipped), a standing discuss option, written to the pass log as pending before presentation and resolved once answered. Selecting any option but discuss resumes the loop deterministically; discuss pauses into conversation.
+- **`introduced_by_pass` is data collection only.** No guardrail,
+  checkpoint, or budget in this skill consults `introduced_by_pass`,
+  `fold_caused_count`, or any field of the per-pass summary schema —
+  Phase 0 of Trinity v2.4 ships instrumentation, not a stop condition;
+  that decision stays with issue #6 until the data warrants revisiting it.
 
 ## Using in plan-driven workflows (v1 — manual coordination)
 
@@ -414,6 +486,13 @@ In v2, steps 2 and 4 collapse to a single `iterate-review --plan=<path> --phase=
   for abandoned runs.
 - `state/<scope-hash>.json` — per-invocation final state, written at convergence/abort;
   never touched by `prune-state`.
+- `state/example.json` / `state/example-aborted.json` — illustrative state files showing
+  the schema, Converge and Abort paths respectively (the latter also `scope_class:
+  "non-production"`).
+- `../tools/provenance-recipe.jq` — the `jq` recipe (shared with `iterate-plan`) that
+  reproduces per-pass tallies — pass counts, fold-caused share, disposition mix, and
+  §3's rollback-cohort query — from the `passes` rows above; fixture-pinned by
+  `tools/check-provenance-recipe.py`.
 - `bin/` — the runner scripts steps 9–11 invoke: `run-pass` (selection + composition +
   concurrent fan-out + summary), `run-lens` (one lens, standalone/debug), `prune-state`
   (state-dir cleanup: `--scope` at Converge, `--older-than` for abandoned runs,

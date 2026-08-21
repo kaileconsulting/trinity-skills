@@ -166,6 +166,24 @@ RULES: list[tuple[str, str, list[str] | dict[str, list[str]]]] = [
      [r"codex never edits"]),
     ("editor-sole-writer", "the editor is the sole writer of folds",
      [r"sole writer"]),
+
+    # --- fold-provenance instrumentation (v2.4 Phase 0 §5) -----------------
+    ("provenance-field", "introduced_by_pass records per-finding fold-provenance",
+     [r"introduced_by_pass"]),
+    ("provenance-judgment-rule", "fold-caused iff a previous pass's fold created the defect",
+     [r"created by an edit a previous pass's fold made"]),
+    ("provenance-uncertain-null", "uncertainty resolves to null with a note, not a guess",
+     [r"null with a one-line note"]),
+    ("provenance-summary-schema", "state file carries a versioned per-pass row schema",
+     [r"summary_schema: 1"]),
+    ("provenance-scope-class", "state file carries a run-level scope_class field",
+     [r"scope_class"]),
+    ("provenance-disposition-keys", "dispositions use one fixed key set across both skills",
+     [r"fixed key set", r"accepted-risk", r"register-match"]),
+    ("provenance-abort-parity", "Abort produces the passes array exactly as Converge does",
+     [r"abort produces the array exactly as converge does"]),
+    ("provenance-no-stop-machinery", "no guardrail/checkpoint/budget consults introduced_by_pass",
+     [r"consults introduced_by_pass"]),
 ]
 
 

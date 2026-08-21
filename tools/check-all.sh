@@ -35,6 +35,8 @@ run "example fixtures vs. schemas" \
     python3 tools/check-examples.py
 run "shared-machinery parity" \
     python3 tools/check-parity.py
+run "provenance analytics recipe" \
+    python3 tools/check-provenance-recipe.py
 run "checker self-tests" \
     python3 tools/test-checkers.py
 
