@@ -129,14 +129,43 @@ performed by the runner, deterministically.
      reason other than the path not existing at that revision.
 
    **malformed and operational-failure both halt before any fan-out** —
-   `run-pass` aborts (non-zero exit, no summary published, no lens ever
-   invoked) with the failing state and its reason on stderr. Never fall
-   back to composing without the register on either: that would silently
-   strip trusted context the lenses are meant to see. On this abort,
-   present the **malformed posture/register source** decision card (step
-   8's shared contract) before retrying anything — persisted to the plan's
-   current pass HISTORICAL block as `(pending)` before presentation, per
-   the usual two-phase discipline.
+   `run-pass`/`run-lens` abort (non-zero exit, no summary published, no
+   lens ever invoked, no pass number consumed) with the failing state and
+   its reason on stderr, distinguished as `register malformed: ...` vs
+   `register unavailable: ...` so the card below can name the actual
+   problem rather than a generic one. **Never fall back to composing
+   without the register *silently* — but an explicit human choice to do
+   so, made at the card, is the one legitimate way past this halt, and it
+   needs its own mechanism because register resolution lives in the
+   runner, not the editor** (unlike `iterate-review`'s editor-composed
+   posture, which the editor can simply choose not to compose): the runner
+   gains an `--ignore-register` flag on both `run-pass` and `run-lens`
+   that short-circuits `resolve_register()` entirely and composes with an
+   explicitly empty register, regardless of the underlying git state — the
+   editor passes it only after the human selects *proceed with no
+   register* at the malformed/unavailable-register-source card (step 8),
+   never on its own initiative. Without that flag, there is no other path
+   past a malformed or unavailable register — the default is always to
+   halt, not to guess.
+
+   **This card is the one case where a HISTORICAL block opens before any
+   lens has run** (the plan-side analog of `iterate-review`'s own
+   pre-fan-out exception for its malformed-posture card, scoped down to
+   fit `iterate-plan`'s one-block-per-pass model): the instant `run-pass`
+   reports this abort, the editor opens this pass's HISTORICAL block
+   containing *only* the card — no `### Findings`, `### Verdict`, or
+   `### Lens run summary`, since none exist yet — with `chosen: (pending)`,
+   per the usual two-phase persistence discipline (step 8). This is what
+   makes the card resumable if the session is interrupted between the
+   abort and the human's answer. Once answered: *fix the source now* →
+   the editor does not retry until the source is actually fixed, then
+   re-invokes `run-pass` with the **same** pass number (nothing was
+   consumed by the aborted attempt, so this *is* that pass's real
+   fan-out) and the pass's remaining sections fill in normally; *proceed
+   with no register* → re-invoke with `--ignore-register` under the same
+   pass number; *abort* → the plan's iteration ends per the abort path,
+   and this pass's block — the card alone — is its final, sealed content;
+   *discuss* → paused.
 
 6. **Fan out — one `run-pass` invocation.** The runner makes **one Codex
    call per selected lens, concurrently** (all lens futures awaited; one
@@ -620,11 +649,11 @@ performed by the runner, deterministically.
    against the new posture text before Converge can succeed again.
 
    **Decision cards — the shared contract for every human-judgment moment**
-   (ported from `iterate-review` step 12 verbatim; the four moments below
-   replace its five — the plan-shaping-fold escalation above stands in for
-   the design-shaped-fold escalation, and there is no plan-side equivalent
-   of a mid-review posture-source malformed-*field* case, only the
-   register). Whenever the loop hands back to the human with something
+   (ported from `iterate-review` step 12 verbatim; **five** total moments,
+   as below — the plan-shaping-fold escalation above stands in for
+   `iterate-review`'s design-shaped-fold escalation, and there is no
+   plan-side equivalent of a mid-review posture-source malformed-*field*
+   case, only the register). Whenever the loop hands back to the human with something
    needing judgment, it arrives in a fixed shape: (1) the editor's
    **recommendation**, with a one-line why; (2) **up to 3 genuine
    alternatives**, each with its trade-off; (3) an always-available
@@ -660,9 +689,10 @@ performed by the runner, deterministically.
       outcome>)`. A card still `(pending)` on read is the resume signal; a
       card with a real `chosen:` value is settled and never re-presented.
 
-   **The four named human-judgment moments and their outcome mappings**
-   (plan-shaping-fold escalation specified above; malformed register
-   source specified in step 5 — both under this same shared contract):
+   **The five named human-judgment moments and their outcome mappings**
+   (plan-shaping-fold escalation specified above; malformed/unavailable
+   register source specified in step 5 — both under this same shared
+   contract, alongside the three below):
    - **Accepted-risk confirmation**: *confirm, this plan only* →
      `confirmed` (plan's HISTORICAL block; register untouched); *confirm +
      add to register* → `confirmed` and the `RR-` entry published to
@@ -684,10 +714,20 @@ performed by the runner, deterministically.
      comparison window; *switch to manual* → loop mode ends, per-pass
      checkpoints resume; *abort* → the plan's iteration ends per the abort
      path; *discuss* → paused.
-   - **Malformed register source** (step 5): *fix the source now* /
-     *proceed with no register* / *abort* / *discuss* — persisted before
-     presentation so an interrupted session re-presents it on resume, and
-     the choice made is recorded.
+   - **Malformed or unavailable register source** (step 5) — one card
+     type covering both of `resolve_register()`'s failure states, named
+     accurately at presentation time so the options read correctly for
+     whichever actually occurred (`malformed`: duplicate `RR-` ids to fix
+     in `docs/risk-posture.md`; `operational_failure`: no `HEAD` yet, an
+     unresolvable repo root, or another git failure to fix in the
+     environment): *fix the source now* → the editor retries `run-pass`
+     under the same pass number once the human confirms the fix is in
+     place; *proceed with no register* → retry with `--ignore-register`
+     under the same pass number (step 5's runner-side mechanism — never
+     automatic); *abort* → the plan's iteration ends per the abort path;
+     *discuss* → paused. Persisted before presentation (step 5's pre-fan-out
+     block-opening exception) so an interrupted session re-presents it on
+     resume, and the choice made is recorded.
 
    Fold `plan_corrections` mechanically; incorporate HIGH/MEDIUM
    findings (skip/dispute only with explicit reasoning); LOW is informational.
@@ -1066,7 +1106,9 @@ for standalone `run-lens` output. Pruned at Converge (step 15) unless
   RISKS ===` block is an additive part of the same deterministic assembly.
   Malformed register content or an operational read failure halts before
   fan-out with a decision card rather than silently composing without the
-  register.
+  register; `--ignore-register` is the one way past that halt, and it is
+  never automatic — the editor passes it only after an explicit human
+  choice at the card.
 - **Every named human-judgment moment (accepted-risk confirmation,
   plan-shaping-fold escalation, `needs_human` question, non-convergence
   stall, malformed register source) uses the same decision-card contract**

@@ -156,3 +156,40 @@ The one finding this pass traces to pass 3's fold — `introduced_by_pass: 3`; f
 ### Diff snapshot reference
 
 Diff captured at 2026-08-21 14:07; head SHA `03dc6bdf4985887ec266c946b7ad863f8baa836f`.
+
+## Pass 6 — 2026-08-21 11:16 [HISTORICAL]
+
+**Scope:** branch · **Diff size:** 3565 lines · **Scope class:** production · **Verdict:** REVISE (worst-of; senior-dev: REVISE, security: APPROVE, qa: REVISE) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, security, qa
+
+*(First pass reviewing Phase 1's proportionality-machinery port — the branch diff now covers Phase 0 + Phase 1 together, per this skill's whole-branch v1 scope; per the reviewer-prompt's ON HISTORICAL SECTIONS instruction, all four findings below are new material from Phase 1's commit, not re-litigation of Phase 0's already-APPROVEd work.)*
+
+### Findings
+
+1. **Malformed-source card allows bypassing the mandatory register read** — HIGH · lens: senior-dev: `iterate-plan/SKILL.md` step 5 said malformed/operational register failures must never fall back to composing without the register, but the malformed-register decision card offered "proceed with no register" as an outcome with no mechanism to realize it — a real contradiction, since register resolution lives in the runner (`resolve_register()`), not the editor, so a card outcome alone can't produce that behavior.
+   → Editor: incorporated — added an `--ignore-register` flag to `bin/run-pass` and `bin/run-lens` that short-circuits `resolve_register()` entirely and composes with an explicitly empty register; it is invoked only after the human selects "proceed with no register" at the card, never automatically. Step 5's wording corrected to distinguish *silent* fallback (never allowed) from this explicit, human-directed one. New fixture: `--ignore-register` succeeds past a malformed register and composes with no block, never reading the broken source (`tools/check-plan-runners.py`, 2 new cases). [introduced_by_pass: null]
+2. **Runner aborts before the required decision card can be persisted** — HIGH · lens: senior-dev: `run-pass`/`run-lens` return immediately on malformed/operational register state with no HISTORICAL block open in the plan, but step 5 required the card persisted as `(pending)` before presentation — with no specified mechanism for opening that block before any lens has run, following the normal flow reached an abort with nowhere prepared to persist the card.
+   → Editor: incorporated — step 5 now specifies this as the one case where a HISTORICAL block opens before any lens runs (the plan-side analog of `iterate-review`'s own pre-fan-out exception for its malformed-posture card, scoped to `iterate-plan`'s one-block-per-pass model): the block opens containing only the card, `chosen: (pending)`, the instant the abort is reported; retries reuse the same pass number since the aborted attempt consumed none. [introduced_by_pass: null]
+3. **Operational failures are mislabeled as malformed register sources** — MEDIUM · lens: senior-dev: the card mapping named only a "Malformed register source" card, but step 5 deliberately distinguishes malformed content from operational failures (no HEAD, unresolved repo, git unavailable) — routing both through one label made options like "fix the source now" ambiguous for the operational case.
+   → Editor: incorporated — renamed to "Malformed or unavailable register source," presented with state-accurate framing (malformed: fix duplicate `RR-` ids; operational_failure: fix the environment) while keeping the shared four-option outcome mapping; `run-pass`/`run-lens` already emitted distinct stderr prefixes (`register malformed:` vs `register unavailable:`) for the editor to key off. [introduced_by_pass: null]
+4. **Uncommitted new register file is misclassified as an operational failure** — HIGH · lens: qa: `resolve_register()` recognized confirmed absence only when git's stderr contained "does not exist in"; when `docs/risk-posture.md` exists untracked on disk but was never committed — the exact freshly-seeded `create-plan` case the dirty-worktree design is built around — git instead says "exists on disk, but not in 'HEAD'," so the function returned `operational_failure` and aborted instead of composing the intended zero-register-bytes path. The existing dirty-worktree fixture only edited an already-committed register, so it never exercised this boundary.
+   → Editor: incorporated — broadened the confirmed-absent check to match both git stderr phrasings; verified empirically against real git output for both cases before and after the fix. Added the requested end-to-end fixture: HEAD has no register, an untracked working-tree register exists, the run succeeds, and the uncommitted entry never reaches a lens (`tools/check-plan-runners.py`, 2 new cases: the `resolve_register()` unit case and the run-pass integration case). [introduced_by_pass: null]
+
+### Code corrections applied
+
+- `iterate-plan/SKILL.md`:Decision cards shared-contract introduction — said "the four moments below replace its five" while the plan-shaping-fold escalation is also a named card type (five total, matching the template and Hard rules) → corrected to "five total moments" throughout the intro and the enumeration heading.
+
+### New questions Codex raised
+
+- (none)
+
+### Fold-provenance note
+
+All four findings and the one correction trace to Phase 1's own commit (752ed10) — the first pass reviewing this material, so `introduced_by_pass: null` throughout; none are fold-induced by a prior pass within this review. Notable independent of that: qa's finding (4) is exactly the kind of boundary-case defect Phase 0's own retrospective flagged as easy to under-specify identically (prose says X, code does X for the easy case but not the edge case) — caught here by empirical verification against real git output rather than assumption, the same discipline Phase 0's reference-implementation-plus-fixture pattern was built to encourage.
+
+### Lens run summary
+
+- senior-dev: REVISE · security: APPROVE · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-21 11:16; head SHA `752ed10538f17fd5c5e28388d6d7e69a14878e49`.

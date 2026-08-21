@@ -291,10 +291,14 @@ class RegisterResult:
 
       loaded              -- text holds the '## Accepted risks' section,
                               verbatim, ready to compose.
-      confirmed_absent    -- the blob doesn't exist at HEAD, or it exists
-                              but carries no '## Accepted risks' section.
-                              A normal, valid repo state -- composes as the
-                              zero-register-bytes path.
+      confirmed_absent    -- the blob doesn't exist at HEAD -- whether
+                              because the path has never existed at any
+                              revision, or because it exists untracked on
+                              disk but was never committed (the freshly-
+                              seeded create-plan case) -- or it exists at
+                              HEAD but carries no '## Accepted risks'
+                              section. A normal, valid repo state --
+                              composes as the zero-register-bytes path.
       malformed           -- the section exists but is broken (duplicate
                               RR- ids) -- a register-integrity problem.
       operational_failure -- anything else that isn't a confirmed absence:
@@ -345,14 +349,22 @@ def resolve_register(repo_root: Path) -> RegisterResult:
 
     if proc.returncode != 0:
         stderr = proc.stderr.strip()
-        # `git show HEAD:<path>` reports a path genuinely absent at that
-        # revision with "fatal: path '<path>' does not exist in 'HEAD'" --
-        # empirically distinct from every other failure (no HEAD yet on a
-        # fresh repo: "fatal: invalid object name 'HEAD'."; an unresolvable
-        # repo root; any other git error). Only the former is a confirmed
-        # absence; everything else is an operational failure -- there is no
-        # third bucket and no silent fallback between the two.
-        if "does not exist in" in stderr:
+        # `git show HEAD:<path>` reports a path absent at that revision one
+        # of two ways, and BOTH are confirmed absence, never operational
+        # failure -- this is the exact boundary iterate-review's code
+        # review (pass 6) caught missing: a path that never existed at any
+        # revision says "does not exist in 'HEAD'", but a path that exists
+        # UNTRACKED on disk -- the freshly-seeded, not-yet-committed
+        # create-plan case the dirty-worktree design is built around --
+        # says "exists on disk, but not in 'HEAD'" instead. Treating only
+        # the first phrasing as confirmed-absent silently misrouted the
+        # positive seeding case to operational_failure (a hard abort)
+        # instead of the intended zero-register-bytes compose path.
+        # Distinct from every other failure (no HEAD yet on a fresh repo:
+        # "fatal: invalid object name 'HEAD'."; an unresolvable repo root;
+        # any other git error) -- those remain operational_failure, and
+        # there is no third bucket and no silent fallback between the two.
+        if "does not exist in" in stderr or "exists on disk, but not in" in stderr:
             return RegisterResult("confirmed_absent", reason=stderr)
         return RegisterResult("operational_failure",
                               reason=stderr or "git show exited non-zero "

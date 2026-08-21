@@ -68,6 +68,16 @@ def build_parser():
     p.add_argument("--lenses", default=None,
                    help="comma-separated lens ids to force, overriding "
                         "deterministic selection")
+    p.add_argument("--ignore-register", action="store_true",
+                   help="compose this pass with an explicitly empty "
+                        "register, bypassing resolve_register() entirely -- "
+                        "never automatic; this is the runner-side mechanism "
+                        "the editor invokes only after the human has chosen "
+                        "'proceed with no register' at the malformed-source "
+                        "decision card (SKILL.md step 5/8). Without this "
+                        "flag, a malformed or operational_failure register "
+                        "state always aborts before fan-out -- there is no "
+                        "other way past it.")
     return p
 
 
@@ -115,15 +125,23 @@ def main(argv=None):
     # summary published and no lens ever invoked (the same never-ran
     # contract as any other pre-fan-out abort) -- the editor (SKILL.md
     # step 5) reads the stderr prefix and presents the malformed-source
-    # decision card rather than retrying blindly.
-    register = pr.resolve_register(repo_root)
-    if register.state == "malformed":
-        sys.stderr.write(f"run-pass: register malformed: {register.reason}\n")
-        return EXIT_ERROR
-    if register.state == "operational_failure":
-        sys.stderr.write(f"run-pass: register unavailable: {register.reason}\n")
-        return EXIT_ERROR
-    register_text = register.text  # "" for confirmed_absent
+    # decision card rather than retrying blindly. --ignore-register is the
+    # ONE way past this abort, and it is never automatic: the editor passes
+    # it only after the human has explicitly chosen "proceed with no
+    # register" at that card -- resolution is short-circuited entirely
+    # (not merely tolerated) so a broken read can never silently masquerade
+    # as a resolved one.
+    if args.ignore_register:
+        register_text = ""
+    else:
+        register = pr.resolve_register(repo_root)
+        if register.state == "malformed":
+            sys.stderr.write(f"run-pass: register malformed: {register.reason}\n")
+            return EXIT_ERROR
+        if register.state == "operational_failure":
+            sys.stderr.write(f"run-pass: register unavailable: {register.reason}\n")
+            return EXIT_ERROR
+        register_text = register.text  # "" for confirmed_absent
 
     shash = pr.scope_hash(plan_path)
     state_dir = pr.STATE_ROOT / shash

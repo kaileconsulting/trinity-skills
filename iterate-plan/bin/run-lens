@@ -55,6 +55,11 @@ def build_parser():
                    help="optional staged note file (human-edits-since-last-"
                         "pass diff), prepended to the lens input; must live "
                         "in the per-repo handoff dir")
+    p.add_argument("--ignore-register", action="store_true",
+                   help="compose with an explicitly empty register, "
+                        "bypassing resolve_register() entirely -- same "
+                        "human-directed override as run-pass's flag of the "
+                        "same name; never automatic.")
     return p
 
 
@@ -103,14 +108,20 @@ def main(argv=None):
     # Register resolution (Trinity v2.4 Phase 1, Q5) -- same HEAD-sourced,
     # before-any-codex-call contract as run-pass, so a standalone retry
     # composes with the same register state the rest of that pass saw.
-    register = pr.resolve_register(repo_root)
-    if register.state == "malformed":
-        sys.stderr.write(f"run-lens: register malformed: {register.reason}\n")
-        return EXIT_ERROR
-    if register.state == "operational_failure":
-        sys.stderr.write(f"run-lens: register unavailable: {register.reason}\n")
-        return EXIT_ERROR
-    register_text = register.text  # "" for confirmed_absent
+    # --ignore-register short-circuits this entirely -- see run-pass's flag
+    # of the same name; never automatic, only after a human's explicit
+    # "proceed with no register" choice at the malformed-source card.
+    if args.ignore_register:
+        register_text = ""
+    else:
+        register = pr.resolve_register(repo_root)
+        if register.state == "malformed":
+            sys.stderr.write(f"run-lens: register malformed: {register.reason}\n")
+            return EXIT_ERROR
+        if register.state == "operational_failure":
+            sys.stderr.write(f"run-lens: register unavailable: {register.reason}\n")
+            return EXIT_ERROR
+        register_text = register.text  # "" for confirmed_absent
 
     shash = pr.scope_hash(plan_path)
     state_dir = pr.STATE_ROOT / shash
