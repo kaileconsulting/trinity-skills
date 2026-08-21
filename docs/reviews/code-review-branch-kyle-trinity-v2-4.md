@@ -96,3 +96,34 @@ Both findings trace to prior folds (pass 2 and pass 1 respectively) — `introdu
 ### Diff snapshot reference
 
 Diff captured at 2026-08-21 13:57; head SHA `a698f95f405d448f9b40714c8a06e11e6162e65f`.
+
+## Pass 4 — 2026-08-21 14:01 [HISTORICAL]
+
+**Scope:** branch · **Diff size:** 2138 lines · **Scope class:** production · **Verdict:** REVISE (worst-of; senior-dev: REVISE, security: REVISE, qa: REVISE) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+1. **Root-document exception applied regardless of directory depth** — HIGH · lens: senior-dev, security, qa (co-reported — all three independently found the identical defect): `tools/scope_classifier.py`'s pass-3 fix checked `_ROOT_DOC_BASENAMES` against the final path component only, never verifying the path actually has no directory segment — so `src/README.py`, `config/SECURITY.md`, `lib/LICENSE.ts` all classified `non-production`, contradicting `iterate-review/SKILL.md`'s explicit "root-level only" framing and letting a production-only diff receive the reduced review budget.
+   → Editor: incorporated — added the missing `if not segments:` guard so the documentation-basename exception only ever applies when the path has zero directory components; reworded the SKILL.md heuristic to say explicitly "checked on the path as a whole, not the filename alone," with `src/README.py` named as a non-example; added 4 negative fixtures to `check-scope-classification.py` (a nested doc-named file alone, two more nested cases across different extensions/no-extension, and a root file alongside a nested one — the mixed case is the one that would have most easily hidden this bug). [introduced_by_pass: 3 — the missing depth check is exactly what pass 3's fold added without]
+2. **Differing-answer prose no longer matches the reference state machine** — MEDIUM · lens: senior-dev: pass 3's fold said "a differing answer (including a disagreement) resets the streak, with the next settled answer starting a new one" — grouping both reset cases under one rule. But `freeze_tracker.py` correctly makes an ordinary differing answer *itself* the new baseline immediately; only a disagreement (no settled answer at all) waits for the next pass. Following the merged prose literally would delay freezing by one pass after every ordinary answer change, not just after a disagreement.
+   → Editor: incorporated — split the sentence into the two cases explicitly: an ordinary differing (settled) answer is itself counted-pass #1 immediately; a disagreement resets to no baseline, so the *next* settled answer becomes counted-pass #1 — one pass later, and only in that case. Named the wrong conflation directly so a future reader can see why the distinction matters. [introduced_by_pass: 3 — the conflating sentence was written in pass 3's fold]
+
+### Code corrections applied
+
+- (none)
+
+### New questions Codex raised
+
+- (none)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: REVISE · qa: REVISE
+
+### Fold-provenance pilot note
+
+Both findings trace to pass 3's fold — `introduced_by_pass: 3` for both; **this pass is fully fold-induced** (3rd consecutive: passes 2, 3, and 4 have now all been fully fold-induced). Non-convergence check: merged HIGH+MEDIUM count was 4 (pass 1) → 2 (pass 2) → 2 (pass 3) → 2 (pass 4) — **two consecutive transitions (2→3, 3→4) have now failed to strictly decrease, which is loop-mode's actual non-convergence stall threshold.** Per the skill's own guardrail design, this is a checkpoint to surface to Kyle rather than push through silently — see the checkpoint note below. All three findings this pass were, again, real and precisely-scoped defects (a directory-depth bug three independent lenses converged on, and a genuine prose/implementation split) — not vocabulary hygiene.
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-21 14:01; head SHA `d95314a01e154292700065387f76f59638994efb`.

@@ -213,11 +213,21 @@ performed by the runner, deterministically.
        answered and they conflicted, which is the opposite signal. A
        pass with a `FAILED` lens neither counts nor resets the streak
        — mirroring the stall guardrail's own treatment of `FAILED`
-       passes (step 10). A differing answer (including a disagreement)
-       resets the streak, with the next settled answer starting a new
-       one (i.e.
-       that pass becomes the new baseline, counted-pass #1 of the new
-       streak).
+       passes (step 10). **The two reset cases land differently, and
+       it matters which pass becomes the new baseline:**
+       - **An ordinary differing (but settled) answer** resets the
+         streak, and — because it *is* a real, settled answer — that
+         same pass immediately becomes the new baseline, counted-pass
+         #1 of the new streak (no pass is "wasted" re-establishing it).
+       - **A disagreement** resets to *no* baseline at all, because
+         this pass produced no settled answer to start counting from;
+         the next pass that *does* settle an answer becomes counted-pass
+         #1, one pass later than the differing-answer case above.
+       Conflating these — treating a disagreement's reset the same as
+       an ordinary differing answer's — would delay freezing by one
+       pass after every ordinary answer change, which is wrong: only
+       the disagreement case has that one-pass delay, because only it
+       lacks a settled answer to serve as an immediate baseline.
    - **Route `new_questions` by `settled_by`.** Each carries a class saying
      who can settle it. Dedupe across lenses first (two lenses often ask the
      same thing); on a class conflict for the same question, take the **most

@@ -56,11 +56,16 @@ If the user invokes without a `--scope` flag, ask them which scope they want bef
      `fixture`, `fixtures`, `golden`, `goldens`, `example`, `examples`, or
      `docs`; a filename matching a common test-file convention
      (`test_*.*`, `*_test.*`, `*.test.*`, `*.spec.*`); or a well-known
-     root-level documentation filename — `README`, `CHANGELOG`,
-     `CONTRIBUTING`, `LICENSE`/`LICENCE`, `CODE_OF_CONDUCT`, `SECURITY`,
-     `AUTHORS`, `NOTICE`, `GOVERNANCE` (case-insensitive, any extension or
-     none) — since these live at repo root, with no `docs` segment, purely
-     by convention, and a diff touching only `README.md` is exactly as
+     documentation filename **with no directory component at all** —
+     `README`, `CHANGELOG`, `CONTRIBUTING`, `LICENSE`/`LICENCE`,
+     `CODE_OF_CONDUCT`, `SECURITY`, `AUTHORS`, `NOTICE`, `GOVERNANCE`
+     (case-insensitive, any extension or none) — since these live at repo
+     root, with no `docs` segment, purely by convention. **This exception
+     is root-level only, checked on the path as a whole, not the
+     filename alone** — `src/README.py` or `config/SECURITY.md` have a
+     directory component and stay production; only a bare `README.md` at
+     the repo root (no `/` before it) qualifies. A diff touching only
+     `README.md` is exactly as
      non-production as one touching only `docs/README.md`.
    - **production** — anything else, **and any ambiguous case** — a path
      you can't confidently place in the non-production set above (biases

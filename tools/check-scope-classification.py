@@ -56,6 +56,14 @@ CASES: list[tuple[str, list[str], str]] = [
      ["readme.MD"], "non-production"),
     ("a root-level doc-only diff from this very repo (dogfooding check)",
      [".gitignore", "README.md", "CHANGELOG.md"], "production"),  # .gitignore isn't a doc file
+    ("a nested file matching a doc basename is NOT the root-level exception",
+     ["src/README.py"], "production"),
+    ("nested SECURITY.md under a config dir is still production",
+     ["config/SECURITY.md"], "production"),
+    ("nested LICENSE.ts under lib/ is still production",
+     ["lib/LICENSE.ts"], "production"),
+    ("root-level doc file alongside a nested doc-named file is still production",
+     ["README.md", "src/README.py"], "production"),
 ]
 
 

@@ -46,8 +46,11 @@ def _path_is_non_production(path: str) -> bool:
         return True
     if any(p.match(filename) for p in _TEST_FILENAME_PATTERNS):
         return True
-    basename = filename.rsplit(".", 1)[0] if "." in filename else filename
-    return basename.lower() in _ROOT_DOC_BASENAMES
+    if not segments:  # root-level exception only applies with NO directory
+        basename = filename.rsplit(".", 1)[0] if "." in filename else filename
+        if basename.lower() in _ROOT_DOC_BASENAMES:
+            return True
+    return False
 
 
 def classify(paths) -> str:
