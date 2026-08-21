@@ -34,6 +34,12 @@ Optional flags:
   activation.
 - `--keep-state` — on Converge, skip the state-dir prune and keep the
   per-pass inputs/responses for audit or debugging.
+- `--ignore-register` — compose with an explicitly empty accepted-risks
+  register, bypassing HEAD resolution entirely (step 5). Never automatic:
+  the editor passes this only after the human selects *proceed with no
+  register* at the malformed/unavailable-register-source decision card
+  (step 8) — without it, a malformed or unavailable register always halts
+  the pass before any lens runs.
 
 ## Setup (once per skill invocation)
 
