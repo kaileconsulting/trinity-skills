@@ -188,11 +188,23 @@ performed by the runner, deterministically.
        normative reference if this prose and an implementation ever
        seem to disagree.
      - **A pass counts toward the freeze threshold (N=3) only when the
-       full selected lens set completed and every lens's answer is
-       equivalent to the prior counted pass.** A pass with a `FAILED` lens
-       neither counts nor resets the streak — mirroring the stall
-       guardrail's own treatment of `FAILED` passes (step 10). A differing
-       answer resets the streak, with that pass starting a new one (i.e.
+       full selected lens set completed and this pass's *answer to the
+       question* — after step 7's existing cross-lane merge (agree →
+       one answer; disagree → escalated, never silently averaged) —
+       is equivalent to the prior counted pass's answer.** The
+       comparison unit is the merged, per-pass answer, not each lens's
+       individual phrasing: by the time freeze-counting ever sees a
+       pass, step 7 has already reconciled the lenses into one answer
+       (or an escalated disagreement, which can't be "equivalent" to
+       anything and simply doesn't count). A lens rephrasing its
+       reasoning between passes doesn't itself break the streak if the
+       merged answer stays the same — that's exactly the semantic-
+       equivalence judgment the "Identical" bullet above already
+       describes, applied at the same unit merging already produces.
+       A pass with a `FAILED` lens neither counts nor resets the streak
+       — mirroring the stall guardrail's own treatment of `FAILED`
+       passes (step 10). A differing answer resets the streak, with
+       that pass starting a new one (i.e.
        that pass becomes the new baseline, counted-pass #1 of the new
        streak).
    - **Route `new_questions` by `settled_by`.** Each carries a class saying
@@ -255,7 +267,16 @@ performed by the runner, deterministically.
    **Reopening.** Any plan edit touching the frozen question's subject
    matter reopens it — editor judgment at fold time, noted in the
    HISTORICAL block — as does a lens answering with genuinely new evidence,
-   as does the human. Freezing never resolves a question: `needs_human`
+   as does the human. **Reopening removes the inline `— FROZEN...`
+   annotation from the question's line in `## Open questions`** — the
+   question returns to its plain, unannotated form, eligible for lenses
+   to answer again on the next pass; the freeze *event* and the reopen
+   *event* both stay on the record regardless, in the HISTORICAL blocks
+   of the passes that made them, which is the durable audit trail —
+   the inline annotation is a live-state marker, not history, so it
+   doesn't persist past the state it describes. (Re-freezing later, if
+   the streak reaches N again, writes a fresh annotation naming the new
+   freezing pass.) Freezing never resolves a question: `needs_human`
    escalation (step 7) and the final human answer at Converge are
    untouched; freezing only stops the loop paying full lens-input cost for
    the 5th–12th identical restatement of an answer already settled.
@@ -288,10 +309,17 @@ performed by the runner, deterministically.
    This worked example isn't only prose: `tools/freeze_tracker.py` is a
    reference implementation of the counting algorithm above (editor-side
    judgment, not runner code), boundary-case-tested — including this exact
-   pass-4/5/6 sequence — by `tools/check-question-freeze.py`. Since this
-   mechanism gates lens-input cost, it gets the same executable-fixture
-   treatment every other control-flow rule in this repo does, not prose
-   alone.
+   pass-4/5/6 sequence — by `tools/check-question-freeze.py`. **Scope of
+   that coverage, stated precisely rather than overclaimed:** it pins the
+   streak-counting state machine — when a pass counts, resets, or reaches
+   N — using an opaque token standing in for "the editor's merged-answer
+   equivalence judgment" (that judgment itself, and the mechanics of
+   writing/removing the inline annotation in the plan file, are editor
+   actions verified by inspection at review time, the same standard this
+   skill already holds every other fold-time write to — HISTORICAL
+   blocks, dispositions, plan_corrections — to; none of those have
+   automated plan-mutation tests either, and freeze annotations aren't a
+   special case).
 
    Fold `plan_corrections` mechanically; incorporate HIGH/MEDIUM
    findings (skip/dispute only with explicit reasoning); LOW is informational.
@@ -532,9 +560,11 @@ for standalone `run-lens` output. Pruned at Converge (step 15) unless
   fold-caused share, disposition mix — from the `passes` rows above;
   fixture-pinned by `tools/check-provenance-recipe.py`.
 - `../tools/freeze_tracker.py` — reference implementation of the §4
-  open-question freeze counting semantics above (editor-side judgment,
+  open-question freeze *counting* semantics above (editor-side judgment,
   not runner code); boundary-case-tested by
-  `tools/check-question-freeze.py`.
+  `tools/check-question-freeze.py`. Covers the streak state machine only
+  — not the plan-file annotation write/removal, which is editor-verified
+  by inspection like every other fold-time write this skill makes.
 - `state/<scope-hash>/` — the runner's per-scope state directory (see the
   State-file-shape paragraph above); pruned at Converge unless `--keep-state`.
 - `bin/` — the runner scripts steps 5–7 invoke: `run-pass` (selection +
