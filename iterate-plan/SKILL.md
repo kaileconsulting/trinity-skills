@@ -674,7 +674,7 @@ performed by the runner, deterministically.
    card would mean silently committing to a decision nobody approved,
    exactly what every one of these moments exists to prevent).
 
-   **Persistence, uniformly across all four card types below: two
+   **Persistence, uniformly across all five card types below: two
    phases**, written into the plan's *current pass* HISTORICAL block under
    a `### Decision cards` subsection (only present when a card was
    presented that pass):
@@ -760,8 +760,8 @@ performed by the runner, deterministically.
 
    <!-- Only present when a card was presented this pass — plan-shaping-fold
    escalation, accepted-risk confirmation, needs_human question,
-   non-convergence stall, or malformed register source. One entry per card,
-   written in two phases per the shared contract above: appended as
+   non-convergence stall, or malformed or unavailable register source. One
+   entry per card, written in two phases per the shared contract above: appended as
    `(pending)` before presentation, then updated in place once answered. -->
 
    - **<card type>** (<item id, e.g. AR-2 or finding title>): recommendation — <text>; alternatives — <text>; chosen: (pending) | <option> (<one-line outcome>).
@@ -1111,7 +1111,7 @@ for standalone `run-lens` output. Pruned at Converge (step 15) unless
   choice at the card.
 - **Every named human-judgment moment (accepted-risk confirmation,
   plan-shaping-fold escalation, `needs_human` question, non-convergence
-  stall, malformed register source) uses the same decision-card contract**
+  stall, malformed or unavailable register source) uses the same decision-card contract**
   (Phase 1, step 8) — recommendation + why, up to 3 alternatives
   (context-sensitive omission can reduce this to zero listed alternatives;
   recommendation + discuss is the floor and is always presented, never

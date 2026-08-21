@@ -1015,6 +1015,46 @@ def test_register_integration(env: Env) -> None:
            not os.path.exists(os.path.join(
                env.skill, "state", nohead_shash, "pass-1.summary.json")))
 
+    # run-lens gets its OWN --ignore-register coverage (qa's pass-7
+    # finding): run-pass and run-lens are two separate CLIs that each add
+    # their own control-flow path around resolve_register(), so a
+    # regression in run-lens's copy could stay invisible to every run-pass
+    # assertion above while the documented standalone-retry path silently
+    # breaks. Same malformed register as the run-pass cases; debug/
+    # artifacts are glob-compared before/after since debug_paths() names
+    # them with a timestamp, not a predictable pass number.
+    env.commit_register(
+        "## Accepted risks\n\n"
+        "- **RR-2026-08-06-dup** — first; bound: n/a; recovery: n/a.\n\n"
+        "- **RR-2026-08-06-dup** — duplicate id, second bullet; "
+        "bound: n/a; recovery: n/a.\n")
+    debug_dir = os.path.join(state_dir, "debug")
+    before = set(glob.glob(os.path.join(debug_dir, "*")))
+    proc = env.run("run-lens", "--plan", env.plan, "--lens", "architect")
+    record("register integration: run-lens without the flag aborts on a "
+           "malformed register before invoking Codex",
+           proc.returncode != 0 and "register malformed" in proc.stderr)
+    after = set(glob.glob(os.path.join(debug_dir, "*")))
+    record("register integration: run-lens's malformed abort wrote no "
+           "debug artifacts either",
+           after == before)
+
+    proc = env.run("run-lens", "--plan", env.plan, "--lens", "architect",
+                    "--ignore-register")
+    record("register integration: run-lens --ignore-register succeeds past "
+           "the same malformed register",
+           proc.returncode == 0, proc.stderr.strip())
+    if proc.returncode == 0:
+        input_path = json.loads(proc.stdout)["input_path"]
+        composed = read(input_path)
+        real_header = "=== MATCHED CONTEXT (sections for the architect lens) ==="
+        after_real_header = composed.split(real_header, 1)[-1]
+        record("register integration: run-lens --ignore-register composes "
+               "with no register block and never reads the malformed entry",
+               real_header in composed
+               and "=== ACCEPTED RISKS ===" not in after_real_header
+               and "RR-2026-08-06-dup" not in composed)
+
 
 # ---------------------------------------------------------------------------
 # Runner
