@@ -127,3 +127,32 @@ Both findings trace to pass 3's fold — `introduced_by_pass: 3` for both; **thi
 ### Diff snapshot reference
 
 Diff captured at 2026-08-21 14:01; head SHA `d95314a01e154292700065387f76f59638994efb`.
+
+## Pass 5 — 2026-08-21 14:07 [HISTORICAL]
+
+**Scope:** branch · **Diff size:** 2195 lines · **Scope class:** production · **Verdict:** APPROVE (worst-of; senior-dev: APPROVE, security: APPROVE, qa: APPROVE) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+1. **Multi-extension root documentation files miss the documented exception** — MEDIUM · lens: qa (verdict APPROVE; explicitly non-blocking — "the failure is conservative... does not block approval"): `iterate-review/SKILL.md` said "any extension," but `scope_classifier.py`'s `rsplit(".", 1)` only strips the *last* suffix — a name like `README.en.md` or `CHANGELOG.generated.md` still classifies `production`, missing the documented exception (conservatively: toward more review, not less).
+   → Editor: incorporated — changed to `filename.split(".", 1)[0]` (split on the *first* dot, not the last), reworded the SKILL.md parenthetical to say "any extension or extensions" with `README.en.md` named explicitly, added 2 fixtures for locale- and generated-suffix variants. [introduced_by_pass: 3 — the `rsplit` call was written as part of pass 3's fold, alongside `_ROOT_DOC_BASENAMES` itself]
+
+### Code corrections applied
+
+- (none)
+
+### New questions Codex raised
+
+- (none)
+
+### Lens run summary
+
+- senior-dev: APPROVE · security: APPROVE · qa: APPROVE
+
+### Fold-provenance pilot note
+
+The one finding this pass traces to pass 3's fold — `introduced_by_pass: 3`; fully fold-induced (4th consecutive: passes 2-5). Unlike the prior three, this one was explicitly non-blocking per the reporting lens itself, and the editor has no further changes pending after this fold — the aggregate verdict is APPROVE with a clean incorporation, not a residual REVISE. Recommendation: **Converge.**
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-21 14:07; head SHA (post-fold, to be recorded at Converge).

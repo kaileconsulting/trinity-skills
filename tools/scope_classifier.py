@@ -47,7 +47,10 @@ def _path_is_non_production(path: str) -> bool:
     if any(p.match(filename) for p in _TEST_FILENAME_PATTERNS):
         return True
     if not segments:  # root-level exception only applies with NO directory
-        basename = filename.rsplit(".", 1)[0] if "." in filename else filename
+        # Split on the FIRST dot, not the last -- "any extension" must cover
+        # multi-suffix variants like README.en.md or CHANGELOG.generated.md,
+        # not just a single trailing extension.
+        basename = filename.split(".", 1)[0]
         if basename.lower() in _ROOT_DOC_BASENAMES:
             return True
     return False

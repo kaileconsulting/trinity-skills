@@ -64,6 +64,10 @@ CASES: list[tuple[str, list[str], str]] = [
      ["lib/LICENSE.ts"], "production"),
     ("root-level doc file alongside a nested doc-named file is still production",
      ["README.md", "src/README.py"], "production"),
+    ("multi-extension root doc filename (locale variant)",
+     ["README.en.md"], "non-production"),
+    ("multi-extension root doc filename (generated variant)",
+     ["CHANGELOG.generated.md"], "non-production"),
 ]
 
 
