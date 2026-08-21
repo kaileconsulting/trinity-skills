@@ -120,6 +120,18 @@ where you genuinely can't answer).
 - `answer` — your view, with reasoning. Multi-paragraph fine if
   warranted.
 
+**A question annotated `— FROZEN at pass N (...)` in the Open questions
+section has already received identical answers from every lens for
+several consecutive passes — don't re-answer it unless you have
+genuinely new evidence** (new information, a new consideration, or a
+reason the prior consensus was wrong — not a rephrasing of the same
+reasoning). If you do have new evidence, answer it anyway: your answer
+reopens the question for the editor, which is exactly the point of
+flagging it rather than silently dropping it. Answering a frozen
+question with the same reasoning it was frozen on wastes a pass; not
+answering one you have real new evidence for defeats the mechanism —
+when genuinely unsure which side you're on, answer it.
+
 ### `new_questions`
 
 Array of objects (required, may be empty). Questions you want answered in

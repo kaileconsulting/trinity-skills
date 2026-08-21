@@ -161,6 +161,24 @@ performed by the runner, deterministically.
      cross-lane disagreement is usually the plan's own unresolved tension
      surfacing, which is what fanning out is for; it is a human-judgment fold
      under step 10's guardrail, not a merge to resolve silently.
+   - **Open-question freeze tracking.** For each existing Q-numbered question
+     that isn't already frozen or marked keep-active, compare this pass's
+     merged answer to the answer counted at the most recently *counted*
+     pass (below). Feed the result to the freeze decision made at fold
+     time (step 8). Counting semantics — read carefully, since the
+     defaults all point toward *not* freezing:
+     - **"Identical" is the editor's semantic-equivalence judgment** — same
+       resolution, no new rationale, no new conditions — the same judgment
+       already applied to merging findings above. Byte equality is too
+       strict (lenses rephrase); **when in doubt, the answers are not
+       identical and the streak resets** — the conservative direction is
+       not-freezing.
+     - **A pass counts toward the freeze threshold (N=3) only when the
+       full selected lens set completed and every lens's answer is
+       equivalent to the prior counted pass.** A pass with a `FAILED` lens
+       neither counts nor resets the streak — mirroring the stall
+       guardrail's own treatment of `FAILED` passes (step 10). A differing
+       answer resets the streak, with that pass starting a new one.
    - **Route `new_questions` by `settled_by`.** Each carries a class saying
      who can settle it. Dedupe across lenses first (two lenses often ask the
      same thing); on a class conflict for the same question, take the **most
@@ -206,6 +224,50 @@ performed by the runner, deterministically.
       other sections restate — an id format, a lifecycle, an accounting
       rule — does the rule now read correctly in **every** section that
       restates it?
+
+   **Open-question freeze — the write action.** When step 7's tracking puts
+   a question's streak at N=3 consecutive counted passes, mark it frozen in
+   the plan's `## Open questions` section: append an inline annotation
+   naming the freezing pass and the reopen rule, e.g. `— FROZEN at pass 7
+   (answered identically ×3; reopens on any edit touching this question or
+   new evidence)`. Frozen questions **stay visible** in the plan — freezing
+   is never deletion. Note the freeze in this pass's HISTORICAL block too.
+   `reviewer-prompt.md` instructs lenses not to re-answer a frozen question
+   absent genuinely new evidence; a lens that *does* have new evidence
+   answers anyway, and that answer reopens the question.
+
+   **Reopening.** Any plan edit touching the frozen question's subject
+   matter reopens it — editor judgment at fold time, noted in the
+   HISTORICAL block — as does a lens answering with genuinely new evidence,
+   as does the human. Freezing never resolves a question: `needs_human`
+   escalation (step 7) and the final human answer at Converge are
+   untouched; freezing only stops the loop paying full lens-input cost for
+   the 5th–12th identical restatement of an answer already settled.
+
+   **The human overrides all of it, in both directions.** At any
+   checkpoint (step 10) Kyle can freeze a question early, mark one
+   **keep-active** (permanently exempt from freeze tracking), or unfreeze
+   one already frozen — record the action in the HISTORICAL block, noting
+   explicitly that it was human-directed rather than the editor's own
+   streak-based judgment.
+
+   **Worked example.** Q4 asks whether a timeout should be configurable
+   per-environment. Passes 4, 5, and 6 each return the identical answer
+   from both lenses, no new rationale — the streak reaches N=3 at pass 6,
+   and the editor annotates `— FROZEN at pass 6 (answered identically ×3;
+   reopens on any edit touching this question or new evidence)`. **Pass
+   7:** per `reviewer-prompt.md`'s instruction, neither lens re-answers
+   Q4 — nothing new to say, so nothing is filed. **Pass 8:** the architect
+   lens is `FAILED` (retried once, still failed) while checking on a
+   separate, still-live Q5 — that pass neither counts toward nor resets
+   Q5's streak, `FAILED` or not. **Pass 9:** the editor's own fold, made
+   for an unrelated finding, rewrites the paragraph Q4's answer actually
+   depends on — that edit reopens Q4 (noted in pass 9's HISTORICAL block),
+   and pass 10's lenses answer it fresh. Separately, at the pass 5
+   checkpoint Kyle decides Q2 should stay live regardless of how many
+   times it's answered the same way; the editor records `— KEEP-ACTIVE
+   (human-directed, pass 5 checkpoint)` next to it, exempting it from
+   freeze tracking from that point on.
 
    Fold `plan_corrections` mechanically; incorporate HIGH/MEDIUM
    findings (skip/dispute only with explicit reasoning); LOW is informational.
