@@ -54,8 +54,14 @@ If the user invokes without a `--scope` flag, ask them which scope they want bef
    - **non-production** — every touched path matches at least one of:
      a path segment (case-insensitive) `test`, `tests`, `spec`, `specs`,
      `fixture`, `fixtures`, `golden`, `goldens`, `example`, `examples`, or
-     `docs`; or a filename matching a common test-file convention
-     (`test_*.*`, `*_test.*`, `*.test.*`, `*.spec.*`).
+     `docs`; a filename matching a common test-file convention
+     (`test_*.*`, `*_test.*`, `*.test.*`, `*.spec.*`); or a well-known
+     root-level documentation filename — `README`, `CHANGELOG`,
+     `CONTRIBUTING`, `LICENSE`/`LICENCE`, `CODE_OF_CONDUCT`, `SECURITY`,
+     `AUTHORS`, `NOTICE`, `GOVERNANCE` (case-insensitive, any extension or
+     none) — since these live at repo root, with no `docs` segment, purely
+     by convention, and a diff touching only `README.md` is exactly as
+     non-production as one touching only `docs/README.md`.
    - **production** — anything else, **and any ambiguous case** — a path
      you can't confidently place in the non-production set above (biases
      toward the full budget, mirroring lens selection's own bias toward
@@ -67,6 +73,7 @@ If the user invokes without a `--scope` flag, ask them which scope they want bef
    | `tests/test_foo.py`, `docs/README.md` | non-production |
    | `src/foo.py`, `tests/test_foo.py` | production (one production path is enough) |
    | `.github/workflows/ci.yml` (a path that isn't clearly source *or* clearly test/docs) | production (ambiguity biases toward the full budget) |
+   | `README.md`, `CHANGELOG.md` (root-level, no `docs` segment) | non-production — root-level documentation-file convention, not just a `docs/` segment |
 
    These worked examples aren't only prose: `tools/scope_classifier.py` is a
    reference implementation of this exact heuristic, boundary-case-tested

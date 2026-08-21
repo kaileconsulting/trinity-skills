@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from freeze_tracker import FREEZE_N, advance, run  # noqa: E402
 
 FAILED = ("failed",)
+DISAGREEMENT = ("disagreement",)
 
 
 def answer(token):
@@ -67,6 +68,23 @@ def main() -> int:
     check("a differing answer resets -- 2 identical, 1 different, 2 identical: needs a fresh 3",
           run([answer("fixed"), answer("fixed"), answer("configurable"),
                answer("configurable"), answer("configurable")]), 4)
+
+    # -- an escalated cross-lane disagreement resets to NO baseline, unlike
+    # a FAILED pass's neutral skip -- answers on either side of an unresolved
+    # disagreement must never form one continuous streak.
+    check("a disagreement between two equivalent answers breaks the streak entirely",
+          run([answer("fixed"), answer("fixed"), DISAGREEMENT,
+               answer("fixed"), answer("fixed")]), None)
+
+    check("resolving after a disagreement starts a genuinely fresh streak",
+          run([answer("fixed"), answer("fixed"), DISAGREEMENT,
+               answer("fixed"), answer("fixed"), answer("fixed")]), 5)
+
+    check("a disagreement alone never freezes",
+          run([DISAGREEMENT, DISAGREEMENT, DISAGREEMENT]), None)
+
+    check("advance() on a disagreement always returns state=None, frozen=False",
+          advance((2, "fixed"), DISAGREEMENT), (None, False))
 
     check("alternating answers never freeze",
           run([answer("a"), answer("b"), answer("a"), answer("b")]), None)

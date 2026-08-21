@@ -46,6 +46,16 @@ CASES: list[tuple[str, list[str], str]] = [
      "non-production"),
     ("one non-matching path among several non-production ones is still production",
      ["docs/README.md", "tools/check-all.sh", "tests/test_foo.py"], "production"),
+    ("root-level README with no docs/ segment at all",
+     ["README.md"], "non-production"),
+    ("root-level CHANGELOG, no extension",
+     ["CHANGELOG"], "non-production"),
+    ("root-level LICENSE and CONTRIBUTING together",
+     ["LICENSE", "CONTRIBUTING.md"], "non-production"),
+    ("root-level doc filename matching is case-insensitive",
+     ["readme.MD"], "non-production"),
+    ("a root-level doc-only diff from this very repo (dogfooding check)",
+     [".gitignore", "README.md", "CHANGELOG.md"], "production"),  # .gitignore isn't a doc file
 ]
 
 

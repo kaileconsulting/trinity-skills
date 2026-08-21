@@ -65,3 +65,34 @@ Both findings this pass trace to pass 1's fold — `introduced_by_pass: 1` for b
 ### Diff snapshot reference
 
 Diff captured at 2026-08-21 13:52; head SHA `86cd896eedfa2c82de155943146e600013053d1a`.
+
+## Pass 3 — 2026-08-21 13:57 [HISTORICAL]
+
+**Scope:** branch · **Diff size:** 2026 lines · **Scope class:** production · **Verdict:** REVISE (worst-of; senior-dev: REVISE, security: APPROVE, qa: REVISE) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+1. **Cross-lane disagreement has contradictory freeze-streak behavior** — HIGH · lens: senior-dev: pass 2's fix said an escalated disagreement "can't be equivalent to anything and simply doesn't count" — but "doesn't count" is exactly the phrase already used for `FAILED`-lens passes, which explicitly *neither count nor reset*. Read that way, a disagreement would be a neutral skip, letting answers on either side of a genuinely unresolved disagreement form one continuous streak and freeze a question that was never actually settled.
+   → Editor: incorporated — reworded the counting-semantics bullet to state explicitly that a disagreement is never a neutral skip: it resets the streak to no baseline at all (distinct from `FAILED`, which preserves state), because a disagreement means every lens answered and they conflicted — the opposite signal from `FAILED`, which means no lens answered at all. Added a third `("disagreement",)` case to `tools/freeze_tracker.py` (distinct from `("failed",)`'s state-preserving skip and `("answer", token)`'s baseline-or-reset), and 4 new fixture cases to `tools/check-question-freeze.py` (disagreement breaking an in-progress streak, a fresh streak genuinely restarting after one, disagreement-only never freezing, and `advance()`'s exact return contract for it). [introduced_by_pass: 2 — the "simply doesn't count" phrasing pass 2's own fold introduced, without walking it against the FAILED-lens rule already using the same words for a different meaning]
+2. **Root-level documentation files are classified as production** — MEDIUM · lens: qa: `iterate-review/SKILL.md` describes documentation-only diffs as non-production, but `tools/scope_classifier.py` only recognized documentation via a `docs/` path segment or test-file naming — a diff touching only `README.md` or `CHANGELOG.md` (no `docs/` segment) classified `production`, keeping the full 6-pass default. `check-scope-classification.py` covered `docs/README.md` but no root-level case, so the mismatch passed the existing checks.
+   → Editor: incorporated — extended the written heuristic and `scope_classifier.py` together with a well-known root-level documentation filename set (`README`, `CHANGELOG`, `CONTRIBUTING`, `LICENSE`/`LICENCE`, `CODE_OF_CONDUCT`, `SECURITY`, `AUTHORS`, `NOTICE`, `GOVERNANCE` — case-insensitive, any extension or none, matching the GitHub community-file convention), added a worked-example row, and 5 new fixture cases to `check-scope-classification.py` (including a dogfooding case: this very repo's own root `README.md`/`CHANGELOG.md` alongside `.gitignore`, which correctly stays `production` since `.gitignore` isn't a documentation file). [introduced_by_pass: 1 — `tools/scope_classifier.py` didn't exist before pass 1's fold created it in response to qa's original test-coverage finding; the gap is in that file's first version]
+
+### Code corrections applied
+
+- (none)
+
+### New questions Codex raised
+
+- (none)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: APPROVE · qa: REVISE
+
+### Fold-provenance pilot note
+
+Both findings trace to prior folds (pass 2 and pass 1 respectively) — `introduced_by_pass: 2` and `introduced_by_pass: 1`; **this pass is fully fold-induced.** Consecutive fully-fold-induced passes: 2 (pass 2 was also fully fold-induced) — **the pilot's surface-to-Kyle threshold fires at this checkpoint.** Both findings are, again, real integration/design defects rather than vocabulary hygiene: a genuine logic contradiction (disagreement vs. FAILED treatment) and a genuine prose/implementation mismatch (root-level docs), each caught by an independent lens reasoning about the *previous* pass's fold rather than the original diff. Non-convergence note: HIGH+MEDIUM count was 4 (pass 1) → 2 (pass 2) → 2 (pass 3) — one non-decreasing transition so far, not yet two consecutive (the stall guardrail's actual threshold); flagged for visibility, not (yet) a guardrail halt.
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-21 13:57; head SHA `a698f95f405d448f9b40714c8a06e11e6162e65f`.

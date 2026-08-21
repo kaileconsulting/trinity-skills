@@ -28,13 +28,26 @@ _TEST_FILENAME_PATTERNS = [
     re.compile(r"^.+\.spec\..+$", re.IGNORECASE),
 ]
 
+# Well-known root-level documentation filenames (the GitHub community-file
+# conventions) count as non-production regardless of extension or absence
+# of one -- a diff touching only README.md doesn't gain a `docs/` segment
+# just because it's obviously documentation. Matched by basename with any
+# extension stripped, case-insensitive.
+_ROOT_DOC_BASENAMES = {
+    "readme", "changelog", "contributing", "license", "licence",
+    "code_of_conduct", "security", "authors", "notice", "governance",
+}
+
 
 def _path_is_non_production(path: str) -> bool:
     parts = path.replace("\\", "/").split("/")
     segments, filename = parts[:-1], parts[-1] if parts else ""
     if any(seg.lower() in NON_PRODUCTION_SEGMENTS for seg in segments):
         return True
-    return any(p.match(filename) for p in _TEST_FILENAME_PATTERNS)
+    if any(p.match(filename) for p in _TEST_FILENAME_PATTERNS):
+        return True
+    basename = filename.rsplit(".", 1)[0] if "." in filename else filename
+    return basename.lower() in _ROOT_DOC_BASENAMES
 
 
 def classify(paths) -> str:

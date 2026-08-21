@@ -195,16 +195,27 @@ performed by the runner, deterministically.
        comparison unit is the merged, per-pass answer, not each lens's
        individual phrasing: by the time freeze-counting ever sees a
        pass, step 7 has already reconciled the lenses into one answer
-       (or an escalated disagreement, which can't be "equivalent" to
-       anything and simply doesn't count). A lens rephrasing its
-       reasoning between passes doesn't itself break the streak if the
-       merged answer stays the same — that's exactly the semantic-
-       equivalence judgment the "Identical" bullet above already
-       describes, applied at the same unit merging already produces.
-       A pass with a `FAILED` lens neither counts nor resets the streak
+       or an escalated disagreement. A lens rephrasing its reasoning
+       between passes doesn't itself break the streak if the merged
+       answer stays the same — that's exactly the semantic-equivalence
+       judgment the "Identical" bullet above already describes, applied
+       at the same unit merging already produces. **An escalated
+       cross-lane disagreement is never a neutral skip — it resets the
+       streak to no baseline at all**, the same as any other answer
+       that isn't equivalent to the prior one, because there is no
+       settled answer this pass to compare against or to count from;
+       treating it as a skip (like a `FAILED` lens) would let answers on
+       either side of a genuinely unresolved disagreement form one
+       continuous streak and freeze a question that was never actually
+       settled. Only a `FAILED` lens gets the neutral-skip treatment —
+       a `FAILED` lens means codex didn't answer at all, which is
+       nothing to disagree *about*; a disagreement means every lens
+       answered and they conflicted, which is the opposite signal. A
+       pass with a `FAILED` lens neither counts nor resets the streak
        — mirroring the stall guardrail's own treatment of `FAILED`
-       passes (step 10). A differing answer resets the streak, with
-       that pass starting a new one (i.e.
+       passes (step 10). A differing answer (including a disagreement)
+       resets the streak, with the next settled answer starting a new
+       one (i.e.
        that pass becomes the new baseline, counted-pass #1 of the new
        streak).
    - **Route `new_questions` by `settled_by`.** Each carries a class saying

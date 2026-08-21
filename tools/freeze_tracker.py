@@ -18,14 +18,28 @@ streak reaches `FREEZE_N`.
 
 A pass is represented as one of:
     ("failed",)            -- a FAILED-lens pass: never counts, never resets
-    ("answer", <token>)    -- a fully-completed pass; <token> is an opaque
-                               equality key standing in for "the editor's
-                               semantic-equivalence judgment of this pass's
-                               merged answer" -- equal tokens mean the
-                               editor judged the answers equivalent. This
-                               module only does the counting; the
-                               equivalence judgment itself stays the
-                               editor's, upstream of this function.
+    ("answer", <token>)    -- a fully-completed pass with one settled,
+                               merged answer; <token> is an opaque equality
+                               key standing in for "the editor's semantic-
+                               equivalence judgment of this pass's merged
+                               answer" -- equal tokens mean the editor
+                               judged the answers equivalent. This module
+                               only does the counting; the equivalence
+                               judgment itself stays the editor's, upstream
+                               of this function.
+    ("disagreement",)      -- an escalated cross-lane disagreement (step 7:
+                               lenses disagree, never averaged): there is no
+                               single settled answer this pass to serve as a
+                               baseline, so this always resets the streak to
+                               *no baseline at all* -- distinct from a
+                               differing `("answer", token)`, which resets to
+                               a fresh streak of 1 because it DOES have a
+                               real answer to start counting from. A
+                               disagreement is never treated as a neutral
+                               skip like `("failed",)`: skipping would let
+                               answers straddling an unresolved disagreement
+                               form one continuous streak and freeze a
+                               question that was never actually settled.
 
 Reopening (a plan edit touching the question, or a lens answering with
 genuinely new evidence) and the human's unfreeze override are both
@@ -46,14 +60,22 @@ FREEZE_N = 3
 
 def advance(state, pass_record):
     """`state`: `(streak, last_token)` or `None` for "no streak yet" (a
-    fresh question, or one just reset by a reopen/unfreeze).
-    `pass_record`: `("failed",)` or `("answer", token)`.
+    fresh question, one just reset by a reopen/unfreeze, or one just
+    reset by an escalated disagreement).
+    `pass_record`: `("failed",)`, `("disagreement",)`, or `("answer", token)`.
 
     Returns `(new_state, frozen)` -- `frozen` is True exactly on the pass
     whose answer completes the Nth consecutive equivalent streak."""
     if pass_record[0] == "failed":
         return state, False  # neither counts nor resets (mirrors the stall
                               # guardrail's own FAILED-pass treatment)
+
+    if pass_record[0] == "disagreement":
+        return None, False  # always resets to no-baseline -- there is no
+                             # settled answer this pass to count from, and
+                             # treating it as a neutral skip (like FAILED)
+                             # would let a streak span an unresolved
+                             # disagreement
 
     _, token = pass_record
     if state is None or token != state[1]:
