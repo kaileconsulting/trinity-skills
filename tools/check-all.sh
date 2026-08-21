@@ -4,6 +4,10 @@
 #   tools/check-all.sh
 #
 # Requires python3 and the `jsonschema` package (pip install jsonschema).
+# Requires the `jq` binary on PATH (only for check-provenance-recipe.py,
+# which runs the real tools/provenance-recipe.jq rather than
+# reimplementing it -- that checker reports a clear error, not a
+# traceback, if jq is missing).
 
 set -uo pipefail
 
@@ -37,6 +41,10 @@ run "shared-machinery parity" \
     python3 tools/check-parity.py
 run "provenance analytics recipe" \
     python3 tools/check-provenance-recipe.py
+run "scope classification (iterate-review §3)" \
+    python3 tools/check-scope-classification.py
+run "open-question freeze counting (iterate-plan §4)" \
+    python3 tools/check-question-freeze.py
 run "checker self-tests" \
     python3 tools/test-checkers.py
 

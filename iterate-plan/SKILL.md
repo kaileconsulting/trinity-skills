@@ -173,12 +173,28 @@ performed by the runner, deterministically.
        strict (lenses rephrase); **when in doubt, the answers are not
        identical and the streak resets** — the conservative direction is
        not-freezing.
+     - **The streak counts consecutive *counted passes*, not pairwise
+       comparisons — the first answered pass after any reset trivially
+       becomes counted-pass #1.** It has nothing to differ from yet, so
+       it can't fail the equivalence check; it simply establishes the
+       baseline every subsequent pass is compared against. Concretely:
+       pass 4 answers a question for the first time (streak = 1); pass 5
+       answers equivalently (streak = 2); pass 6 answers equivalently
+       again (streak = 3 = N) — **frozen at pass 6**, exactly as the
+       worked example below states. Reading this as "N consecutive
+       *matches*," which would require N+1 answered passes to reach N=3
+       (needing a 4th pass here), is the wrong reading — `tools/freeze_tracker.py`
+       (fixture-pinned by `tools/check-question-freeze.py`) is the
+       normative reference if this prose and an implementation ever
+       seem to disagree.
      - **A pass counts toward the freeze threshold (N=3) only when the
        full selected lens set completed and every lens's answer is
        equivalent to the prior counted pass.** A pass with a `FAILED` lens
        neither counts nor resets the streak — mirroring the stall
        guardrail's own treatment of `FAILED` passes (step 10). A differing
-       answer resets the streak, with that pass starting a new one.
+       answer resets the streak, with that pass starting a new one (i.e.
+       that pass becomes the new baseline, counted-pass #1 of the new
+       streak).
    - **Route `new_questions` by `settled_by`.** Each carries a class saying
      who can settle it. Dedupe across lenses first (two lenses often ask the
      same thing); on a class conflict for the same question, take the **most
@@ -218,7 +234,7 @@ performed by the runner, deterministically.
       describes the mechanism)? A correct fix that leaves its own
       description lying seeds the next pass's finding, and no passing test
       could have caught it.
-   2. **Invariant walk (`iterate-plan`-only** — a rule restated in code
+   2. **Invariant walk** (`iterate-plan`-only — a rule restated in code
       comments or docs already falls under item 1's sweep, so code review
       needs no separate walk). If this fold states or changes a rule that
       other sections restate — an id format, a lifecycle, an accounting
@@ -268,6 +284,14 @@ performed by the runner, deterministically.
    times it's answered the same way; the editor records `— KEEP-ACTIVE
    (human-directed, pass 5 checkpoint)` next to it, exempting it from
    freeze tracking from that point on.
+
+   This worked example isn't only prose: `tools/freeze_tracker.py` is a
+   reference implementation of the counting algorithm above (editor-side
+   judgment, not runner code), boundary-case-tested — including this exact
+   pass-4/5/6 sequence — by `tools/check-question-freeze.py`. Since this
+   mechanism gates lens-input cost, it gets the same executable-fixture
+   treatment every other control-flow rule in this repo does, not prose
+   alone.
 
    Fold `plan_corrections` mechanically; incorporate HIGH/MEDIUM
    findings (skip/dispute only with explicit reasoning); LOW is informational.
@@ -507,6 +531,10 @@ for standalone `run-lens` output. Pruned at Converge (step 15) unless
   `iterate-review`) that reproduces per-pass tallies — pass counts,
   fold-caused share, disposition mix — from the `passes` rows above;
   fixture-pinned by `tools/check-provenance-recipe.py`.
+- `../tools/freeze_tracker.py` — reference implementation of the §4
+  open-question freeze counting semantics above (editor-side judgment,
+  not runner code); boundary-case-tested by
+  `tools/check-question-freeze.py`.
 - `state/<scope-hash>/` — the runner's per-scope state directory (see the
   State-file-shape paragraph above); pruned at Converge unless `--keep-state`.
 - `bin/` — the runner scripts steps 5–7 invoke: `run-pass` (selection +

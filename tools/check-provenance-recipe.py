@@ -12,6 +12,11 @@ Also exercises each skill's samples in isolation, so a real user running
 the recipe against only one skill's state/ directory (the common case)
 is covered too, not just the combined cross-skill invocation.
 
+Prerequisite: the `jq` binary on PATH (this checker runs the real
+recipe through it, deliberately, rather than reimplementing the query
+in Python — see the module docstring above). `tools/check-all.sh`
+documents this same prerequisite; see the checker there.
+
 Usage:
     tools/check-provenance-recipe.py
 """
@@ -20,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 
@@ -33,6 +39,13 @@ REVIEW_ABORTED = os.path.join(REPO, "iterate-review", "state", "example-aborted.
 
 
 def run_recipe(*state_files: str) -> dict:
+    if shutil.which("jq") is None:
+        raise RuntimeError(
+            "jq not found on PATH -- this checker runs the real "
+            "tools/provenance-recipe.jq through the jq binary rather than "
+            "reimplementing it, so jq is a prerequisite for this one check "
+            "(not for the skills themselves). Install jq and re-run."
+        )
     result = subprocess.run(
         ["jq", "-s", "-f", RECIPE, *state_files],
         capture_output=True, text=True,
@@ -56,6 +69,11 @@ def check(label: str, got: dict, want: dict) -> list[str]:
 
 
 def main() -> int:
+    if shutil.which("jq") is None:
+        print("error: jq not found on PATH -- required to run this checker "
+              "(not required to use iterate-plan/iterate-review themselves). "
+              "Install jq and re-run.", file=sys.stderr)
+        return 2
     if not os.path.exists(RECIPE):
         print(f"error: {RECIPE} not found", file=sys.stderr)
         return 2

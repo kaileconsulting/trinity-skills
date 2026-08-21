@@ -68,6 +68,13 @@ If the user invokes without a `--scope` flag, ask them which scope they want bef
    | `src/foo.py`, `tests/test_foo.py` | production (one production path is enough) |
    | `.github/workflows/ci.yml` (a path that isn't clearly source *or* clearly test/docs) | production (ambiguity biases toward the full budget) |
 
+   These worked examples aren't only prose: `tools/scope_classifier.py` is a
+   reference implementation of this exact heuristic, boundary-case-tested
+   (case-insensitivity, filename conventions, empty input, mixed paths) by
+   `tools/check-scope-classification.py` — since this heuristic gates review
+   depth, it gets the same executable-fixture treatment every other
+   control-flow rule in this repo does, not prose alone.
+
    Record the classification in-session — it sets the loop-mode pass-budget
    default (step 14) and is echoed in every pass's log-header `Scope class:`
    field (step 12).
@@ -376,7 +383,7 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
 
     **Loop mode (opt-in).** If invoked with `--loop` / `--until-approve`, or if the user picks **(L)oop from here**, auto-continue without prompting between passes — but **automate `Continue` only, never `Converge`.** The loop halts and hands back to the human when any guardrail fires:
     - **APPROVE reached** → stop, present the Converge decision.
-    - **Max-pass cap** (default 6 for a `production`-classified diff, **default 3 for `non-production`** — an explicit experiment, see below; `--max-passes=N` always overrides either default) — a *fresh per-activation budget* counting auto-continued passes (the activating pass doesn't count; manual/historical passes don't deplete it) → stop, "hit cap without converging." **Budget exhaustion is a checkpoint, not a termination** — hitting the cap already halts the loop back to the human (this is that same existing behavior); the checkpoint recommendation additionally flags when the final budgeted pass applied material folds no subsequent pass has reviewed, and recommends Continue in that case, so a pass-2 fold on a 3-pass budget never silently ends the review unverified.
+    - **Max-pass cap** (default 6 for a `production`-classified diff, **default 3 for `non-production`** — an explicit experiment, see below; `--max-passes=N` always overrides either default) — a *fresh per-activation budget* counting auto-continued passes (the activating pass doesn't count; manual/historical passes don't deplete it) → stop, "hit cap without converging." **A budget of N auto-continued passes means N passes beyond the activating one, not N total** — this pre-existing accounting is unchanged by the reduced non-production default, and matters concretely here: activating loop mode at pass 1 with the non-production default auto-continues through passes 2, 3, and 4 (three auto-continued passes), not through pass 3. **Budget exhaustion is a checkpoint, not a termination** — hitting the cap already halts the loop back to the human (this is that same existing behavior); the checkpoint recommendation additionally flags when the *last* auto-continued pass before the cap fires applied material folds no subsequent pass has reviewed, and recommends Continue in that case, so that fold never silently stands unverified. (A fold on the *second-to-last* auto-continued pass is already covered in the common case: the cap hasn't fired yet, so one more auto-continued pass remains to verify it.)
     - **BLOCK verdict** → stop.
     - **Non-convergence** — the merged **HIGH+MEDIUM** finding count fails to strictly decrease across two consecutive transitions (LOW / `FAILED` / open-questions excluded; a `FAILED`-lens pass is skipped in the comparison but still counts toward the cap) → stop, surface the stall.
     - **Fold needs human judgment** — any HIGH finding was *not incorporated*, *not* a fresh `accepted-risk` proposal, and *not* a valid `register-match` (i.e. it's `disputed`, or awaiting a design-shaped-fold escalation card), or a `new_question` classified **`needs_human`** survived the fold (after the label sanity-check and any override in step 11) → stop, escalate. A HIGH dispositioned `accepted-risk (proposed)` or a valid `register-match` does **not**, by itself, halt the loop — per Q1, accepted-risk proposals continue and batch for confirmation at the next checkpoint (no HIGH silently vanishes: the proposal is persisted immediately under a stable id and blocks Converge until confirmed). A **design-shaped-fold escalation does halt immediately**, unlike an accepted-risk proposal — continuing there would commit to an unapproved mechanism, which is exactly what the immediate halt exists to prevent. `resolvable_in_fold` and `needs_lookup` questions do **not** halt the loop: the editor resolves them and continues. If a `needs_lookup` resolution *fails*, it becomes `needs_human` and then halts. This is the whole point of the classification — an unattended loop shouldn't stop for a question it could have answered, and must never continue past one only the user can.
@@ -558,6 +565,9 @@ In v2, steps 2 and 4 collapse to a single `iterate-review --plan=<path> --phase=
   reproduces per-pass tallies — pass counts, fold-caused share, disposition mix, and
   §3's rollback-cohort query — from the `passes` rows above; fixture-pinned by
   `tools/check-provenance-recipe.py`.
+- `../tools/scope_classifier.py` — reference implementation of the §3 path heuristic
+  above (editor-side judgment, not runner code); boundary-case-tested by
+  `tools/check-scope-classification.py`.
 - `bin/` — the runner scripts steps 9–11 invoke: `run-pass` (selection + composition +
   concurrent fan-out + summary), `run-lens` (one lens, standalone/debug), `prune-state`
   (state-dir cleanup: `--scope` at Converge, `--older-than` for abandoned runs,
