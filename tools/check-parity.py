@@ -167,6 +167,14 @@ RULES: list[tuple[str, str, list[str] | dict[str, list[str]]]] = [
     ("editor-sole-writer", "the editor is the sole writer of folds",
      [r"sole writer"]),
 
+    # --- fold-time hygiene checklist (v2.4 Phase 0 §2) ---------------------
+    # Item 1 (claims-vs-behavior sweep) is shared verbatim; item 2 (the
+    # invariant walk) is deliberately iterate-plan-only and is verified
+    # directly by Phase 0's acceptance, not by parity.
+    ("fold-hygiene-claims-vs-behavior", "claims-vs-behavior sweep at fold time (shared)",
+     [r"test name, docstring, log line, comment",
+      r"no passing test could have caught it"]),
+
     # --- fold-provenance instrumentation (v2.4 Phase 0 §5) -----------------
     ("provenance-field", "introduced_by_pass records per-finding fold-provenance",
      [r"introduced_by_pass"]),

@@ -189,7 +189,25 @@ performed by the runner, deterministically.
      and blocks Converge (step 10).
 
 8. **Fold merged findings + append ONE HISTORICAL block.** The editor is the sole
-   writer. Fold `plan_corrections` mechanically; incorporate HIGH/MEDIUM
+   writer.
+
+   **Fold-time hygiene checklist — apply to every finding before writing its
+   disposition.** Deliberately two items, not ten — a long checklist gets
+   skimmed:
+   1. **Claims-vs-behavior sweep (shared with `iterate-review`).** Did every
+      description of the changed behavior change with it — test name,
+      docstring, log line, comment (and, plan-side, the plan prose that
+      describes the mechanism)? A correct fix that leaves its own
+      description lying seeds the next pass's finding, and no passing test
+      could have caught it.
+   2. **Invariant walk (`iterate-plan`-only** — a rule restated in code
+      comments or docs already falls under item 1's sweep, so code review
+      needs no separate walk). If this fold states or changes a rule that
+      other sections restate — an id format, a lifecycle, an accounting
+      rule — does the rule now read correctly in **every** section that
+      restates it?
+
+   Fold `plan_corrections` mechanically; incorporate HIGH/MEDIUM
    findings (skip/dispute only with explicit reasoning); LOW is informational.
    Append a single HISTORICAL section for the whole pass, each finding tagged
    with its originating **lens id(s)** and fold disposition:

@@ -158,6 +158,20 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
 
 12. **Fold merged findings + append ONE HISTORICAL block to the pass log.** The editor is the sole writer: fold findings into the working code and `code_corrections` mechanically.
 
+    **Fold-time hygiene checklist — apply to every finding before writing its
+    disposition.** Deliberately one item here, not ten — a long checklist
+    gets skimmed:
+    1. **Claims-vs-behavior sweep (shared with `iterate-plan`).** Did every
+       description of the changed behavior change with it — test name,
+       docstring, log line, comment? A correct fix that leaves its own
+       description lying seeds the next pass's finding, and no passing test
+       could have caught it.
+
+    `iterate-plan` carries a second, plan-only item (an invariant walk
+    across sections that restate the same rule) that this skill deliberately
+    does not: a rule restated in code comments or docs already falls under
+    item 1's sweep here, so code review needs no separate walk.
+
     **Before folding any finding, check whether incorporating it requires a new mechanism.** If it does, don't fold *that finding* yet — pause **at that finding**, present it as a design decision via a decision card (format below, with a cheaper alternative sketched when one exists), and get the human's answer before folding it. **"Halts immediately" is a different granularity than the loop-mode guardrails in step 14 — worth being precise about, since the two are easy to conflate:** step 14's guardrails halt *between passes* (the loop stops issuing new Codex calls and hands back to the human at a checkpoint); a design-shaped-fold escalation halts *mid-fold, at that one finding*, inside the pass that's already running. It does **not** freeze the rest of that same pass's already-returned findings — once the human answers the card, folding continues with whatever findings remain in that pass (no new Codex call needed; those findings were already returned in the current lens responses). The "immediate" is about never silently building an unapproved mechanism while working through a pass's findings, not about pausing all further work in that pass until the next one.
 
     **"New mechanism" has an operational boundary** — these are the signals:
