@@ -155,4 +155,4 @@ The one finding this pass traces to pass 3's fold — `introduced_by_pass: 3`; f
 
 ### Diff snapshot reference
 
-Diff captured at 2026-08-21 14:07; head SHA (post-fold, to be recorded at Converge).
+Diff captured at 2026-08-21 14:07; head SHA `03dc6bdf4985887ec266c946b7ad863f8baa836f`.
