@@ -48,11 +48,13 @@ Initiative-style example: list 2-5 named use cases with the user/persona
 ## Risk posture
 
 <!-- REQUIRED for every plan, both types. Captures the product's risk
-tolerance once at planning time so iterate-review's Codex lenses judge
-findings against the actual product instead of an imagined
-internet-facing one, and so the editor has grounds — via the
-`accepted-risk` disposition — to push back on disproportionate
-findings instead of building a fix for everything real.
+tolerance once at planning time so both loop skills' Codex lenses —
+iterate-plan's reviewing the plan itself, iterate-review's reviewing
+the code it produces — judge findings against the actual product
+instead of an imagined internet-facing one, and so the editor has
+grounds — via the `accepted-risk` disposition, which both skills carry
+— to push back on disproportionate findings instead of building a fix
+for everything real.
 
 **Initiatives** use the full variant: answer all three questions,
 each under its own `PF-` subsection. **Fixes** use the lightweight
@@ -62,7 +64,7 @@ apply — don't leave both.
 
 The `PF-audience` / `PF-blast` / `PF-shipbar` ids are stable
 structural anchors, not cosmetic headers: iterate-review's posture
-composition and the editor's accepted-risk confirmation-dependency
+composition and both skills' accepted-risk confirmation-dependency
 digests point at posture content by these ids, never by prose. Once
 a plan is drafted, don't rename, renumber, or merge them.
 
@@ -117,8 +119,9 @@ The accepted-risks register lives at `docs/risk-posture.md` in this
 repo, created or appended to by create-plan when an author dictates
 an accepted risk at scaffold time (author action is its own
 confirmation — no separate human-confirm step, unlike an editor's
-`accepted-risk` fold proposal in iterate-review, which does require
-one). Entries are narrow and named, never blanket suppressions, and
+`accepted-risk` fold proposal during automated review in iterate-plan
+or iterate-review, which does require one). Entries are narrow and
+named, never blanket suppressions, and
 use allocation-free date-slug ids so concurrent branches can't
 collide on a counter:
 

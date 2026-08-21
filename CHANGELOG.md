@@ -1,5 +1,199 @@
 # Changelog
 
+## 2.4.0 — 2026-08-21 — fold-chaining fixes + proportionality parity
+
+Plan: `docs/archive/trinity-v2-4-2026-08-21.md` (design converged after 3
+`iterate-plan` passes; code converged after 7 `iterate-review` passes,
+reviewed as one branch spanning both phases). **This is the revisit v2.3.0
+deferred and never took up** — that plan scoped proportionality to
+`iterate-review` only, reasoning "plan review hasn't shown the same churn —
+revisit after Phase 3 evidence"; that reasoning was falsified within 48
+hours by a 12-pass `iterate-plan` review where the architect lens returned
+HIGH on 12 of 12 passes, every one structurally mandatory to fold. This
+release is that revisit.
+
+The other half comes from a 2026-08-21 doc-bot retrospective mining every
+converged trinity loop in that repo (3 `iterate-plan` convergences / 23
+passes; 19 `iterate-review` convergences / 108 passes): **fold-chaining, not
+reviewer thoroughness, drove pass counts** — 29% of real application-code
+defects (~48 of ~166) existed only because a previous fold created them, and
+reviews with ≥6 fold-caused findings averaged 10.8 passes against 3.3 for
+reviews with ≤1.
+
+Two phases: five small, individually-evidenced fold-chaining fixes plus
+fold-provenance instrumentation, with **no stop machinery** (Phase 0); and
+the `iterate-plan` proportionality port (Phase 1).
+
+### Added (Phase 0 — fold-chaining fixes + provenance instrumentation)
+
+- **`create-plan`'s accepted-risk seeding prompt is now unconditional** on
+  every scaffold, both plan types — previously conditional on the author
+  volunteering a risk. Late seeding is unrecoverable (the provenance gate
+  honors only register entries that predate the diff under review), so
+  plan time is the last cheap moment and the prompt no longer depends on
+  the author thinking to bring it up.
+- **A two-item fold-time hygiene checklist in both loop skills**: a
+  claims-vs-behavior sweep (shared) targeting the ~25–30 findings the retro
+  attributed to a fix that left its own description — test name, docstring,
+  log line, comment — lying; `iterate-plan` additionally carries a
+  plan-only invariant walk across sections that restate the same rule
+  (self-diagnosed 4× in one plan).
+- **`iterate-review` classifies each diff production/non-production at
+  setup** and defaults loop-mode's `--max-passes` to 3 for non-production
+  (vs. 6 for production) — shipped as an explicit experiment with a
+  recorded rollback condition, never presented as validated; an explicit
+  `--max-passes=N` always wins, and budget exhaustion is a checkpoint, not
+  a silent termination.
+- **`iterate-plan` freezes an open question after N=3 identical consecutive
+  passes** (matching the precedent that justified dropping the PM lens
+  after APPROVE×3) — a frozen question stays visible, reopens on any edit
+  touching it or on genuinely new lens evidence, and is human-overridable
+  in both directions at any checkpoint. `tools/freeze_tracker.py` is a
+  fixture-tested reference implementation of the counting state machine.
+- **Both skills record `introduced_by_pass` per finding** and a per-pass
+  summary (`summary_schema: 1`: pass, verdict, H+M count, fold-caused
+  count, disposition mix) in their existing state files, at Converge and
+  Abort alike — the data half of
+  [issue #6](https://github.com/kaileconsulting/trinity-skills/issues/6).
+  **No stop machinery ships**: grep-verifiable that nothing consults the
+  field for control flow. A shared `tools/provenance-recipe.jq` reproduces
+  the retro's tallies across both skills' state files in one query.
+- `tools/scope_classifier.py` + checker, `tools/freeze_tracker.py` +
+  checker — reference-implementation-plus-fixture pairs for the two new
+  editor-side control-flow rules, the same discipline `check-selection.py`
+  established for lens routing.
+
+### Hardened (Phase 0's 5-pass review — APPROVE×3 at pass 5)
+
+HIGH+MEDIUM trajectory 4, 2, 2, 2, 0. Passes 2–5 (4 of 5) were **fully
+fold-induced**, and every fold-caused finding was a real, load-bearing
+defect — including one (a directory-depth bug in the scope classifier)
+three independent lenses converged on in the same pass. Consistent with
+the retro's own caveat and this release's non-goal: fold-induced findings
+are sometimes load-bearing, not automatically noise, which is exactly why
+no stop condition ships on the signal yet.
+
+- A directory-depth bug in the root-document classification exception
+  (`src/README.py` classified non-production, contradicting the
+  "root-level only" design) that three lenses — senior-dev, security, and
+  qa — independently caught in the same pass.
+- The freeze streak's counting semantics needed three rounds of
+  tightening: the first-answered-pass-becomes-baseline rule, the
+  merged-per-pass-answer (not per-lens) comparison unit, and a disagreement
+  resetting to *no* baseline (distinct from a `FAILED` lens's neutral
+  skip, and distinct from an ordinary differing answer's immediate
+  rebaseline).
+- The non-convergence stall guardrail fired once, correctly flagged as a
+  checkpoint rather than pushed through silently; Kyle confirmed Continue.
+
+### Added (Phase 1 — proportionality machinery ported into `iterate-plan`)
+
+- **`accepted-risk` disposition + full lifecycle**, ported near-verbatim
+  from `iterate-review`: `AR-<n>` ids allocated in the plan's own
+  HISTORICAL blocks (the plan is `iterate-plan`'s pass log, so it's the
+  sole id allocator), `proposed` → `confirmed`/`rejected` → `reopened`,
+  material-change-mints-new-id vs. posture-change-keeps-id
+  disambiguation, the posture-dependency descriptor + sha256 digest
+  (single- and multi-field, netstring-framed), and the three-consumer
+  accounting table wired to `iterate-plan`'s own step-10 guardrails.
+  Pushback criteria/anti-criteria transfer as-is, including the
+  `PF-shipbar` trust-boundary exclusion.
+- **Register-aware lens inputs, sourced from HEAD, never the working
+  tree.** `bin/plan_runner.py` gains `resolve_register()`: reads
+  `## Accepted risks` from `git show HEAD:docs/risk-posture.md` at the
+  plan's repo root, resolving to one of four states — `loaded`,
+  `confirmed_absent` (no register at HEAD, or none at all — a normal,
+  valid state), `malformed` (duplicate `RR-` ids), `operational_failure`
+  (no `HEAD` yet, unresolvable repo root, any other git failure) — never
+  a silent fallback between them. `compose_input()` gains an additive
+  `=== ACCEPTED RISKS ===` block, byte-identical-when-absent (golden-pinned
+  both ways). `malformed`/`operational_failure` halt `run-pass`/`run-lens`
+  before any lens ever runs; a new `--ignore-register` flag on both is the
+  one human-directed way past that halt (never automatic — only after the
+  human selects "proceed with no register" at the card), since register
+  resolution is runner-side, unlike `iterate-review`'s editor-composed
+  posture. `iterate-plan/reviewer-output.schema.json` gains an *optional*
+  per-finding `register_ref` (optional, not required-nullable like
+  `iterate-review`'s — the one schema-shape adaptation point).
+- **Plan-shaping-fold escalation** — `iterate-plan`'s analog of
+  `iterate-review`'s design-shaped-fold escalation: a fold that would
+  materially alter approved scope (add/remove a phase, change
+  Goals/Non-goals, move acceptance coverage between phases) halts at that
+  finding with a decision card; ordinary clarifications fold normally.
+  Classification happens before the fold; the pending card persists before
+  any structural mutation.
+- **Decision-card contract**, five total moments (accepted-risk
+  confirmation, `needs_human` question, non-convergence stall, malformed
+  or unavailable register source, plan-shaping-fold escalation) under the
+  same two-phase pending/resolved persistence discipline `iterate-review`
+  already uses, scoped to `iterate-plan`'s one-block-per-pass model — one
+  new exception: the malformed/unavailable-register card is the one case
+  where a HISTORICAL block opens before any lens has run.
+- `tools/check-parity.py` extended with 18 new shared-rule checks for the
+  lifecycle, accounting table, and card contract (60/60).
+
+### Hardened (Phase 1's 7-pass review — APPROVE×3 at pass 7)
+
+HIGH+MEDIUM trajectory 4, 1 (passes 6–7; the branch diff now spans both
+phases per this skill's whole-branch v1 scope, so earlier passes reviewed
+Phase 0 alone). Pass 7 was **fully fold-induced** — every finding traced
+to pass 6's own fold not walking a rename through every restating section,
+or a new mechanism arriving with coverage for one call site but not its
+mirror — consistent with the retro's own caveat that fold-induced findings
+are sometimes load-bearing, not automatically noise: one of pass 7's was a
+genuine test-coverage gap, not vocabulary hygiene.
+
+- **A documented card outcome ("proceed with no register") had no
+  mechanism to realize it** — register resolution is runner-side, so a
+  card alone can't skip it; added `--ignore-register`, human-directed only.
+- **`resolve_register()` misclassified the exact case the whole
+  dirty-worktree design exists for**: an untracked, never-committed
+  `docs/risk-posture.md` — the freshly-seeded `create-plan` case — because
+  git phrases that boundary differently from "never existed at any
+  revision" (`exists on disk, but not in 'HEAD'` vs. `does not exist in
+  'HEAD'`). Caught by the qa lens with an empirical repro against real git
+  output; the existing dirty-worktree fixture only ever edited an
+  already-committed register, so it never exercised this boundary.
+- `--ignore-register`'s own two call sites (`run-pass`, `run-lens`) turned
+  out to need independent test coverage — a regression isolated to
+  `run-lens`'s copy could have stayed invisible behind every `run-pass`
+  assertion.
+- `tools/check-plan-runners.py` grew from 78 to 91 fixtures across the two
+  passes, all register-resolution and `--ignore-register` boundary cases
+  exercised against real scratch git repos, not mocked.
+
+### Known gaps
+
+Acceptance criteria at ship: **4 of 5 fully met, 1 met for what's
+built-and-fixture-pinned but not yet exercised live** — same shape as
+v2.3.0's own gap for this identical mechanism, annotated in the archived
+plan:
+
+- **Neither skill's proportionality machinery fired on a live finding in
+  this release.** Across Phase 1's own 7-pass code review, no
+  `accepted-risk` proposal, register-match, or plan-shaping-fold
+  escalation ever arose — every finding folded as a straightforward
+  `incorporated`. The lifecycle, accounting table, and card contract are
+  all fixture-pinned and specified by worked example, not exercised in
+  anger.
+- **No live plan review has run with a populated register yet.** This
+  repo carries no `docs/risk-posture.md`; the no-register composition path
+  is golden-pinned and dogfooded by this very release's own design and
+  code reviews (both `Posture: absent`), but the with-register path is
+  fixture-pinned only.
+- **The freeze, non-production budget, and hygiene-checklist effects on
+  real pass counts remain unmeasured.** Phase 0 shipped the mechanisms and
+  the instrumentation to measure them, but this release's own reviews
+  don't touch open questions or non-production diffs in the way that
+  would exercise the freeze or the reduced budget.
+- **Phase 1's plan-loop pass-count metric is unmeasured** — the
+  measurement contract (first three post-2.4 `iterate-plan` loops,
+  compared against the retro's 23-pass baseline) starts with whatever
+  plan gets iterated next, not this release itself.
+
+Treat the fixtures as evidence the port is coherent, not as evidence it
+changes real pass counts yet.
+
 ## 2.3.0 — 2026-08-14 — risk posture & proportionality
 
 Plan: `docs/archive/risk-posture-proportionality-2026-08-12.md` (converged after 9
