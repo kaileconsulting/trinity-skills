@@ -1,0 +1,4 @@
+## Accepted risks
+
+- **RR-2026-08-06-seq-poison** — synthetic accepted-risk bullet for golden
+  fixture; bound: n/a; recovery: n/a.

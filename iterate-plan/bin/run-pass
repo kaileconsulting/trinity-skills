@@ -109,6 +109,22 @@ def main(argv=None):
         sys.stderr.write(f"run-pass: {exc}\n")
         return EXIT_ERROR
 
+    # Register resolution (Trinity v2.4 Phase 1, Q5): read once per pass,
+    # from HEAD, never the working tree -- BEFORE the lock and BEFORE any
+    # lens runs. malformed / operational_failure both abort here with no
+    # summary published and no lens ever invoked (the same never-ran
+    # contract as any other pre-fan-out abort) -- the editor (SKILL.md
+    # step 5) reads the stderr prefix and presents the malformed-source
+    # decision card rather than retrying blindly.
+    register = pr.resolve_register(repo_root)
+    if register.state == "malformed":
+        sys.stderr.write(f"run-pass: register malformed: {register.reason}\n")
+        return EXIT_ERROR
+    if register.state == "operational_failure":
+        sys.stderr.write(f"run-pass: register unavailable: {register.reason}\n")
+        return EXIT_ERROR
+    register_text = register.text  # "" for confirmed_absent
+
     shash = pr.scope_hash(plan_path)
     state_dir = pr.STATE_ROOT / shash
 
@@ -136,7 +152,8 @@ def main(argv=None):
             response_path = state_dir / f"pass-{pass_num}.{lens_id}.response.json"
             return pr.run_one_lens(lens_id, plan_text, note_text,
                                    plan_path.parent, input_path,
-                                   response_path, lock=lock)
+                                   response_path, lock=lock,
+                                   register=register_text)
 
         # All lens futures are awaited; one lens failing never cancels its
         # siblings. A LockError means ownership was revoked mid-run — the

@@ -93,10 +93,10 @@ def main() -> int:
         "fold_caused_total": 1,   # 1 + 0
         "fold_caused_share": 1 / 11,
         "disposition_mix": {
-            "incorporated": 7,     # 5 + 2
+            "incorporated": 6,     # 4 (pass 1 + pass 3) + 2 (aborted)
             "skipped": 3,          # 2 + 1
             "disputed": 1,         # 0 + 1
-            "accepted-risk": 0,
+            "accepted-risk": 1,    # 1 (pass 2, Phase 1 example) + 0
             "register-match": 0,
         },
         # scope_class is null for every iterate-plan run -- never a match.
@@ -132,10 +132,10 @@ def main() -> int:
         "fold_caused_total": 3,
         "fold_caused_share": 3 / 23,
         "disposition_mix": {
-            "incorporated": 13,
+            "incorporated": 12,    # 6 (iterate-plan) + 6 (iterate-review)
             "skipped": 6,
             "disputed": 2,
-            "accepted-risk": 1,
+            "accepted-risk": 2,    # 1 (iterate-plan) + 1 (iterate-review)
             "register-match": 1,
         },
         "non_production_rollback_hits": 2,

@@ -45,6 +45,11 @@
             "type": "string",
             "minLength": 1,
             "description": "What Opus should consider doing. Describe intent, not wording — Opus writes the actual revision."
+          },
+          "register_ref": {
+            "type": "string",
+            "pattern": "^RR-[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+(-[a-z0-9]+)*$",
+            "description": "OPTIONAL — omit entirely in the common case (no match); this field is not required, unlike iterate-review's same-named field. Set to a register id ONLY when this finding is independently actionable AND its behavior falls within a specific entry's recorded bound/recovery in the accepted-risks register (docs/risk-posture.md at HEAD, provided in the ACCEPTED RISKS block when the register resolved for this pass). Do not set this to merely reference a posture decision — if a finding only restates something the register already covers with no new evidence, don't file it at all. Do not set this if you are presenting evidence that the entry's bound or recovery path is false — that is a fresh finding, not a match, even if it concerns the same behavior. The editor validates every register_ref against the register at HEAD at fold time (step 7); an unknown, malformed, or non-matching ref is treated as untagged."
           }
         }
       }

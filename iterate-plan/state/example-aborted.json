@@ -32,5 +32,6 @@
     "trigger": null,
     "human_confirmed": null,
     "handoff_decision": "aborted"
-  }
+  },
+  "confirmed_accepted_risks": []
 }

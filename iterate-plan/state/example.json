@@ -33,10 +33,10 @@
       "findings_total": 1,
       "fold_caused_count": 1,
       "dispositions": {
-        "incorporated": 1,
+        "incorporated": 0,
         "skipped": 0,
         "disputed": 0,
-        "accepted-risk": 0,
+        "accepted-risk": 1,
         "register-match": 0
       },
       "started_at": "2026-04-29T12:55:00Z",
@@ -64,5 +64,13 @@
     "trigger": "verdict=APPROVE + opus_no_further_changes",
     "human_confirmed": true,
     "handoff_decision": "stay"
-  }
+  },
+  "confirmed_accepted_risks": [
+    {
+      "id": "AR-1",
+      "register_ref": null,
+      "dependency_descriptor": ["PF-shipbar"],
+      "dependency_digest": "sha256:1234567890abcdef..."
+    }
+  ]
 }

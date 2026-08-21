@@ -192,6 +192,43 @@ RULES: list[tuple[str, str, list[str] | dict[str, list[str]]]] = [
      [r"abort produces the array exactly as converge does"]),
     ("provenance-no-stop-machinery", "no guardrail/checkpoint/budget consults introduced_by_pass",
      [r"consults introduced_by_pass"]),
+
+    # --- accepted-risk disposition + lifecycle (v2.4 Phase 1 port) --------
+    # `iterate-review` shipped this in v2.3.0; `iterate-plan` gained it in
+    # Phase 1. Wording legitimately differs (a plan has no diff/base
+    # revision to anti-game against, so the trust-boundary dual-check
+    # compares "start of this pass" instead of "base revision" -- see the
+    # per-skill dict rule below) but the *rules* below must hold in both.
+    ("accepted-risk-disposition-definition", "accepted-risk = real finding, disproportionate to posture",
+     [r"real finding, disproportionate to"]),
+    ("accepted-risk-lifecycle-named", "the identity + lifecycle section is present",
+     [r"identity and lifecycle"]),
+    ("accepted-risk-material-change", "a materially changed finding mints a new AR id, never reuses one",
+     [r"materially changed", r"new proposal under a new id"]),
+    ("accepted-risk-posture-dependency-descriptor", "confirmations persist a posture-field dependency descriptor + digest",
+     [r"posture-dependency descriptor"]),
+    ("accepted-risk-invalidation-preserves-id", "a posture-digest mismatch returns to proposed, keeping the same AR id",
+     [r"invalidation always preserves the"]),
+    ("accepted-risk-accounting-table", "one table, three consumers, defines every lifecycle state's standing",
+     [r"accounting is defined per ledger, per state"]),
+    ("accepted-risk-converge-predicate", "Converge is blocked while any AR- id is proposed or reopened",
+     [r"converge predicate", r"zero items in.*proposed.*or.*reopened"]),
+    ("accepted-risk-pushback-anti-criteria", "never push back on a trust boundary or to dodge a cheap honest fix",
+     [r"anti-criteria", r"named as a trust boundary"]),
+    ("accepted-risk-trust-boundary-unavailable", "accepted-risk/register-match are unavailable for PF-shipbar trust-boundary content",
+     [r"are unavailable for", r"trust boundary in", r"pf-shipbar"]),
+    ("register-match-trust-boundary-gate", "a register-match gate named specifically for trust-boundary exclusion",
+     [r"trust-boundary gate"]),
+
+    # --- decision-card shared contract (v2.4 Phase 1 port) -----------------
+    ("decision-card-cardinality-bound", "recommendation + alternatives never exceed the harness's 4-option cap",
+     [r"cardinality is bound by the harness"]),
+    ("decision-card-two-phase-persistence", "cards are written (pending) before presentation, resolved once answered",
+     [r"pending write, before presentation", r"resolution write, once answered"]),
+    ("decision-card-floor-never-skipped", "recommendation + discuss is the floor and is always presented",
+     [r"recommendation \+ discuss is the floor and is always presented, never skipped"]),
+    ("malformed-source-halts-before-fanout", "a malformed posture/register source halts before any lens runs",
+     [r"halts before fan-out with a decision card rather than silently"]),
 ]
 
 

@@ -90,11 +90,53 @@ performed by the runner, deterministically.
    `## <title>` match, sub-headings kept with their parent; an absent
    section contributes `NOTE: required section "<title>" is absent — flag
    this gap` so the lens reports the omission rather than inventing content;
-   never skipped, never handed silence) + the optional staged note + the
+   never skipped, never handed silence) + the optional staged note +
+   **the accepted-risks register, per the HEAD-sourced flow below** + the
    full plan under `=== PLAN ===`, assembled **byte-deterministically**
    (goldens in `examples/composition/`; composed inputs land in the state
    dir as `pass-N.<lensid>.input.txt`). Prior passes need no separate block:
    the plan's own HISTORICAL sections arrive with the plan.
+
+   **Register composition — HEAD-sourced, never the working tree (Q5).**
+   `run-pass` reads `## Accepted risks` from `git show HEAD:docs/risk-posture.md`
+   at the plan's repo root and, when it resolves, appends an
+   `=== ACCEPTED RISKS ===` block to every lens's composed input, immediately
+   before `=== PLAN ===`. Composition and the register-match provenance gate
+   (step 7) **share this one trusted source** — reading the working tree
+   instead would let a dirty, uncommitted register edit reach a lens's input
+   the same pass a gate exists to reject it, and would let the gate compare a
+   working-tree entry against a digest derived from that same entry. This is
+   why `create-plan`'s seeding guidance (Step 3) ends with "commit the
+   scaffolded plan and its register entry together before invoking
+   `iterate-plan`" — a freshly seeded, uncommitted entry is exactly the
+   dirty-worktree case below, invisible to every lens until it lands at HEAD.
+
+   Register loading resolves to one of four states, never a silent
+   fallback between them:
+   - **loaded** — the blob exists at HEAD and parses; its `## Accepted
+     risks` section text composes into the block, verbatim.
+   - **confirmed-absent** — `docs/risk-posture.md` does not exist at HEAD
+     (a real repo state, not an error). No block is composed — the input is
+     **byte-identical** to what it would be without this feature at all
+     (the no-register golden). A file that exists but carries no `##
+     Accepted risks` section composes identically to this case.
+   - **malformed** — the blob exists at HEAD but the register itself is
+     broken (duplicate `RR-<id>` bullets — a register-integrity problem
+     independent of anything else in the file).
+   - **operational failure** — anything else that isn't a confirmed
+     absence: the repo root doesn't resolve, there is no `HEAD` yet (e.g. a
+     freshly-initialized repo with no commits), or `git show` fails for a
+     reason other than the path not existing at that revision.
+
+   **malformed and operational-failure both halt before any fan-out** —
+   `run-pass` aborts (non-zero exit, no summary published, no lens ever
+   invoked) with the failing state and its reason on stderr. Never fall
+   back to composing without the register on either: that would silently
+   strip trusted context the lenses are meant to see. On this abort,
+   present the **malformed posture/register source** decision card (step
+   8's shared contract) before retrying anything — persisted to the plan's
+   current pass HISTORICAL block as `(pending)` before presentation, per
+   the usual two-phase discipline.
 
 6. **Fan out — one `run-pass` invocation.** The runner makes **one Codex
    call per selected lens, concurrently** (all lens futures awaited; one
@@ -149,6 +191,62 @@ performed by the runner, deterministically.
      findings that target the same location and assert the same defect; keep
      distinct concerns separate; a co-reported finding retains **all**
      contributing lens ids. Produce one merged findings list.
+   - **Validate `register_ref` on findings — three gates, in order, all must
+     pass** (ported from `iterate-review` step 11, adapted for plan review's
+     lack of a diff). For each finding carrying a `register_ref`, look it up
+     in `docs/risk-posture.md`'s `## Accepted risks` section **at HEAD** —
+     the same blob step 5 composed from. Unknown id, malformed id, or a
+     missing register file → treat the finding as untagged (drop the ref;
+     note in the HISTORICAL block, e.g. "register_ref RR-x not found,
+     treated as untagged") and disposition it normally.
+     1. **HEAD-provenance gate.** There is no diff and no base revision for
+        a plan, so HEAD itself is the trust boundary: the entry must
+        already exist, with matching digest (recipe below), in
+        `docs/risk-posture.md` **at HEAD**. A working-tree-only or
+        HEAD-divergent entry fails this gate regardless of how well the
+        behavior otherwise fits — including a register-only file itself
+        being newly introduced but not yet committed. This is the plan-side
+        analog of the provenance gate that makes `create-plan`'s "commit the
+        scaffolded plan and its register entry together" guidance load-bearing
+        rather than a suggestion.
+     2. **Behavior gate.** Confirm the finding's behavior genuinely falls
+        within the entry's recorded behavior/bound/recovery — not merely the
+        same named area (per `reviewer-prompt.md`'s ON RISK POSTURE
+        guidance; a finding presenting evidence the entry's bound or
+        recovery is false is never a match, regardless of what
+        `register_ref` the lens set).
+     3. **Trust-boundary gate.** A register-match must never apply to plan
+        content named as a trust boundary by the plan's own `PF-shipbar`.
+        Check the finding against **both** this pass's resulting
+        `PF-shipbar` text **and** `PF-shipbar` as it read at the *start* of
+        this pass (before this pass's own fold) — the plan-text analog of
+        iterate-review's current-vs-base-revision dual-check, since a plan's
+        posture text mutates in place rather than living in a diff: a
+        same-pass fold that narrows or removes `PF-shipbar`'s coverage must
+        not retroactively legalize a register-match for the defect that
+        narrowing conveniently exempts. If neither version yields a
+        `PF-shipbar` field at all, there is nothing to exclude against and
+        the gate doesn't block matching.
+
+     If all three gates pass: compute a canonical digest of the entry's
+     complete logical bullet using the **same recipe `iterate-review` step
+     11 defines** — starting at the line matching `- **RR-<id>** — `,
+     include every subsequent line up to (but not including) the next
+     `- **RR-` bullet or the end of the `## Accepted risks` section;
+     normalize by stripping trailing whitespace per line, join with `\n`;
+     digest = sha256 hex of the normalized UTF-8 text. Record the
+     disposition as `register-match (RR-<n>, entry-digest <hash>)` — no
+     plan edit, no fresh human confirmation.
+
+     **Before trusting a `register-match` carried from a prior pass's
+     HISTORICAL block, re-run all three gates against the current pass's
+     context** — provenance (recompute the digest, reconfirm the entry
+     still exists unchanged at the current HEAD), behavior (re-read the
+     carried finding against the entry's current recorded fit), and
+     trust-boundary (reapply gate 3 against the current pass's posture).
+     Any one gate failing invalidates the match: the finding reverts to
+     needing a fresh disposition this pass and blocks Converge until it
+     receives one, exactly like a newly-filed finding.
    - **Dedupe `plan_corrections` too.** Two lenses can file the same tactical
      correction. Corrections are applied *mechanically*, so a surviving
      duplicate can double-apply the same edit. Collapse by location +
@@ -274,6 +372,50 @@ performed by the runner, deterministically.
       rule — does the rule now read correctly in **every** section that
       restates it?
 
+   **Before folding any finding, check whether it would materially alter
+   approved scope — a plan-shaping fold (Q3, ported from `iterate-review`'s
+   design-shaped-fold escalation, adapted to what "shaped" means for a
+   plan instead of code).** If it does, don't fold *that finding* yet —
+   pause **at that finding**, present it as a decision card (step 8's
+   shared contract below, with a cheaper alternative sketched when one
+   exists), and get the human's answer before folding it. This pause is
+   scoped to that one finding, not the whole pass: once answered, folding
+   continues with the pass's remaining findings — no new Codex call
+   needed, they were already returned in the current lens responses.
+
+   **"Plan-shaping" has an operational boundary** — these are the signals:
+   - adding or removing a phase
+   - changing `## Goals` or `## Non-goals`
+   - moving acceptance coverage between phases
+
+   **Non-plan-shaping — fold normally, no escalation:** clarifications,
+   wording fixes, and corrections of a mapping the plan already approved
+   (a phase's deliverables, an acceptance bullet's wording, a risk's
+   description) — ordinary editorial work that doesn't change what was
+   approved. On a genuinely ambiguous case, use the signals above as a
+   checklist; if none clearly apply and you're still unsure, err toward
+   escalating — the same asymmetry as `needs_human`: an unnecessary card
+   costs one decision, a missed one commits to a structural change nobody
+   approved. This is precisely the churn class the 2026-08-21 retro found
+   in passes 9–12 of the runtime-pipeline plan (acceptance-coverage
+   redistribution and vocabulary hygiene folded silently, four passes
+   running) — the escalation exists so that class of fold gets a human's
+   eyes on it, once, before it happens rather than being discovered after.
+
+   **Classification happens before the fold, and the pending card is
+   persisted before any structural mutation** — an escalation that fires
+   after the plan is already changed would defeat its purpose. Outcome
+   mapping (shared with the other four card types, step 8 below): *adopt
+   the mechanism* → the fold proceeds this pass; *cheaper alternative*
+   (when one exists) → the alternative is folded instead, recorded as
+   `incorporated (via alternative)`, and re-reviewed next pass; *accept
+   the risk* → routes to the `accepted-risk` lifecycle below — **excluded
+   from the card entirely** when the finding concerns plan content named
+   as a trust boundary by `PF-shipbar` (checked both current-pass and
+   start-of-pass, same dual-check as the register-match trust-boundary
+   gate in step 7, so a same-pass posture edit can't create the exception
+   either); *discuss* → loop stays paused, no fold this pass.
+
    **Open-question freeze — the write action.** When step 7's tracking puts
    a question's streak at N=3 consecutive counted passes, mark it frozen in
    the plan's `## Open questions` section: append an inline annotation
@@ -342,6 +484,211 @@ performed by the runner, deterministically.
    automated plan-mutation tests either, and freeze annotations aren't a
    special case).
 
+   **New disposition: `accepted-risk`** (ported from `iterate-review`,
+   nearly verbatim — the port this section exists to make) —
+   "real finding, disproportionate to this plan's posture; not fixing."
+   Requires a written rationale that references the posture via the
+   dependency descriptor below — never a bare "not worth it."
+
+   **Identity and lifecycle.** Each proposal gets a stable id, `AR-<n>` —
+   numbered sequentially across the whole plan (read existing `AR-`
+   mentions in the plan's HISTORICAL blocks to find the next number; **the
+   plan file is the sole id allocator**, since the plan is `iterate-plan`'s
+   pass log — no concurrent-allocation problem arises within one plan).
+   Matching is by id, never by prose.
+   - `proposed` (editor, at fold time) → `confirmed` or `rejected` (human
+     only, at a checkpoint).
+   - `rejected` → **`reopened`** — an explicitly unresolved state that
+     blocks the Converge recommendation exactly as `proposed` does, and
+     immediately restores the finding to the open ledgers (re-enters the
+     non-convergence count, fails the HIGH guardrail) the moment the
+     rejection is recorded.
+   - A `reopened` finding needs a subsequent disposition on a later pass:
+     `incorporated` or `disputed` (both terminal), or a fresh
+     `accepted-risk` proposal under a **new** `AR-<n>` id — itself resolved
+     only through its own proposed → confirmed lifecycle; prior
+     confirmation never carries over. Pick the terminal disposition for
+     what actually happened, not for convenience: `disputed` means the
+     finding was never valid — it does not mean "resolved some other way."
+     If the underlying defect genuinely got fixed as a side effect of a
+     *different* fold, that's `incorporated`, with a parenthetical naming
+     what actually resolved it (e.g. `incorporated (superseded by finding
+     4's mechanism)`).
+   - A **materially changed** finding (different location, mechanism, or
+     claimed bound) is always a new proposal under a new id, never a reuse
+     of a prior one. "Bound" here means the *finding's own* claimed bound —
+     never the posture text a rationale rests on. The two senses are
+     separate triggers with opposite outcomes: *the finding changed* → new
+     `AR-<n>` id; *the posture changed* → same `AR-<n>` id, returned to
+     `proposed` (below). Reading a posture edit as "the finding's bound
+     changed" mints a new id, discarding confirmation history for a
+     finding that never actually changed — don't.
+
+   **Posture-dependency descriptor — the confirmation's evidentiary basis.**
+   Every confirmation persists (1) the list of posture *field ids* the
+   rationale relies on (`PF-shipbar`, `RR-2026-08-06-seq-poison`, …) and
+   (2) a canonical-content digest of exactly those fields as confirmed.
+   Per-field content extraction reuses step 7's register-match recipe
+   exactly (a `PF-` field: its full field text, read from the plan's own
+   `## Risk posture` section; an `RR-` entry: its complete logical bullet,
+   every wrapped continuation line, read from `docs/risk-posture.md` **at
+   HEAD** — the same trusted source step 5 and step 7 already share).
+   - **Descriptor names exactly one field**: digest = sha256 hex of that
+     field's canonical content directly.
+   - **Descriptor names two or more fields**: length-prefix every part —
+     sort the descriptor's field ids lexicographically; for each `(id,
+     content)` pair, UTF-8-encode both and emit `len(id_bytes)` + `:` +
+     `id_bytes` + `len(content_bytes)` + `:` + `content_bytes` (decimal
+     ASCII lengths, no separator ever scanned for); concatenate in sorted
+     order; digest = sha256 hex of the concatenated bytes. (Identical
+     recipe to `iterate-review` step 12 — the same netstring-framing
+     rationale applies unchanged: a bare separator can appear inside a
+     field's content with no defined escaping.)
+
+   On any later pass, the descriptor re-selects the same fields **by id**
+   from the current posture source (the plan's own `## Risk posture` for
+   `PF-` fields; `docs/risk-posture.md` at HEAD for `RR-` entries) and
+   recomputes the digest: a mismatch, or a field that no longer resolves,
+   invalidates the confirmation and returns the item to `proposed` for
+   fresh confirmation. Posture edits **outside** the descriptor's named
+   fields never invalidate.
+
+   **Invalidation always preserves the `AR-<n>` id.** What changed is the
+   posture, not the finding, so there is no new proposal to mint: the same
+   item returns to `proposed`, carrying its id and history, re-confirmed
+   (or not) on its own merits against the new posture text. The new-id
+   rule above fires only when the finding itself materially changes.
+
+   **Converge predicate**: zero items in `proposed` or `reopened` state —
+   wired into step 10's Converge recommendation exactly as the accounting
+   table below states.
+
+   **Pushback guidance.** The editor is expected to spend `disputed` and
+   `accepted-risk` when warranted — this loop's findings are real, but not
+   everything real is worth fixing here, and pretending otherwise is its
+   own failure mode. Criteria (any one is sufficient): the finding
+   contradicts the documented posture; the fix's cost clearly exceeds the
+   defect's own bounded blast radius; the finding re-litigates a register
+   entry without new evidence. **Anti-criteria (never push back for these
+   reasons):** never on plan content named as a trust boundary in the ship
+   bar (`accepted-risk` is unavailable there entirely — same exclusion as
+   the plan-shaping-fold escalation above and the register-match
+   trust-boundary gate); never to avoid a small, honest fix — proportionality
+   argues against over-building, not against a fix that's cheap and
+   correct. This anti-criteria pair is the one piece R6 (plan-review
+   proportionality has a weaker case than code-review proportionality,
+   since plans are cheaper to fix than code) most depends on: it's what
+   keeps `accepted-risk` from becoming a way to skip fixes that were
+   nearly free.
+
+   **Accounting is defined per ledger, per state — one table, three
+   consumers**, wired to `iterate-plan`'s own step-10 guardrails (the
+   equivalent of `iterate-review`'s per-pass HIGH guardrail, non-convergence
+   counter, and Converge predicate):
+
+   | State | Fold-needs-human-judgment guardrail (step 10) | Non-convergence count (step 10) | Converge recommendation (step 10) |
+   |---|---|---|---|
+   | `proposed` (incl. deferred) | satisfied — loop may continue | excluded (dispositioned, not open) | **blocks** |
+   | `confirmed` | satisfied | excluded | clear |
+   | `reopened` | **not satisfied** — fresh disposition required | **re-included** | **blocks** |
+   | register-match, all step-7 gates valid | satisfied | excluded | clear |
+   | register-match, any gate broken/missing on recheck | treated as `reopened` | treated as `reopened` | **blocks** |
+
+   Accepting a risk therefore can't read as a stall (`proposed`/`confirmed`
+   items leave the non-convergence count) while remaining impossible to
+   converge past unconfirmed.
+
+   **Worked example — the accounting table state by state**, the same
+   inspection standard the freeze tracker's worked example above and every
+   other fold-time editor write in this skill already holds to (none of
+   these have automated plan-mutation tests, and this isn't a special
+   case): a pass proposes `AR-1` (dependency descriptor: `PF-shipbar`) for
+   a HIGH finding — the guardrail is satisfied so the loop continues past
+   that finding, `AR-1` is excluded from the non-convergence count, and
+   Converge is blocked. At the checkpoint the human confirms it: `AR-1`
+   moves to `confirmed`, clearing the Converge block. A later pass proposes
+   `AR-2`; the human rejects it: `AR-2` becomes `reopened`, immediately
+   re-entering the non-convergence count and failing the guardrail again —
+   the same finding now needs a fresh disposition. The next pass
+   dispositions the reopened `AR-2` as `incorporated` (a plan edit resolves
+   it directly) — terminal, both ledgers clear. Separately, a fold later in
+   the same plan narrows `PF-shipbar`'s wording that `AR-1`'s confirmation
+   depended on: the descriptor's digest no longer matches, so `AR-1`
+   reverts from `confirmed` to `proposed` — re-entering Converge-blocking
+   status under its **same** id (the posture changed, not the finding, so
+   §8's material-change rule doesn't apply) — and needs re-confirmation
+   against the new posture text before Converge can succeed again.
+
+   **Decision cards — the shared contract for every human-judgment moment**
+   (ported from `iterate-review` step 12 verbatim; the four moments below
+   replace its five — the plan-shaping-fold escalation above stands in for
+   the design-shaped-fold escalation, and there is no plan-side equivalent
+   of a mid-review posture-source malformed-*field* case, only the
+   register). Whenever the loop hands back to the human with something
+   needing judgment, it arrives in a fixed shape: (1) the editor's
+   **recommendation**, with a one-line why; (2) **up to 3 genuine
+   alternatives**, each with its trade-off; (3) an always-available
+   **discuss** path. Selecting any option other than *discuss* resumes the
+   loop deterministically per that card type's outcome mapping; *discuss*
+   pauses into conversation, and when it concludes, the card is
+   re-presented with the agreed direction as the new recommendation.
+
+   **Cardinality is bound by the harness, both ends of the range.** The
+   interactive structured-question mechanism accepts at most 4 explicit
+   options — recommendation + alternatives together must never exceed 4
+   (at most 3 alternatives when there's a recommendation). `discuss` is
+   never a listed option — it's the harness's free-form response, so it
+   never counts against the cap. "2–3" alternatives is a target, not a
+   hard minimum: context-sensitive omission can reduce the listed
+   alternatives to zero (recommendation + discuss is the floor and is
+   *never* skipped, including in that degenerate case — an unpresented
+   card would mean silently committing to a decision nobody approved,
+   exactly what every one of these moments exists to prevent).
+
+   **Persistence, uniformly across all four card types below: two
+   phases**, written into the plan's *current pass* HISTORICAL block under
+   a `### Decision cards` subsection (only present when a card was
+   presented that pass):
+   1. **Pending write, before presentation.** Append the card with
+      `chosen: (pending)` — recommendation, alternatives, and the item id,
+      no outcome. This is what makes resume-after-interruption possible: a
+      session that reads the plan and finds a `(pending)` card
+      re-presents it, unanswered, exactly as if the interruption hadn't
+      happened.
+   2. **Resolution write, once answered.** Update that same entry in
+      place — replace `(pending)` with the actual `<option> (<one-line
+      outcome>)`. A card still `(pending)` on read is the resume signal; a
+      card with a real `chosen:` value is settled and never re-presented.
+
+   **The four named human-judgment moments and their outcome mappings**
+   (plan-shaping-fold escalation specified above; malformed register
+   source specified in step 5 — both under this same shared contract):
+   - **Accepted-risk confirmation**: *confirm, this plan only* →
+     `confirmed` (plan's HISTORICAL block; register untouched); *confirm +
+     add to register* → `confirmed` and the `RR-` entry published to
+     `docs/risk-posture.md` **as part of the transition** (a write failure
+     surfaces at the checkpoint and the confirmation does not complete);
+     *reject* → `reopened`; *defer* → the item **stays `proposed`** under
+     the same `AR-<n>`, re-presented at every subsequent checkpoint where a
+     proposed item exists; *discuss* → paused. **Batched, surfaced at every
+     checkpoint** where a `proposed` item exists (step 10), not only at the
+     Converge recommendation — but confirmation is only *required* before
+     Converge can succeed.
+   - **`needs_human` question** (step 7's existing routing, now carded):
+     *adopt the recommendation* or *pick an alternative* → recorded in the
+     HISTORICAL block and the plan's `## Open questions`, loop resumes;
+     *defer* → stays open and Converge-blocking, re-presented next
+     checkpoint; *discuss* → paused.
+   - **Non-convergence stall** (step 10's existing guardrail, now carded):
+     *continue anyway* → loop resumes with a fresh two-transition
+     comparison window; *switch to manual* → loop mode ends, per-pass
+     checkpoints resume; *abort* → the plan's iteration ends per the abort
+     path; *discuss* → paused.
+   - **Malformed register source** (step 5): *fix the source now* /
+     *proceed with no register* / *abort* / *discuss* — persisted before
+     presentation so an interrupted session re-presents it on resume, and
+     the choice made is recorded.
+
    Fold `plan_corrections` mechanically; incorporate HIGH/MEDIUM
    findings (skip/dispute only with explicit reasoning); LOW is informational.
    Append a single HISTORICAL section for the whole pass, each finding tagged
@@ -355,7 +702,7 @@ performed by the runner, deterministically.
 
    ### Findings
    1. **<title>** — <severity> · lens: <architect|product-manager|both>: <description>
-      → Editor: <incorporated|skipped|disputed> — <reasoning> [introduced_by_pass: <N | null>]
+      → Editor: <incorporated|skipped|disputed|accepted-risk (AR-<n>)|register-match (RR-<n>, entry-digest <hash>)> — <reasoning> [introduced_by_pass: <N | null>]
    ...
 
    ### Plan corrections applied
@@ -369,9 +716,32 @@ performed by the runner, deterministically.
      `resolvable_in_fold`/`needs_lookup`, or "carried to Open questions as Qn"
      if `needs_human`. Note any label you overrode, and why.>
 
+   ### Decision cards
+
+   <!-- Only present when a card was presented this pass — plan-shaping-fold
+   escalation, accepted-risk confirmation, needs_human question,
+   non-convergence stall, or malformed register source. One entry per card,
+   written in two phases per the shared contract above: appended as
+   `(pending)` before presentation, then updated in place once answered. -->
+
+   - **<card type>** (<item id, e.g. AR-2 or finding title>): recommendation — <text>; alternatives — <text>; chosen: (pending) | <option> (<one-line outcome>).
+
    ### Lens run summary
    - architect: <APPROVE|REVISE|BLOCK|FAILED> · product-manager: <APPROVE|REVISE|BLOCK|FAILED>
    ```
+
+   Dispositions: **`incorporated`** — apply the plan edit (required for
+   HIGH unless explicitly disputed with reasoning; recommended for MEDIUM;
+   optional for LOW). **`skipped`** — acknowledge, don't act (typically
+   LOW). **`disputed`** — reject with reasoning. **`accepted-risk
+   (AR-<n>)`** — real finding, disproportionate to posture; not fixing
+   (full lifecycle above). **`register-match (RR-<n>, entry-digest
+   <hash>)`** — the finding matches a recorded accepted risk in
+   `docs/risk-posture.md` at HEAD (validated per step 7); no plan edit, no
+   fresh human confirmation. If a match is later invalidated (any of the
+   three step-7 gates fails on recheck), it reverts to needing a fresh
+   disposition and blocks Converge until one is given. `plan_corrections`
+   are applied mechanically.
 
    **`introduced_by_pass` — fold-provenance, per finding.** `N` when the
    defect this finding describes was created by an edit a previous pass's
@@ -391,9 +761,20 @@ performed by the runner, deterministically.
 
 10. **Checkpoint — Continue / Converge / Abort / (L)oop.** Present the
     aggregate verdict + a recommendation:
+
+    **Batched accepted-risk confirmation, before the Continue/Converge/Abort
+    choice.** Surface every `AR-<n>` currently in `proposed` state as a
+    decision card (per the accepted-risk confirmation outcome mapping in
+    step 8) — this happens at **every** checkpoint where a proposed item
+    exists, not only when recommending Converge, but confirmation is only
+    *required* before Converge can succeed; deferring is a legitimate
+    outcome that leaves the item queued for the next checkpoint.
+
     - Recommend **Converge** when aggregate `verdict == APPROVE`, no lens is
-      `FAILED`, and the editor has no further changes pending. One APPROVE +
-      no-further-changes is enough.
+      `FAILED`, the editor has no further changes pending, and **no `AR-<n>`
+      remains in `proposed` or `reopened` state** (step 8's accounting
+      table). One APPROVE + no-further-changes + no open accepted-risk item
+      is enough.
     - Recommend **Continue** otherwise. Never auto-decide convergence.
 
     **Loop mode (opt-in).** If invoked with `--loop` / `--until-approve`, or if
@@ -410,15 +791,27 @@ performed by the runner, deterministically.
     - **Non-convergence** — the merged **HIGH+MEDIUM** finding count fails to
       strictly decrease across two consecutive transitions (LOW / `FAILED` /
       open-questions excluded; a `FAILED`-lens pass is skipped in the
-      comparison but still counts toward the cap) → stop, surface the stall.
+      comparison but still counts toward the cap) → stop, surface as the
+      non-convergence-stall decision card (step 8's shared contract).
     - **Fold needs human judgment** — any HIGH finding was *not incorporated*,
-      or a `new_question` classified **`needs_human`** survived the fold (after
-      the label sanity-check and any override in step 7) → stop, escalate.
-      `resolvable_in_fold` and `needs_lookup` questions do **not** halt the
-      loop: the editor resolves them and continues. If a `needs_lookup` resolution
-      *fails*, it becomes `needs_human` and then halts. This is the whole point
-      of the classification — an unattended loop shouldn't stop for a question
-      it could have answered, and must never continue past one only Kyle can.
+      *not* a fresh `accepted-risk` proposal, and *not* a valid
+      `register-match` (i.e. it's `disputed`, or awaiting a
+      plan-shaping-fold escalation card), or a `new_question` classified
+      **`needs_human`** survived the fold (after the label sanity-check and
+      any override in step 7) → stop, escalate. A HIGH dispositioned
+      `accepted-risk (proposed)` or a valid `register-match` does **not**,
+      by itself, halt the loop — accepted-risk proposals continue and batch
+      for confirmation at the next checkpoint (no HIGH silently vanishes:
+      the proposal is persisted immediately under a stable id and blocks
+      Converge until confirmed). A **plan-shaping-fold escalation does halt
+      immediately**, unlike an accepted-risk proposal — continuing there
+      would commit to an unapproved scope change, which is exactly what the
+      immediate halt exists to prevent. `resolvable_in_fold` and
+      `needs_lookup` questions do **not** halt the loop: the editor resolves
+      them and continues. If a `needs_lookup` resolution *fails*, it becomes
+      `needs_human` and then halts. This is the whole point of the
+      classification — an unattended loop shouldn't stop for a question it
+      could have answered, and must never continue past one only Kyle can.
 
     On **Continue** (manual or loop-auto): increment pass count, loop to step 5.
     On **Converge**: enter the Sonnet-handoff sub-flow (Phase 3, below).
@@ -492,6 +885,21 @@ performed by the runner, deterministically.
     `convergence.handoff_decision` ∈ `{handoff, stay, aborted}`,
     `convergence.handoff_path` if applicable).
 
+    **`confirmed_accepted_risks`** (Phase 1) — mirrors `iterate-review`'s
+    field of the same name exactly: one entry per `AR-<n>` whose `confirmed`
+    state still holds at the moment the file is written — `{id,
+    register_ref (RR-<id> if confirmed with confirm + add to register, else
+    null), dependency_descriptor (list of posture field ids), dependency_digest
+    (sha256 hex over those fields as confirmed)}`. **Current-state, not
+    historical**: an item confirmed earlier and later returned to `proposed`
+    by a posture-digest mismatch is absent, even though it "was confirmed" at
+    some point. Empty when the plan never proposed one. Converge is
+    impossible while any `AR-<n>` remains `proposed` or `reopened` (step 8's
+    accounting table), so every entry here is `confirmed` at Converge time by
+    construction — Abort may still leave `proposed`/`reopened` items
+    unresolved, in which case the plan's own HISTORICAL blocks remain the
+    authority on what's pending.
+
     **Per-pass summary (`summary_schema: 1`) — the data half of issue #6.**
     At Converge and Abort alike, the state file additionally carries:
     - `summary_schema: 1` — versions this row shape so a future change
@@ -509,10 +917,10 @@ performed by the runner, deterministically.
       `introduced_by_pass`), and `dispositions` (object) — a **fixed key
       set present in both skills' rows**: `incorporated`, `skipped`,
       `disputed`, `accepted-risk`, `register-match`, every key always an
-      int, zero when unused. iterate-plan has no `accepted-risk` or
-      `register-match` disposition until Phase 1 ships — those two keys
-      carry `0` until then, so Phase 1 populates keys that already exist
-      instead of reshaping the row.
+      int, zero when unused. Phase 0 shipped `accepted-risk` and
+      `register-match` at a standing `0` (the disposition didn't exist
+      yet); Phase 1 populates those same keys with real counts — the row
+      shape itself never changed.
 
       Rows are **derived from the plan's own HISTORICAL blocks** by a
       deterministic, idempotent procedure (re-deriving the same blocks
@@ -598,8 +1006,20 @@ for standalone `run-lens` output. Pruned at Converge (step 15) unless
   is fixture-pinned by `tools/check-plan-runners.py`.
 - `examples/` — fixtures (see `examples/README.md`). `pass-4-response.json` is a
   real pre-Axis-2 Codex response; `examples/merge/` holds multi-lens merge
-  goldens; `examples/composition/` pins byte-deterministic input assembly.
+  goldens; `examples/composition/` pins byte-deterministic input assembly,
+  including the register-present and register-absent cases (Phase 1).
   Validate with `tools/check-examples.py`.
+- `docs/risk-posture.md` (per-repo, not part of this skill's own files) —
+  the accepted-risks register (`## Accepted risks`, `RR-<date>-<slug>`
+  entries), read **at HEAD only, never the working tree** (Phase 1, Q5) by
+  both composition (step 5) and the register-match provenance gate
+  (step 7) — the same trusted source, so a dirty uncommitted register
+  edit can never reach a lens input or pass the gate it exists to satisfy.
+  Section shape matches `create-plan/template.md`'s `## Risk posture`; see
+  the Trinity v2.4 plan (Approach §6) for the full design and
+  `iterate-review/SKILL.md`'s sibling register-reading prose (its own
+  copy is editor-composed rather than runner-composed, since that skill's
+  input has an intent file to augment and this one doesn't).
 
 ## Hard rules
 
@@ -631,3 +1051,39 @@ for standalone `run-lens` output. Pruned at Converge (step 15) unless
   `fold_caused_count`, or any field of the per-pass summary schema —
   Phase 0 of Trinity v2.4 ships instrumentation, not a stop condition;
   that decision stays with issue #6 until the data warrants revisiting it.
+- **`accepted-risk` requires a posture-referencing rationale and human
+  confirmation to converge** (Phase 1, ported from `iterate-review`). The
+  editor may propose it, but only the human confirms or rejects; the
+  Converge recommendation is impossible while any `AR-<n>` remains
+  `proposed` or `reopened` (accounting table, step 8). Both `accepted-risk`
+  and `register-match` are unavailable for plan content named as a trust
+  boundary in `PF-shipbar` — no exception, checked against both the
+  current pass's and this pass's starting `PF-shipbar` so a same-pass edit
+  can't create the exception either.
+- **The register is always read from HEAD, never the working tree**
+  (Phase 1, Q5). `bin/plan_runner.py`'s `compose_input()` and its assembly
+  structure are otherwise untouched by this feature — the `=== ACCEPTED
+  RISKS ===` block is an additive part of the same deterministic assembly.
+  Malformed register content or an operational read failure halts before
+  fan-out with a decision card rather than silently composing without the
+  register.
+- **Every named human-judgment moment (accepted-risk confirmation,
+  plan-shaping-fold escalation, `needs_human` question, non-convergence
+  stall, malformed register source) uses the same decision-card contract**
+  (Phase 1, step 8) — recommendation + why, up to 3 alternatives
+  (context-sensitive omission can reduce this to zero listed alternatives;
+  recommendation + discuss is the floor and is always presented, never
+  skipped), a standing discuss option, written to the plan's HISTORICAL
+  block as pending before presentation and resolved once answered.
+  Selecting any option but discuss resumes the loop deterministically;
+  discuss pauses into conversation.
+- **Phase 1's success is measured by plan-loop pass counts and
+  re-litigation counts on future plans — never by code-review pass
+  counts.** The 2026-08-21 retro is explicit that code-review churn is
+  driven by fold-chaining (Phase 0 items 2 and 5), not by plan quality;
+  judging this port by downstream code-review passes would blame it for a
+  variable it doesn't control. The measurement contract (cohort: the first
+  three `iterate-plan` loops run after v2.4 ships; baseline: the retro's
+  plan-loop dataset; measures: pass count + settled-decision re-litigation
+  count; recorded at each loop's Converge; feeds issue #6's decision
+  review) is a learning contract, never a ship gate.
