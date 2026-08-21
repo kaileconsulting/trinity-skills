@@ -80,36 +80,39 @@ Without this, the guardrail read "a question the editor can't answer from the pl
 
 Every version before this one made the reviewer **find more**. That has a cost the loop couldn't see: a finding can be entirely correct and still be disproportionate to what you're actually building — hardening for a scale you'll never reach, an auth boundary your deployment topology already provides, an edge case whose worst outcome is mild inconvenience. Folding those anyway is how review cost ends up 2–3× build cost, and how a phase takes ten passes instead of four.
 
-The fix is not a laxer reviewer. It's giving the loop **the project's own risk posture**, and giving the editor a principled, recorded way to say *no*.
+The fix is not a laxer reviewer. It's giving the loop **the project's own risk posture**, and giving the editor a principled, recorded way to say *no* — in **both** skills: `iterate-review` had this from 2.3.0; `iterate-plan` gained the same machinery in 2.4.0, ported nearly verbatim.
 
 ```
-create-plan                iterate-review
+create-plan                iterate-plan / iterate-review
 ────────────               ────────────────────────────────────────────
-PF- posture fields ──────▶ RISK POSTURE block in every lens's input
-(what ships, blast                     │
- radius, ship bar,                     ▼
- trust boundaries)         reviewer files a finding
+PF- posture fields ──────▶ posture reaches every lens's input
+(what ships, blast         (a plan's own `## Risk posture` section
+ radius, ship bar,          arrives with the plan; iterate-review
+ trust boundaries)          composes a RISK POSTURE intent block)
+                                        │
+                                        ▼
+                           reviewer files a finding
                                        │
 docs/risk-posture.md ────▶ ┌───────────┴───────────┐
 (accepted risks,           ▼                       ▼
- RR- entries)      register-match          accepted-risk (AR-<n>)
-                   already accepted,       new proposal → YOU confirm
-                   no edit, no re-ask      or reject at a checkpoint
+ RR- entries, read at      register-match          accepted-risk (AR-<n>)
+ HEAD by iterate-plan)     already accepted,       new proposal → YOU confirm
+                           no edit, no re-ask      or reject at a checkpoint
 ```
 
 **Posture is captured once, at plan time.** `create-plan` asks for it as `PF-` fields, so it exists before any code does and isn't invented mid-argument to win one.
 
-**It reaches the reviewer.** Lenses see the posture, so the `security` lens stops re-filing "this endpoint has no auth" against a deployment whose perimeter is documented — a real dispute that recurred three times across one project's phases before this existed, re-argued from scratch every time.
+**It reaches every reviewer, in both skills.** A plan's own `## Risk posture` section arrives with the full plan text on every `iterate-plan` pass; `iterate-review` composes the same fields, plus the accepted-risks register, into a `RISK POSTURE` intent block. Either way, the `security` lens stops re-filing "this endpoint has no auth" against a deployment whose perimeter is documented — a real dispute that recurred three times across one project's phases before this existed, re-argued from scratch every time.
 
-**Two ways a finding can be declined, and they're different.** `register-match` means *you already decided this* — the finding falls inside a recorded entry's bound, so it needs no code edit and no fresh confirmation. `accepted-risk` means *this is new* — the editor proposes it with a written rationale, and it stays open, blocking convergence, until you confirm or reject it at a checkpoint. **The editor can propose; only you can accept.**
+**Two ways a finding can be declined, and they're different — in both skills.** `register-match` means *you already decided this* — the finding falls inside a recorded entry's bound, so it needs no code edit (or plan edit) and no fresh confirmation. `accepted-risk` means *this is new* — the editor proposes it with a written rationale, and it stays open, blocking convergence, until you confirm or reject it at a checkpoint. **The editor can propose; only you can accept.**
 
 **A confirmation knows what it rests on.** Every confirmed risk records the posture fields its rationale depends on, plus a digest of their content. Edit one of those fields and the confirmation invalidates itself and comes back for a fresh decision; edit anything else and it stands. Your acceptance was of a specific bound, not of a topic.
 
-**Trust boundaries are exempt from all of it.** Code you named in `PF-shipbar` can never be declined — not via `accept the risk`, not via register-match, not via editor pushback. And posture is read at both the current revision and the base revision, so a change can't edit the posture that would excuse it, or quietly narrow a trust boundary, inside the same diff.
+**Trust boundaries are exempt from all of it.** Code — or plan content — you named in `PF-shipbar` can never be declined — not via `accept the risk`, not via register-match, not via editor pushback. `iterate-review` reads posture at both the current revision and the diff's base revision, so a same-diff edit can't excuse the defect it's narrowing the boundary for; `iterate-plan` has no diff to anchor to, so it reads the register from **HEAD only, never the working tree** — a freshly seeded, uncommitted register entry is invisible to review until it's committed, and the plan's own posture is checked at both the current pass and the start of the pass, the plan-side analog of the same anti-gaming shape.
 
-**When the editor must stop and ask.** Before folding any finding, it checks whether incorporating it needs a *new mechanism* — a schema change or migration, a new persisted or protocol field, an invariant outliving the request, a background process, a new dependency. If so it pauses **at that finding** and presents a decision card rather than quietly designing something. Cards are the same shape everywhere the loop needs judgment: a recommendation, up to three alternatives, and an always-available *discuss*. A card is never skipped, and **a resolved card authorizes the option you chose — never the ones you declined.**
+**When the editor must stop and ask.** Before folding any finding, it checks whether incorporating it needs a *new mechanism* — a schema change or migration, a new persisted or protocol field, an invariant outliving the request, a background process, a new dependency (`iterate-review`), or, for a plan, a fold that would materially alter approved scope — adding or removing a phase, changing Goals/Non-goals, moving acceptance coverage between phases (`iterate-plan`'s plan-shaping-fold escalation). If so it pauses **at that finding** and presents a decision card rather than quietly designing something (or committing to unapproved scope). Cards are the same shape everywhere the loop needs judgment: a recommendation, up to three alternatives, and an always-available *discuss*. A card is never skipped, and **a resolved card authorizes the option you chose — never the ones you declined.**
 
-What this does **not** do: decide anything for you. Nothing is accepted without your confirmation, nothing on a trust boundary is negotiable, and every declined finding leaves a written rationale in the pass log pointing at the posture field it rests on. The goal is fewer passes spent arguing about things you already settled — not fewer things fixed.
+What this does **not** do: decide anything for you. Nothing is accepted without your confirmation, nothing on a trust boundary is negotiable, and every declined finding leaves a written rationale in the pass log (or the plan's own HISTORICAL blocks) pointing at the posture field it rests on. The goal is fewer passes spent arguing about things you already settled — not fewer things fixed.
 
 ## Prerequisites
 

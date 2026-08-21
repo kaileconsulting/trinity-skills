@@ -68,6 +68,16 @@ def build_parser():
     p.add_argument("--lenses", default=None,
                    help="comma-separated lens ids to force, overriding "
                         "deterministic selection")
+    p.add_argument("--ignore-register", action="store_true",
+                   help="compose this pass with an explicitly empty "
+                        "register, bypassing resolve_register() entirely -- "
+                        "never automatic; this is the runner-side mechanism "
+                        "the editor invokes only after the human has chosen "
+                        "'proceed with no register' at the malformed-source "
+                        "decision card (SKILL.md step 5/8). Without this "
+                        "flag, a malformed or operational_failure register "
+                        "state always aborts before fan-out -- there is no "
+                        "other way past it.")
     return p
 
 
@@ -109,6 +119,30 @@ def main(argv=None):
         sys.stderr.write(f"run-pass: {exc}\n")
         return EXIT_ERROR
 
+    # Register resolution (Trinity v2.4 Phase 1, Q5): read once per pass,
+    # from HEAD, never the working tree -- BEFORE the lock and BEFORE any
+    # lens runs. malformed / operational_failure both abort here with no
+    # summary published and no lens ever invoked (the same never-ran
+    # contract as any other pre-fan-out abort) -- the editor (SKILL.md
+    # step 5) reads the stderr prefix and presents the malformed-source
+    # decision card rather than retrying blindly. --ignore-register is the
+    # ONE way past this abort, and it is never automatic: the editor passes
+    # it only after the human has explicitly chosen "proceed with no
+    # register" at that card -- resolution is short-circuited entirely
+    # (not merely tolerated) so a broken read can never silently masquerade
+    # as a resolved one.
+    if args.ignore_register:
+        register_text = ""
+    else:
+        register = pr.resolve_register(repo_root)
+        if register.state == "malformed":
+            sys.stderr.write(f"run-pass: register malformed: {register.reason}\n")
+            return EXIT_ERROR
+        if register.state == "operational_failure":
+            sys.stderr.write(f"run-pass: register unavailable: {register.reason}\n")
+            return EXIT_ERROR
+        register_text = register.text  # "" for confirmed_absent
+
     shash = pr.scope_hash(plan_path)
     state_dir = pr.STATE_ROOT / shash
 
@@ -136,7 +170,8 @@ def main(argv=None):
             response_path = state_dir / f"pass-{pass_num}.{lens_id}.response.json"
             return pr.run_one_lens(lens_id, plan_text, note_text,
                                    plan_path.parent, input_path,
-                                   response_path, lock=lock)
+                                   response_path, lock=lock,
+                                   register=register_text)
 
         # All lens futures are awaited; one lens failing never cancels its
         # siblings. A LockError means ownership was revoked mid-run — the

@@ -55,16 +55,26 @@ Ask the user three questions, regardless of plan type — these apply to every p
 
 **For fix plans:** condense the three answers into the mandatory one-paragraph lightweight variant, labeling each inline by its `PF-` id.
 
-Share with the user why this isn't optional: the `PF-` ids are stable anchors that `iterate-review`'s posture-aware composition and the editor's `accepted-risk` disposition reference by id, never by prose — a plan without this section can't participate in that machinery. This step cannot be skipped for either plan type.
+Share with the user why this isn't optional: the `PF-` ids are stable anchors that both `iterate-plan` and `iterate-review`'s posture-aware composition, and both skills' `accepted-risk` disposition, reference by id, never by prose — a plan without this section can't participate in that machinery. This step cannot be skipped for either plan type.
 
-**If the author dictates an existing accepted risk** while answering these questions (they already know of a real, disproportionate risk they're accepting), offer to seed the repo's accepted-risks register now:
+**Then ask a fourth question — unconditionally, on every scaffold, for both plan types:**
+
+> 4. Are you already accepting any known risks — specific, real behaviors you've decided not to fix?
+
+Ask this every time, even when the answer is obviously "none" — it does not wait for the author to volunteer one. An unseeded register costs real re-litigation later: `iterate-review`'s provenance gate honors only register entries that predate the diff under review, and `iterate-plan`'s (Q5's HEAD-sourced register composition, never the working tree) honors only entries that exist at HEAD — so a risk seeded after the fact can never wave through the findings it was meant to cover, in either loop. Plan time is the last cheap moment to seed it, and this question is the only thing standing between "the author happened to mention it" and it actually getting recorded.
+
+**"None" proceeds with nothing written** — no empty-register scaffolding, no ceremony.
+
+**A dictated risk** (a real, disproportionate risk the author already knows they're accepting) flows into the seeding procedure below, unchanged:
 1. Resolve `<project-root>/docs/risk-posture.md` (same project-root resolution as Step 5).
 2. If it doesn't exist, create it with a `## Accepted risks` H2 and the new entry.
 3. If it exists and already has a `## Accepted risks` H2, append the entry under that H2.
 4. If it exists but has no `## Accepted risks` H2 yet (a valid file can carry only `PF-` fields, seeded some other way — e.g. authored directly by the repo owner for standalone-review fallback), add the H2 to the file and then the entry under it. Don't create a second file or a differently-named section.
 5. Use the register shape from the template's "REGISTER SHAPE REFERENCE" comment: a stable `RR-<YYYY-MM-DD>-<slug>` id, the specific behavior, its bound, its recovery path, and the acceptance date. Never a blanket suppression ("ignore X findings") — if what the author describes reads as a category rather than a named behavior, push back and ask for the specific case.
 
-This is the one path where an accepted risk needs no separate confirmation step: the author is dictating it directly into the plan-authoring conversation, which is itself the confirmation. (Contrast with `iterate-review`'s `accepted-risk` disposition, which is an editor *proposal* during automated folding and does require a later human confirm.)
+This is the one path where an accepted risk needs no separate confirmation step: the author is dictating it directly into the plan-authoring conversation, which is itself the confirmation. (Contrast with `iterate-plan`'s or `iterate-review`'s `accepted-risk` disposition, either of which is an editor *proposal* during automated review and does require a later human confirm.)
+
+**Commit-before-review boundary.** `iterate-plan`'s register-aware lens composition sources the register from the repo's committed `HEAD`, never the working tree — so a freshly seeded entry is review-visible, and provenance-valid, only once it's committed. **Commit the scaffolded plan and its register entry together before invoking `iterate-plan`.** This matches the existing workflow (plans are committed before review anyway); this note just says the boundary out loud instead of relying on it silently.
 
 ### Step 4 — For initiatives only: collect phase metadata
 

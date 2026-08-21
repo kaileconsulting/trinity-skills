@@ -38,7 +38,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import secrets
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -271,6 +273,120 @@ def extract_required_sections(plan_text: str, titles) -> str:
 
 
 # --------------------------------------------------------------------------
+# Register resolution — HEAD-sourced, never the working tree (Trinity v2.4
+# Phase 1, Q5). Composition (below) and the model's register-match
+# provenance gate (SKILL.md step 7) share this exact function's output as
+# their one trusted source, so a dirty working-tree edit can never reach a
+# lens input the same pass a gate exists to reject it.
+# --------------------------------------------------------------------------
+
+REGISTER_RELATIVE_PATH = "docs/risk-posture.md"
+ACCEPTED_RISKS_TITLE = "Accepted risks"
+_RR_BULLET_OPEN = re.compile(r"^-\s+\*\*(RR-[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+(?:-[a-z0-9]+)*)\*\*\s+—",
+                             re.MULTILINE)
+
+
+class RegisterResult:
+    """One of four states, never a silent fallback between them:
+
+      loaded              -- text holds the '## Accepted risks' section,
+                              verbatim, ready to compose.
+      confirmed_absent    -- the blob doesn't exist at HEAD -- whether
+                              because the path has never existed at any
+                              revision, or because it exists untracked on
+                              disk but was never committed (the freshly-
+                              seeded create-plan case) -- or it exists at
+                              HEAD but carries no '## Accepted risks'
+                              section. A normal, valid repo state --
+                              composes as the zero-register-bytes path.
+      malformed           -- the section exists but is broken (duplicate
+                              RR- ids) -- a register-integrity problem.
+      operational_failure -- anything else that isn't a confirmed absence:
+                              repo root unresolvable, no HEAD yet, or `git
+                              show` failing for a reason other than the
+                              path not existing at that revision.
+
+    malformed and operational_failure both halt run-pass before any
+    fan-out (see resolve_register's caller in run-pass) -- never silently
+    composed as if absent, since that would strip trusted context from
+    every lens without anyone deciding to.
+    """
+
+    __slots__ = ("state", "text", "reason")
+
+    def __init__(self, state: str, text: str = "", reason: str = ""):
+        assert state in ("loaded", "confirmed_absent", "malformed",
+                         "operational_failure")
+        self.state = state
+        self.text = text
+        self.reason = reason
+
+
+def find_duplicate_register_ids(section_text: str) -> list:
+    """RR-<id>s that open more than one bullet in an '## Accepted risks'
+    section text. Empty when the register is well-formed. Matches the
+    exact bullet-open shape the register-match digest recipe (SKILL.md
+    step 7) anchors on: `- **RR-<id>** — `."""
+    counts: dict = {}
+    for match in _RR_BULLET_OPEN.finditer(section_text):
+        rid = match.group(1)
+        counts[rid] = counts.get(rid, 0) + 1
+    return sorted(rid for rid, n in counts.items() if n > 1)
+
+
+def resolve_register(repo_root: Path) -> RegisterResult:
+    """Resolve docs/risk-posture.md's '## Accepted risks' section from
+    `git show HEAD:docs/risk-posture.md` at repo_root -- never the working
+    tree. See RegisterResult for the four possible outcomes."""
+    try:
+        proc = subprocess.run(
+            ["git", "show", f"HEAD:{REGISTER_RELATIVE_PATH}"],
+            cwd=str(repo_root), capture_output=True, text=True,
+        )
+    except OSError as exc:
+        return RegisterResult("operational_failure",
+                              reason=f"git unavailable: {exc}")
+
+    if proc.returncode != 0:
+        stderr = proc.stderr.strip()
+        # `git show HEAD:<path>` reports a path absent at that revision one
+        # of two ways, and BOTH are confirmed absence, never operational
+        # failure -- this is the exact boundary iterate-review's code
+        # review (pass 6) caught missing: a path that never existed at any
+        # revision says "does not exist in 'HEAD'", but a path that exists
+        # UNTRACKED on disk -- the freshly-seeded, not-yet-committed
+        # create-plan case the dirty-worktree design is built around --
+        # says "exists on disk, but not in 'HEAD'" instead. Treating only
+        # the first phrasing as confirmed-absent silently misrouted the
+        # positive seeding case to operational_failure (a hard abort)
+        # instead of the intended zero-register-bytes compose path.
+        # Distinct from every other failure (no HEAD yet on a fresh repo:
+        # "fatal: invalid object name 'HEAD'."; an unresolvable repo root;
+        # any other git error) -- those remain operational_failure, and
+        # there is no third bucket and no silent fallback between the two.
+        if "does not exist in" in stderr or "exists on disk, but not in" in stderr:
+            return RegisterResult("confirmed_absent", reason=stderr)
+        return RegisterResult("operational_failure",
+                              reason=stderr or "git show exited non-zero "
+                                                "with no stderr")
+
+    section = extract_section(proc.stdout, ACCEPTED_RISKS_TITLE)
+    if section is None:
+        return RegisterResult(
+            "confirmed_absent",
+            reason=f"{REGISTER_RELATIVE_PATH} exists at HEAD but has no "
+                   f"'## {ACCEPTED_RISKS_TITLE}' section")
+
+    dupes = find_duplicate_register_ids(section)
+    if dupes:
+        return RegisterResult(
+            "malformed",
+            reason=f"duplicate RR- id(s) in the register: {', '.join(dupes)}")
+
+    return RegisterResult("loaded", text=section)
+
+
+# --------------------------------------------------------------------------
 # Deterministic composition
 # --------------------------------------------------------------------------
 
@@ -281,9 +397,17 @@ def _block(text: str) -> str:
 
 def compose_input(reviewer_prompt: str, lens_id: str, lens_body: str,
                   matched_context: str, sections: str, plan: str,
-                  note: str = "") -> str:
+                  note: str = "", register: str = "") -> str:
     """Assemble one lens's Codex input. Deterministic: same inputs →
-    byte-identical output. Golden-pinned in examples/composition/."""
+    byte-identical output. Golden-pinned in examples/composition/.
+
+    `register` is the '## Accepted risks' section text (RegisterResult.text
+    for state=="loaded"), or "" for state=="confirmed_absent" -- the caller
+    (compose_for_lens / run-pass) never calls this with a malformed or
+    operational_failure register result; those halt before any composition
+    happens. An empty register produces zero register-specific bytes: the
+    output is byte-identical to what it would be without this parameter at
+    all (Trinity v2.4 Phase 1, Q5's no-register golden)."""
     note_block = ""
     if note.strip():
         note_block = ("=== NOTE: HUMAN EDITS SINCE LAST PASS ===\n"
@@ -291,6 +415,9 @@ def compose_input(reviewer_prompt: str, lens_id: str, lens_body: str,
     framing = ""
     if matched_context:
         framing = _block(f"[{lens_id} lens framing] {matched_context}") + "\n"
+    register_block = ""
+    if register.strip():
+        register_block = "=== ACCEPTED RISKS ===\n" + _block(register)
     return (
         _block(reviewer_prompt)
         + _block(lens_body)
@@ -299,12 +426,14 @@ def compose_input(reviewer_prompt: str, lens_id: str, lens_body: str,
         + f"=== MATCHED CONTEXT (sections for the {lens_id} lens) ===\n"
         + framing
         + _block(sections)
+        + register_block
         + "=== PLAN ===\n"
         + _block(plan)
     )
 
 
-def compose_for_lens(lens_id: str, plan_text: str, note: str = "") -> str:
+def compose_for_lens(lens_id: str, plan_text: str, note: str = "",
+                     register: str = "") -> str:
     try:
         prompt = REVIEWER_PROMPT.read_text(encoding="utf-8")
     except OSError as exc:
@@ -312,7 +441,8 @@ def compose_for_lens(lens_id: str, plan_text: str, note: str = "") -> str:
     body, mc, selection = read_lens_record(lens_id)
     sections = extract_required_sections(plan_text,
                                          selection["requires_sections"])
-    return compose_input(prompt, lens_id, body, mc, sections, plan_text, note)
+    return compose_input(prompt, lens_id, body, mc, sections, plan_text, note,
+                         register)
 
 
 # --------------------------------------------------------------------------
@@ -331,7 +461,8 @@ def scope_hash(plan_path: Path) -> str:
 # --------------------------------------------------------------------------
 
 def run_one_lens(lens_id: str, plan_text: str, note: str, plan_dir: Path,
-                 input_path: Path, response_path: Path, lock=None) -> dict:
+                 input_path: Path, response_path: Path, lock=None,
+                 register: str = "") -> dict:
     """Compose, publish the input, invoke codex, validate the response.
 
     `plan_dir` becomes codex's working root (`-C`, per SKILL.md) so the
@@ -343,11 +474,14 @@ def run_one_lens(lens_id: str, plan_text: str, note: str, plan_dir: Path,
     for standalone/debug runs, which write only to the isolated debug/
     namespace.
 
+    `register` is the resolved register text (see resolve_register) — the
+    same value for every lens this pass, since it's read once, not per-lens.
+
     Returns the per-lens summary entry:
       {status: ok|failed|rejected, response_path, exit_code, stderr_tail,
        reject_reasons?}   — failure/rejection is data, not an exception.
     """
-    composed = compose_for_lens(lens_id, plan_text, note)
+    composed = compose_for_lens(lens_id, plan_text, note, register)
     if lock is not None:
         lock.verify()  # abort-before-work; the real gate is verify_and below
         lock.verify_and(lambda: shared.atomic_publish(input_path, composed))

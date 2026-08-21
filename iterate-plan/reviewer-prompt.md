@@ -95,6 +95,9 @@ nothing to flag). Each finding has:
 - `suggested_action` — what the editor should consider doing about it. May
   be open-ended ("clarify scope") or specific ("split phase 2 into
   2a + 2b"). Do not write the new wording; describe the intent.
+- `register_ref` — optional; omit it entirely in the common case (no
+  match). See **ON RISK POSTURE** below for when to set it to an actual id
+  instead.
 
 ### `plan_corrections`
 
@@ -119,6 +122,18 @@ where you genuinely can't answer).
 - `question_id` — the Q-number the editor assigned (e.g., "Q3").
 - `answer` — your view, with reasoning. Multi-paragraph fine if
   warranted.
+
+**A question annotated `— FROZEN at pass N (...)` in the Open questions
+section has already received identical answers from every lens for
+several consecutive passes — don't re-answer it unless you have
+genuinely new evidence** (new information, a new consideration, or a
+reason the prior consensus was wrong — not a rephrasing of the same
+reasoning). If you do have new evidence, answer it anyway: your answer
+reopens the question for the editor, which is exactly the point of
+flagging it rather than silently dropping it. Answering a frozen
+question with the same reasoning it was frozen on wastes a pass; not
+answering one you have real new evidence for defeats the mechanism —
+when genuinely unsure which side you're on, answer it.
 
 ### `new_questions`
 
@@ -174,6 +189,43 @@ prior work and the editor's responses, and they give you continuity across
 the iteration loop. Do NOT re-issue findings that prior passes already
 resolved unless the editor's incorporation was demonstrably insufficient.
 
+## ON RISK POSTURE
+
+The plan's own `## Risk posture` section (its `PF-audience` / `PF-blast` /
+`PF-shipbar` fields) arrives with the plan itself under `=== PLAN ===` —
+you already have it whenever the plan defines it. Separately, the input
+may include an `=== ACCEPTED RISKS ===` block, sourced from
+`docs/risk-posture.md`'s `## Accepted risks` section **at HEAD** (never
+the working tree) — not every pass carries one; its absence means either
+no register has been seeded for this repo yet, or the register is
+genuinely empty, and carries no signal either way about the plan's risk
+level.
+
+**Severity stays absolute.** The posture never changes what's
+HIGH/MEDIUM/LOW — severity is always "what's the worst credible outcome
+if this plan ships as written," judged the same way regardless of the
+plan's own stated audience or blast radius. The posture affects the
+editor's *disposition* of a finding, not your assessment of it. Do not
+soften a finding's severity because the posture reads as low-stakes, and
+do not inflate one because `PF-shipbar` names a trust boundary — name the
+trust-boundary concern in the finding itself if relevant, and let the
+editor weigh disposition.
+
+**Using the register.** If a finding is independently actionable (you'd
+file it regardless) and its behavior falls within a specific register
+entry's recorded bound and recovery path — not merely the same general
+area — set `register_ref` to that entry's id. Two things are NOT a match:
+1. **A finding that only restates a documented posture or register
+   decision with no new evidence** — don't file this at all. Filing it
+   costs the editor a fold cycle for something already settled.
+2. **Evidence that a register entry's stated bound or recovery path is
+   false.** This is a fresh, real finding — file it normally, without
+   `register_ref`, even though it concerns the same behavior the entry
+   names.
+
+The distinction is evidence: restating what's already decided isn't a
+finding; showing the existing decision no longer holds is.
+
 ## ON DRIFT
 
 You are explicitly the drift-elimination layer. If the plan says one
@@ -193,5 +245,21 @@ object.
 ## LENS + PLAN TO REVIEW
 
 (Your lens fragment — ROLE + FOCUS — follows immediately below, then the
-matched context and the plan. The plan may contain HISTORICAL sections from
-prior passes; treat those as context, not as work to redo.)
+matched context, an optional accepted-risks register block, and the plan.
+Format:
+
+```
+=== MATCHED CONTEXT (sections for the <lens-id> lens) ===
+<framing line + required-section slices>
+
+=== ACCEPTED RISKS ===
+<the '## Accepted risks' section from docs/risk-posture.md at HEAD, verbatim;
+ present only when a register resolved for this pass — absent entirely
+ otherwise, with no signal either way about the plan's risk level>
+
+=== PLAN ===
+<the full plan, including its own '## Risk posture' section if it has one,
+ and any HISTORICAL sections from prior passes>
+```
+
+Treat HISTORICAL sections inside the plan as context, not as work to redo.)

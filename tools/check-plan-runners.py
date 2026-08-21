@@ -131,6 +131,31 @@ class Env:
         self.note = os.path.join(self.handoff, "note.txt")
         with open(self.note, "w") as fh:
             fh.write("Human edits since last pass — diff:\n- fixture edit\n")
+        # A committed HEAD, with no docs/risk-posture.md yet: the default
+        # state every pre-existing test in this file runs against is
+        # register-confirmed-absent (Phase 1, Q5) -- composition stays
+        # byte-identical to before the register feature existed, so none of
+        # the tests below needed to change. commit_register() (below)
+        # layers a register commit on top for the tests that need one.
+        self._git("add", "-A")
+        self._git("commit", "-q", "-m", "initial")
+
+    def _git(self, *args) -> None:
+        subprocess.run(
+            ["git", "-c", "user.email=fixture@example.com",
+             "-c", "user.name=fixture", *args],
+            cwd=self.repo, check=True, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+
+    def commit_register(self, text: str) -> None:
+        """Write docs/risk-posture.md with `text` and commit it -- moves
+        this Env's HEAD from confirmed-absent to whatever state `text`
+        represents (loaded, or malformed if it carries duplicate RR- ids)."""
+        path = os.path.join(self.repo, "docs", "risk-posture.md")
+        with open(path, "w") as fh:
+            fh.write(text)
+        self._git("add", "-A")
+        self._git("commit", "-q", "-m", "register")
 
     def _write_fake_codex(self) -> None:
         path = os.path.join(self.fakebin, "codex")
@@ -263,6 +288,24 @@ def test_composition(pr) -> None:
            pr.compose_input(prompt, "l", body, mc, sections, plan, "  \n")
            == pr.compose_input(prompt, "l", body, mc, sections, plan))
 
+    # --- register composition (Trinity v2.4 Phase 1, Q5) -------------------
+    register = read(os.path.join(COMPOSITION, "register.txt"))
+    got = pr.compose_input(prompt, "test-lens", body, mc, sections, plan,
+                           register=register)
+    record("composition: golden with register (byte-identical)",
+           got == read(os.path.join(COMPOSITION, "golden-with-register.txt"))
+           and "=== ACCEPTED RISKS ===" in got)
+    record("composition: no-register call is byte-identical to golden-plain "
+           "(zero register-specific bytes when absent)",
+           pr.compose_input(prompt, "test-lens", body, mc, sections, plan)
+           == read(os.path.join(COMPOSITION, "golden-plain.txt")))
+    record("composition: register='' composes identically to register omitted",
+           pr.compose_input(prompt, "l", body, mc, sections, plan, "", "")
+           == pr.compose_input(prompt, "l", body, mc, sections, plan))
+    record("composition: whitespace-only register composes as absent",
+           pr.compose_input(prompt, "l", body, mc, sections, plan, "", "  \n")
+           == pr.compose_input(prompt, "l", body, mc, sections, plan))
+
     # Determinism against the REAL skill inputs: composing twice is bytewise
     # stable for every lens record.
     lens_ids = sorted(
@@ -282,6 +325,118 @@ def test_composition(pr) -> None:
     record("lens record: selection block parsed",
            sel2 == {"always": True,
                     "requires_sections": ["Approach", "Phasing"]})
+
+
+def _git_fixture(*, commit_plan=True, register_text=None):
+    """A scratch git repo, isolated from the Env class's shared fixture, for
+    exercising resolve_register()'s four states directly against real git
+    plumbing rather than mocking subprocess. `commit_plan=False` leaves the
+    repo with zero commits at all (the no-HEAD-yet operational-failure
+    case) -- everything else commits once. `register_text`, when given,
+    writes+commits docs/risk-posture.md with that content in the same
+    commit as the plan (loaded / malformed, depending on the text)."""
+    tmp = tempfile.mkdtemp()
+    subprocess.run(["git", "init", "-q", tmp], check=True,
+                   stdout=subprocess.DEVNULL)
+    if not commit_plan:
+        return tmp
+    os.makedirs(os.path.join(tmp, "docs"), exist_ok=True)
+    with open(os.path.join(tmp, "docs", "plan.md"), "w") as fh:
+        fh.write(PLAN_TEXT)
+    if register_text is not None:
+        with open(os.path.join(tmp, "docs", "risk-posture.md"), "w") as fh:
+            fh.write(register_text)
+    subprocess.run(["git", "-c", "user.email=fixture@example.com",
+                    "-c", "user.name=fixture", "add", "-A"],
+                   cwd=tmp, check=True, stdout=subprocess.DEVNULL)
+    subprocess.run(["git", "-c", "user.email=fixture@example.com",
+                    "-c", "user.name=fixture", "commit", "-q", "-m", "init"],
+                   cwd=tmp, check=True, stdout=subprocess.DEVNULL)
+    return tmp
+
+
+def test_register_resolution(pr) -> None:
+    """resolve_register()'s four states (Trinity v2.4 Phase 1, Q5), against
+    real scratch git repos -- this is runner control flow, not editor
+    prose, so it gets the same executable-fixture treatment as every other
+    control-flow rule in this repo (scope_classifier.py, freeze_tracker.py)."""
+    from pathlib import Path as _Path
+
+    # loaded
+    repo = _git_fixture(register_text=(
+        "## Accepted risks\n\n"
+        "- **RR-2026-08-06-seq-poison** — fixture behavior; bound: n/a; "
+        "recovery: n/a.\n"))
+    result = pr.resolve_register(_Path(repo))
+    record("register: well-formed register resolves to loaded",
+           result.state == "loaded"
+           and "RR-2026-08-06-seq-poison" in result.text
+           and result.text.startswith("## Accepted risks"))
+    shutil.rmtree(repo, ignore_errors=True)
+
+    # confirmed_absent — no docs/risk-posture.md at HEAD at all
+    repo = _git_fixture()
+    result = pr.resolve_register(_Path(repo))
+    record("register: missing file at HEAD resolves to confirmed_absent",
+           result.state == "confirmed_absent")
+    shutil.rmtree(repo, ignore_errors=True)
+
+    # confirmed_absent — the freshly-seeded create-plan case: the file
+    # exists UNTRACKED on disk but was never committed. Git phrases this
+    # boundary differently from "never existed at any revision" ("exists
+    # on disk, but not in 'HEAD'" vs "does not exist in 'HEAD'") -- caught
+    # by iterate-review's own code review (pass 6) as a real misrouting to
+    # operational_failure before this fix.
+    repo = _git_fixture()
+    with open(os.path.join(repo, "docs", "risk-posture.md"), "w") as fh:
+        fh.write("## Accepted risks\n\n- **RR-2026-08-21-uncommitted** — "
+                 "never committed.\n")
+    result = pr.resolve_register(_Path(repo))
+    record("register: untracked-on-disk (never committed) resolves to "
+           "confirmed_absent, not operational_failure",
+           result.state == "confirmed_absent")
+    shutil.rmtree(repo, ignore_errors=True)
+
+    # confirmed_absent — file exists at HEAD but has no Accepted risks section
+    repo = _git_fixture(register_text="# Risk posture\n\nNo register here.\n")
+    result = pr.resolve_register(_Path(repo))
+    record("register: file with no Accepted risks section is confirmed_absent",
+           result.state == "confirmed_absent")
+    shutil.rmtree(repo, ignore_errors=True)
+
+    # malformed — duplicate RR- ids
+    repo = _git_fixture(register_text=(
+        "## Accepted risks\n\n"
+        "- **RR-2026-08-06-seq-poison** — first bullet; bound: n/a; "
+        "recovery: n/a.\n\n"
+        "- **RR-2026-08-06-seq-poison** — duplicate id, second bullet; "
+        "bound: n/a; recovery: n/a.\n"))
+    result = pr.resolve_register(_Path(repo))
+    record("register: duplicate RR- ids resolve to malformed",
+           result.state == "malformed"
+           and "RR-2026-08-06-seq-poison" in result.reason)
+    shutil.rmtree(repo, ignore_errors=True)
+
+    # operational_failure — no HEAD yet (zero commits)
+    repo = _git_fixture(commit_plan=False)
+    result = pr.resolve_register(_Path(repo))
+    record("register: no HEAD yet (fresh repo) resolves to operational_failure",
+           result.state == "operational_failure")
+    shutil.rmtree(repo, ignore_errors=True)
+
+    # operational_failure — not a git repo at all
+    tmp = tempfile.mkdtemp()
+    result = pr.resolve_register(_Path(tmp))
+    record("register: non-git directory resolves to operational_failure",
+           result.state == "operational_failure")
+    shutil.rmtree(tmp, ignore_errors=True)
+
+    record("register: find_duplicate_register_ids is empty for a "
+           "well-formed section",
+           pr.find_duplicate_register_ids(
+               "## Accepted risks\n\n- **RR-2026-08-06-a** — x; bound: n/a; "
+               "recovery: n/a.\n\n- **RR-2026-08-06-b** — y; bound: n/a; "
+               "recovery: n/a.\n") == [])
 
 
 def test_extraction(pr) -> None:
@@ -691,6 +846,216 @@ def test_prune_smoke(env: Env) -> None:
            os.path.exists(model_state))
 
 
+def test_register_integration(env: Env) -> None:
+    """End-to-end: run-pass's register resolution + composition + the
+    malformed-source abort, against the real CLI (Trinity v2.4 Phase 1,
+    Q5) -- resolve_register()'s pure-function behavior is covered by
+    test_register_resolution above; this proves run-pass actually wires it
+    in the way SKILL.md step 5 promises. Placed LAST in the Env-based
+    sequence: it commits to env.repo's git history (no test after it
+    depends on the prior confirmed-absent state), and test_prune_smoke
+    already wiped this scope's state dir, so pass numbering below starts
+    clean regardless of how many passes earlier tests consumed."""
+    env.set_mode("ok")
+    state_dir = env.state_dir()
+
+    # loaded: run-pass composes the register block into every lens's input.
+    env.commit_register(
+        "## Accepted risks\n\n"
+        "- **RR-2026-08-06-seq-poison** — integration-fixture behavior; "
+        "bound: n/a; recovery: n/a.\n")
+    proc = env.run("run-pass", "--plan", env.plan)
+    record("register integration: loaded register composes end to end",
+           proc.returncode == 0, proc.stderr.strip())
+    composed = read(os.path.join(state_dir, "pass-1.architect.input.txt"))
+    record("register integration: composed input carries the register block",
+           "=== ACCEPTED RISKS ===" in composed
+           and "RR-2026-08-06-seq-poison" in composed)
+
+    # malformed: run-pass aborts before any lens ever runs -- no new
+    # summary, no lock left behind, a clear stderr reason naming the
+    # offending id.
+    summaries_before = set(
+        glob.glob(os.path.join(state_dir, "pass-*.summary.json")))
+    env.commit_register(
+        "## Accepted risks\n\n"
+        "- **RR-2026-08-06-dup** — first; bound: n/a; recovery: n/a.\n\n"
+        "- **RR-2026-08-06-dup** — duplicate id, second bullet; "
+        "bound: n/a; recovery: n/a.\n")
+    proc = env.run("run-pass", "--plan", env.plan)
+    record("register integration: malformed register aborts before fan-out",
+           proc.returncode != 0
+           and "register malformed" in proc.stderr
+           and "RR-2026-08-06-dup" in proc.stderr)
+    summaries_after = set(
+        glob.glob(os.path.join(state_dir, "pass-*.summary.json")))
+    record("register integration: malformed abort published no new summary",
+           summaries_after == summaries_before)
+    record("register integration: malformed abort took no run lock",
+           not os.path.exists(os.path.join(state_dir, "run.lock")))
+
+    # --ignore-register: the ONE human-directed way past a malformed/
+    # operational_failure abort (SKILL.md step 5/8's "proceed with no
+    # register" card outcome) -- the SAME malformed register from above is
+    # still committed at HEAD; --ignore-register must still succeed and
+    # compose with an explicitly empty register, never reading the broken
+    # source at all.
+    proc = env.run("run-pass", "--plan", env.plan, "--ignore-register")
+    record("register integration: --ignore-register succeeds past a "
+           "malformed register",
+           proc.returncode == 0, proc.stderr.strip())
+    if proc.returncode == 0:
+        passnum = json.loads(proc.stdout)["pass"]
+        composed = read(os.path.join(
+            state_dir, f"pass-{passnum}.architect.input.txt"))
+        real_header = "=== MATCHED CONTEXT (sections for the architect lens) ==="
+        after_real_header = composed.split(real_header, 1)[-1]
+        record("register integration: --ignore-register composes with no "
+               "register block, never reading the malformed source",
+               real_header in composed
+               and "=== ACCEPTED RISKS ===" not in after_real_header
+               and "RR-2026-08-06-dup" not in composed)
+
+    # dirty worktree: an UNCOMMITTED edit to docs/risk-posture.md must never
+    # reach a lens input -- composition and the register-match provenance
+    # gate share HEAD as their one trusted source (Q5). Revert to the
+    # well-formed committed register from above, then dirty the working
+    # tree with a DIFFERENT id that was never committed.
+    env.commit_register(
+        "## Accepted risks\n\n"
+        "- **RR-2026-08-06-seq-poison** — integration-fixture behavior; "
+        "bound: n/a; recovery: n/a.\n")
+    dirty_path = os.path.join(env.repo, "docs", "risk-posture.md")
+    with open(dirty_path, "w") as fh:
+        fh.write(
+            "## Accepted risks\n\n"
+            "- **RR-2026-08-06-seq-poison** — integration-fixture behavior; "
+            "bound: n/a; recovery: n/a.\n\n"
+            "- **RR-2026-08-21-uncommitted** — this entry was never "
+            "committed; bound: n/a; recovery: n/a.\n")
+    try:
+        proc = env.run("run-pass", "--plan", env.plan)
+        record("register integration: dirty-worktree run-pass still succeeds "
+               "(composes from HEAD, not the dirty file)",
+               proc.returncode == 0, proc.stderr.strip())
+        composed = read(os.path.join(
+            state_dir,
+            f"pass-{json.loads(proc.stdout)['pass']}.architect.input.txt"
+        )) if proc.returncode == 0 else ""
+        record("register integration: dirty-worktree edit never reaches a "
+               "lens input",
+               "RR-2026-08-06-seq-poison" in composed
+               and "RR-2026-08-21-uncommitted" not in composed)
+    finally:
+        # Leave the working tree clean for anything that might run after.
+        env._git("checkout", "--", "docs/risk-posture.md")
+
+    # confirmed_absent end to end, the freshly-seeded create-plan case:
+    # HEAD has no register at all, and an UNTRACKED, never-committed
+    # docs/risk-posture.md exists in the working tree. This is the exact
+    # boundary iterate-review's own code review (pass 6) found
+    # misclassified as operational_failure before plan_runner.py's fix
+    # above -- confirm the fixed behavior end to end, not just at the
+    # resolve_register() unit level.
+    register_path = os.path.join(env.repo, "docs", "risk-posture.md")
+    os.remove(register_path)
+    env._git("add", "-A")
+    env._git("commit", "-q", "-m", "remove committed register")
+    with open(register_path, "w") as fh:
+        fh.write("## Accepted risks\n\n- **RR-2026-08-21-uncommitted** — "
+                 "never committed; bound: n/a; recovery: n/a.\n")
+    try:
+        proc = env.run("run-pass", "--plan", env.plan)
+        record("register integration: untracked never-committed register "
+               "still succeeds (confirmed_absent, not operational_failure)",
+               proc.returncode == 0, proc.stderr.strip())
+        composed = read(os.path.join(
+            state_dir, f"pass-{json.loads(proc.stdout)['pass']}.architect.input.txt"
+        )) if proc.returncode == 0 else ""
+        # Check only the part AFTER the REAL matched-context header for
+        # THIS lens -- reviewer-prompt.md's own ON RISK POSTURE prose
+        # documents both the `=== ACCEPTED RISKS ===` marker AND a
+        # generic "=== MATCHED CONTEXT (sections for the <lens-id> lens)
+        # ===" template line (with a literal, never-substituted
+        # `<lens-id>` placeholder) as part of its own footer example --
+        # either would false-positive a naive absence check against the
+        # whole composed input. The header for THIS lens always names the
+        # real id ("architect"), never the placeholder, so splitting on
+        # that exact substring reliably lands after the prompt's own
+        # documentation and at the start of this pass's real assembly.
+        real_header = "=== MATCHED CONTEXT (sections for the architect lens) ==="
+        after_real_header = composed.split(real_header, 1)[-1]
+        record("register integration: untracked register composes as "
+               "absent (no block) and never reaches a lens",
+               real_header in composed
+               and "=== ACCEPTED RISKS ===" not in after_real_header
+               and "RR-2026-08-21-uncommitted" not in composed)
+    finally:
+        os.remove(register_path)
+
+    # operational_failure end to end: a repo with no HEAD yet (fresh git
+    # init, zero commits) must abort run-pass exactly like the malformed
+    # case above -- same before-any-lens contract, different upstream
+    # register state. Its own scope (a different plan path) has never had
+    # a pass, so no summaries-before/after comparison is needed.
+    nohead_root = os.path.join(env.root, "nohead-repo")
+    os.makedirs(os.path.join(nohead_root, "docs"))
+    subprocess.run(["git", "init", "-q", nohead_root], check=True,
+                   stdout=subprocess.DEVNULL)
+    nohead_plan = os.path.join(nohead_root, "docs", "plan.md")
+    with open(nohead_plan, "w") as fh:
+        fh.write(PLAN_TEXT)
+    proc = env.run("run-pass", "--plan", nohead_plan, cwd=nohead_root)
+    record("register integration: operational_failure (no HEAD yet) aborts "
+           "before fan-out",
+           proc.returncode != 0 and "register unavailable" in proc.stderr)
+    nohead_shash = hashlib.sha1(
+        os.path.realpath(nohead_plan).encode("utf-8")).hexdigest()
+    record("register integration: no-HEAD abort published no summary at all",
+           not os.path.exists(os.path.join(
+               env.skill, "state", nohead_shash, "pass-1.summary.json")))
+
+    # run-lens gets its OWN --ignore-register coverage (qa's pass-7
+    # finding): run-pass and run-lens are two separate CLIs that each add
+    # their own control-flow path around resolve_register(), so a
+    # regression in run-lens's copy could stay invisible to every run-pass
+    # assertion above while the documented standalone-retry path silently
+    # breaks. Same malformed register as the run-pass cases; debug/
+    # artifacts are glob-compared before/after since debug_paths() names
+    # them with a timestamp, not a predictable pass number.
+    env.commit_register(
+        "## Accepted risks\n\n"
+        "- **RR-2026-08-06-dup** — first; bound: n/a; recovery: n/a.\n\n"
+        "- **RR-2026-08-06-dup** — duplicate id, second bullet; "
+        "bound: n/a; recovery: n/a.\n")
+    debug_dir = os.path.join(state_dir, "debug")
+    before = set(glob.glob(os.path.join(debug_dir, "*")))
+    proc = env.run("run-lens", "--plan", env.plan, "--lens", "architect")
+    record("register integration: run-lens without the flag aborts on a "
+           "malformed register before invoking Codex",
+           proc.returncode != 0 and "register malformed" in proc.stderr)
+    after = set(glob.glob(os.path.join(debug_dir, "*")))
+    record("register integration: run-lens's malformed abort wrote no "
+           "debug artifacts either",
+           after == before)
+
+    proc = env.run("run-lens", "--plan", env.plan, "--lens", "architect",
+                    "--ignore-register")
+    record("register integration: run-lens --ignore-register succeeds past "
+           "the same malformed register",
+           proc.returncode == 0, proc.stderr.strip())
+    if proc.returncode == 0:
+        input_path = json.loads(proc.stdout)["input_path"]
+        composed = read(input_path)
+        real_header = "=== MATCHED CONTEXT (sections for the architect lens) ==="
+        after_real_header = composed.split(real_header, 1)[-1]
+        record("register integration: run-lens --ignore-register composes "
+               "with no register block and never reads the malformed entry",
+               real_header in composed
+               and "=== ACCEPTED RISKS ===" not in after_real_header
+               and "RR-2026-08-06-dup" not in composed)
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -706,6 +1071,7 @@ def main() -> int:
     try:
         env = Env(tmp)
         test_composition(pr)
+        test_register_resolution(pr)
         test_extraction(pr)
         test_trusted_read(pr)
         test_selection(pr)
@@ -716,6 +1082,7 @@ def main() -> int:
         test_failure_modes(env)
         test_concurrency(env)
         test_prune_smoke(env)
+        test_register_integration(env)
     except Exception as exc:  # noqa: BLE001
         import traceback
         traceback.print_exc()

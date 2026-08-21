@@ -1,0 +1,37 @@
+{
+  "_comment": "Example state file — Abort path. Illustrates that Abort produces the passes array exactly as Converge does (Trinity v2.4 Phase 0 §5), covering every pass that completed before the human chose Abort. Tracked in git per .gitignore's !**/state/example*.json exception.",
+  "plan_abs_path": "/path/to/your/project/docs/another-plan-2026-06-02.md",
+  "plan_path_sha1": "def456abc123...",
+  "plan_content_hash": "sha256:fedcba9876543210...",
+  "pass_count": 1,
+  "last_verdict": "REVISE",
+  "started_at": "2026-06-02T09:00:00Z",
+  "last_pass_at": "2026-06-02T09:20:00Z",
+  "summary_schema": 1,
+  "scope_class": null,
+  "passes": [
+    {
+      "pass": 1,
+      "verdict": "REVISE",
+      "high_medium_count": 3,
+      "findings_total": 4,
+      "fold_caused_count": 0,
+      "dispositions": {
+        "incorporated": 2,
+        "skipped": 1,
+        "disputed": 1,
+        "accepted-risk": 0,
+        "register-match": 0
+      },
+      "started_at": "2026-06-02T09:00:00Z",
+      "completed_at": "2026-06-02T09:20:00Z"
+    }
+  ],
+  "convergence": {
+    "suggested_at": null,
+    "trigger": null,
+    "human_confirmed": null,
+    "handoff_decision": "aborted"
+  },
+  "confirmed_accepted_risks": []
+}
