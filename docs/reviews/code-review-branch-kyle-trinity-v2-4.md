@@ -193,3 +193,34 @@ All four findings and the one correction trace to Phase 1's own commit (752ed10)
 ### Diff snapshot reference
 
 Diff captured at 2026-08-21 11:16; head SHA `752ed10538f17fd5c5e28388d6d7e69a14878e49`.
+
+## Pass 7 — 2026-08-21 11:32 [HISTORICAL]
+
+**Scope:** branch · **Diff size:** 3780 lines · **Scope class:** production · **Verdict:** APPROVE (worst-of; senior-dev: APPROVE, security: APPROVE, qa: APPROVE) · **Posture:** absent (no `docs/risk-posture.md` in this repo; no governing plan named for this review invocation) · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+1. **Standalone run-lens register override lacks CLI coverage** — MEDIUM · lens: qa (verdict APPROVE; non-blocking per severity semantics): `bin/run-lens` carries its own `--ignore-register` control-flow path (added responding to pass 6's finding 1), but `tools/check-plan-runners.py` only exercised the override through `run-pass` — a regression isolated to `run-lens`'s copy (still resolving and rejecting a malformed register, or worse, composing the malformed content) would leave every `run-pass` assertion green while the documented standalone-retry path failed observably.
+   → Editor: incorporated — added a positive case (`--ignore-register` succeeds past a malformed register, composes with no `ACCEPTED RISKS` block and no malformed entry, glob-compared debug/ artifacts) and a negative case (no flag: aborts with `register malformed:` before invoking Codex, no debug/ artifacts written either) for `run-lens` specifically. [introduced_by_pass: 6 — the mechanism this gap is in was pass 6's own fold]
+
+### Code corrections applied
+
+- `iterate-plan/SKILL.md`:Decision cards persistence section — "uniformly across all four card types below" (five card types exist, per pass 6's own correction to the intro) → "all five card types below."
+- `iterate-plan/SKILL.md`:Decision cards HISTORICAL template comment — "malformed register source" → "malformed or unavailable register source," matching pass 6's rename everywhere else it wasn't yet walked through.
+- `iterate-plan/SKILL.md`:Hard rules decision-card list — same rename applied to its remaining occurrence.
+
+### New questions Codex raised
+
+- (none)
+
+### Fold-provenance note
+
+This pass is **fully fold-induced** — the one finding and all three corrections trace to pass 6's own fold (`introduced_by_pass: 6` throughout): three are exactly the claims-vs-behavior/invariant-walk species the fold-time hygiene checklist targets (a rename applied in some restating sections but not walked through every one), and the fourth (qa's finding) is a new mechanism (pass 6's `--ignore-register`) arriving with coverage for one of its two call sites but not the other. Consistent with Phase 0's own retro caveat: fold-induced findings are sometimes load-bearing, not just vocabulary hygiene — the qa finding here is a real coverage gap, not cosmetic.
+
+### Lens run summary
+
+- senior-dev: APPROVE · security: APPROVE · qa: APPROVE
+
+### Diff snapshot reference
+
+Diff captured at 2026-08-21 11:32; head SHA `452a63606834e4d65d839b0f6a07f8fcba6932d4`.
