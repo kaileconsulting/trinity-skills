@@ -25,7 +25,7 @@ The skill surfaces in-session via the available-skills list at session start (sl
 - `iterate-review --scope=<...> --once` — single-pass review, no Continue/Converge/Abort loop
 - `iterate-review --scope=<...> --log-path=<path>` — custom pass log location
 - `iterate-review --scope=<...> --loop` (alias `--until-approve`) — loop mode: auto-continue REVISE passes, stopping at the first APPROVE for the human's Converge call
-- `iterate-review --scope=<...> --max-passes=N` — loop-mode safety cap (default 6, fresh budget per loop activation)
+- `iterate-review --scope=<...> --max-passes=N` — loop-mode safety cap, fresh budget per loop activation. Default depends on the diff's scope class (setup step 3): 6 for `production`, 3 for `non-production` (an explicit experiment, see step 14). An explicit `--max-passes=N` always wins over either default.
 - `iterate-review --scope=<...> --keep-state` — on Converge, skip the state-dir prune and keep the per-pass inputs/responses for audit or debugging
 
 If the user invokes without a `--scope` flag, ask them which scope they want before proceeding. Default suggestion: `--scope=working` if there are uncommitted changes (`git status --porcelain` non-empty), `--scope=branch` if the current branch is ahead of main, otherwise prompt for `pr:<n>`.
@@ -45,6 +45,32 @@ If the user invokes without a `--scope` flag, ask them which scope they want bef
    | `pr:<n>`         | `gh pr diff <n>`                                  | Works on open AND merged PRs                  |
 
    Capture the diff content into a variable (or temp file) for the per-pass loop. If the diff is empty, surface a clear message ("nothing to review — scope `<value>` produced an empty diff") and exit without invoking Codex.
+
+   **Classify the diff — production or non-production.** Immediately after
+   resolving the diff, classify it by touched path. This is **editor-side**
+   (it's loop control, and the runner never decides); the heuristic is
+   written out here so it's inspectable and consistent, not left to
+   per-invocation judgment:
+   - **non-production** — every touched path matches at least one of:
+     a path segment (case-insensitive) `test`, `tests`, `spec`, `specs`,
+     `fixture`, `fixtures`, `golden`, `goldens`, `example`, `examples`, or
+     `docs`; or a filename matching a common test-file convention
+     (`test_*.*`, `*_test.*`, `*.test.*`, `*.spec.*`).
+   - **production** — anything else, **and any ambiguous case** — a path
+     you can't confidently place in the non-production set above (biases
+     toward the full budget, mirroring lens selection's own bias toward
+     inclusion in `lenses/README.md`).
+
+   **Worked examples:**
+   | Diff touches | Classification |
+   |---|---|
+   | `tests/test_foo.py`, `docs/README.md` | non-production |
+   | `src/foo.py`, `tests/test_foo.py` | production (one production path is enough) |
+   | `.github/workflows/ci.yml` (a path that isn't clearly source *or* clearly test/docs) | production (ambiguity biases toward the full budget) |
+
+   Record the classification in-session — it sets the loop-mode pass-budget
+   default (step 14) and is echoed in every pass's log-header `Scope class:`
+   field (step 12).
 
 4. **Compute scope-tag.** This becomes part of the pass log filename:
 
@@ -246,7 +272,7 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
 
     **When the block is opened: always immediately after the merge, before any folding — there is no after-the-fold case.** Every pass opens its block as soon as step 11's merge produces the merged list, card or no card, finding or no finding. This is unconditional on purpose: the two earlier reasons to open early (a mid-fold card's pending write, and the merged list serving as the resume ledger) both apply to ordinary card-free passes too, and an "ordinary case appends after folding" carve-out would mean a crash mid-fold on exactly those passes leaves no block and no record of what had already been applied. Write the `## Pass <N>` header and the `**Scope:** … **Diff size:** … **Verdict:** … **Posture:** … **Lenses:** …` line first, then fill the sections beneath it incrementally as folding proceeds. There is still exactly **one** block per pass: "append ONE block" constrains the block count, not the number of writes.
 
-    **One exception to "immediately after the merge," because one card type fires before the pass has any results.** The ordinary opening point above covers four of the five card types — they arise during folding, after the merge in step 11, by which time every field of the header line is settled (the worst-of verdict included) and the block opens fully populated. The **malformed posture source** card is the exception: it halts in step 9, *before fan-out*, so no lens has run, no verdict exists, and the lens list isn't final. That card persists the same way regardless — the block opens with the fields that are known (`Scope`, `Diff size`, `Posture`) and writes `(pending)` for those that aren't — **`Verdict`, `Lenses`, and the header timestamp alike**, each replaced in place the moment the merge determines it. The timestamp needs this too, and it's easy to miss: the block's timestamp is the pass's Codex-run time (the `pass-N.summary.json` mtime), which does not exist before fan-out. `## Pass <N> — (pending) [IN PROGRESS]` is the correct opening form; the real time is written in when the summary lands. This is just the header line obeying the same two-phase discipline the card itself uses: **no card type is exempt from persistence-before-presentation, and none needs a location outside the pass block.** If the review aborts at that card, the block is tagged **`[ABORTED]`** per the tag rule below — never left `[IN PROGRESS]`, which would make a deliberate ending indistinguishable from a crash. Its `Verdict` and `Lenses` stay `(pending)` permanently (no lens ever ran, and no later write will change that), and its timestamp is stamped with the **abort's** wall-clock time, noted inline as such — the one case where the summary-mtime rule cannot apply, because no summary will ever exist. That block is an accurate record of a pass that deliberately never got results, not a malformed one.
+    **One exception to "immediately after the merge," because one card type fires before the pass has any results.** The ordinary opening point above covers four of the five card types — they arise during folding, after the merge in step 11, by which time every field of the header line is settled (the worst-of verdict included) and the block opens fully populated. The **malformed posture source** card is the exception: it halts in step 9, *before fan-out*, so no lens has run, no verdict exists, and the lens list isn't final. That card persists the same way regardless — the block opens with the fields that are known (`Scope`, `Diff size`, `Scope class`, `Posture`) and writes `(pending)` for those that aren't — **`Verdict`, `Lenses`, and the header timestamp alike**, each replaced in place the moment the merge determines it. The timestamp needs this too, and it's easy to miss: the block's timestamp is the pass's Codex-run time (the `pass-N.summary.json` mtime), which does not exist before fan-out. `## Pass <N> — (pending) [IN PROGRESS]` is the correct opening form; the real time is written in when the summary lands. This is just the header line obeying the same two-phase discipline the card itself uses: **no card type is exempt from persistence-before-presentation, and none needs a location outside the pass block.** If the review aborts at that card, the block is tagged **`[ABORTED]`** per the tag rule below — never left `[IN PROGRESS]`, which would make a deliberate ending indistinguishable from a crash. Its `Verdict` and `Lenses` stay `(pending)` permanently (no lens ever ran, and no later write will change that), and its timestamp is stamped with the **abort's** wall-clock time, noted inline as such — the one case where the summary-mtime rule cannot apply, because no summary will ever exist. That block is an accurate record of a pass that deliberately never got results, not a malformed one.
 
     **The header tag is the completeness marker, and it has three values, not two: `[IN PROGRESS]` while open, `[HISTORICAL]` when the pass is fully complete, `[ABORTED]` when the pass ended deliberately without completing.**
 
@@ -285,7 +311,7 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     `[ABORTED]` pre-fan-out block, for which no summary will ever exist, is
     stamped with the abort time and says so inline. -->
 
-    **Scope:** <scope value> · **Diff size:** <N lines> · **Verdict:** <APPROVE/REVISE/BLOCK | (pending) until the merge> (worst-of; note any FAILED lenses) · **Posture:** <used <source>|absent|malformed → <resolution>|both-present (plan wins; repo fields shadowed)|register-only (no PF- fields; N entries)> · **Lenses:** <senior-dev[, security][, qa] | (pending) until fan-out>
+    **Scope:** <scope value> · **Diff size:** <N lines> · **Scope class:** <production|non-production> · **Verdict:** <APPROVE/REVISE/BLOCK | (pending) until the merge> (worst-of; note any FAILED lenses) · **Posture:** <used <source>|absent|malformed → <resolution>|both-present (plan wins; repo fields shadowed)|register-only (no PF- fields; N entries)> · **Lenses:** <senior-dev[, security][, qa] | (pending) until fan-out>
 
     ### Findings
 
@@ -350,10 +376,28 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
 
     **Loop mode (opt-in).** If invoked with `--loop` / `--until-approve`, or if the user picks **(L)oop from here**, auto-continue without prompting between passes — but **automate `Continue` only, never `Converge`.** The loop halts and hands back to the human when any guardrail fires:
     - **APPROVE reached** → stop, present the Converge decision.
-    - **Max-pass cap** (default 6, `--max-passes=N`) — a *fresh per-activation budget* counting auto-continued passes (the activating pass doesn't count; manual/historical passes don't deplete it) → stop, "hit cap without converging."
+    - **Max-pass cap** (default 6 for a `production`-classified diff, **default 3 for `non-production`** — an explicit experiment, see below; `--max-passes=N` always overrides either default) — a *fresh per-activation budget* counting auto-continued passes (the activating pass doesn't count; manual/historical passes don't deplete it) → stop, "hit cap without converging." **Budget exhaustion is a checkpoint, not a termination** — hitting the cap already halts the loop back to the human (this is that same existing behavior); the checkpoint recommendation additionally flags when the final budgeted pass applied material folds no subsequent pass has reviewed, and recommends Continue in that case, so a pass-2 fold on a 3-pass budget never silently ends the review unverified.
     - **BLOCK verdict** → stop.
     - **Non-convergence** — the merged **HIGH+MEDIUM** finding count fails to strictly decrease across two consecutive transitions (LOW / `FAILED` / open-questions excluded; a `FAILED`-lens pass is skipped in the comparison but still counts toward the cap) → stop, surface the stall.
     - **Fold needs human judgment** — any HIGH finding was *not incorporated*, *not* a fresh `accepted-risk` proposal, and *not* a valid `register-match` (i.e. it's `disputed`, or awaiting a design-shaped-fold escalation card), or a `new_question` classified **`needs_human`** survived the fold (after the label sanity-check and any override in step 11) → stop, escalate. A HIGH dispositioned `accepted-risk (proposed)` or a valid `register-match` does **not**, by itself, halt the loop — per Q1, accepted-risk proposals continue and batch for confirmation at the next checkpoint (no HIGH silently vanishes: the proposal is persisted immediately under a stable id and blocks Converge until confirmed). A **design-shaped-fold escalation does halt immediately**, unlike an accepted-risk proposal — continuing there would commit to an unapproved mechanism, which is exactly what the immediate halt exists to prevent. `resolvable_in_fold` and `needs_lookup` questions do **not** halt the loop: the editor resolves them and continues. If a `needs_lookup` resolution *fails*, it becomes `needs_human` and then halts. This is the whole point of the classification — an unattended loop shouldn't stop for a question it could have answered, and must never continue past one only the user can.
+
+    **The reduced non-production default is an explicit experiment, not a
+    validated value — say so plainly, don't present it as settled.** The
+    evidence behind it ("zero production bugs in 10 passes across 4
+    non-production reviews") is definitionally true of diffs that contain
+    no production code by construction; it shows budget spent on ceremony
+    (including one pass that re-reviewed a byte-identical diff purely to
+    satisfy the convergence gate), but it does **not** establish that later
+    passes found nothing of value in the test/doc artifacts themselves.
+    Two guards bound that risk: the exhaustion-checkpoint flag above (a
+    final-pass fold always gets one more human-visible chance to be
+    verified rather than silently standing unverified), and this
+    **recorded rollback condition** — if §5's instrumentation later shows
+    HIGH/MEDIUM findings landing after pass 2 in `non-production` reviews
+    (the exact query `tools/provenance-recipe.jq`'s
+    `non_production_rollback_hits` runs, across the accumulated state
+    files), the default reverts to the standard budget. That's a one-line
+    change here, not a re-litigation.
 
 15. **If `--once` was set**, skip the checkpoint entirely — **seal the pass block to `[HISTORICAL]` first**, then write the state file (step 16) with `final_action: "once-mode-exit"` and exit immediately after step 13, regardless of verdict. (`--once` and `--loop` are mutually exclusive — reject both together.)
 
@@ -466,6 +510,13 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
 - **A mechanism-requiring fold never happens silently.** If incorporating a finding needs a new mechanism (schema/migration, new persisted or protocol field, a cross-request invariant, a background process, a new external dependency), that finding's fold pauses immediately — even in loop mode — for a design-shaped-fold escalation card, rather than batching to the next checkpoint like every other named judgment moment. This pause is scoped to that one finding, not the whole pass: once answered, folding continues with the pass's remaining findings (already returned by Codex), no new Codex call needed — it never freezes work already in hand the way a step-14 between-pass guardrail does.
 - **`accepted-risk` requires a posture-referencing rationale and human confirmation to converge.** The editor may propose it, but only the human confirms or rejects; Converge is impossible while any `AR-<n>` remains `proposed` or `reopened` (accounting table, step 12). both `accepted-risk` and `register-match` are unavailable for code named as a trust boundary in `PF-shipbar` — no exception, and this is checked against both the current and base-revision posture so a same-diff edit can't create the exception either.
 - **Every named human-judgment moment (accepted-risk confirmation, design-shaped-fold escalation, `needs_human` question, non-convergence stall, malformed posture source) uses the same decision-card contract** — recommendation + why, up to 3 alternatives (context-sensitive omission can reduce this to zero listed alternatives; recommendation + discuss is the floor and is always presented, never skipped), a standing discuss option, written to the pass log as pending before presentation and resolved once answered. Selecting any option but discuss resumes the loop deterministically; discuss pauses into conversation.
+- **The non-production reduced pass-budget default (step 3, step 14) is an
+  explicit experiment, never presented as validated.** An explicit
+  `--max-passes=N` always overrides it; hitting the cap is a checkpoint,
+  never a silent termination; a documented rollback condition (HIGH/MEDIUM
+  findings after pass 2 in non-production reviews) reverts the default to
+  standard. Classification is editor-side per the written path heuristic —
+  the runner never decides it.
 - **`introduced_by_pass` is data collection only.** No guardrail,
   checkpoint, or budget in this skill consults `introduced_by_pass`,
   `fold_caused_count`, or any field of the per-pass summary schema —
