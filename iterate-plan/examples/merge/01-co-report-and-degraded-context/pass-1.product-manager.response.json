@@ -5,19 +5,22 @@
       "title": "Plan has no Acceptance criteria section",
       "severity": "HIGH",
       "description": "I was told explicitly that the required section \"Acceptance criteria\" is absent from this plan. Nothing in the plan states how anyone would verify the work is done: Goals (MVP) lists three intentions, none of which is paired with an observable condition. Every named use case is therefore an untested promise. I am not inferring criteria from the goals — a plan that cannot be evaluated for completion is itself the finding.",
-      "suggested_action": "Add an Acceptance criteria section with one verifiable, independently checkable condition per goal."
+      "suggested_action": "Add an Acceptance criteria section with one verifiable, independently checkable condition per goal.",
+      "register_ref": null
     },
     {
       "title": "Phase 1's 10k-row cap contradicts the no-row-limit goal",
       "severity": "HIGH",
       "description": "Goals (MVP) commits to \"exports complete regardless of row count,\" and Who / Use cases names the primary use case as a monthly finance export of roughly 50,000 rows. Phase 1's deliverable caps exports at 10,000 rows, so shipping Phase 1 fails the primary use case by a factor of five. The stated goal and the stated scope are incompatible.",
-      "suggested_action": "Either raise the cap above the primary use case's volume or restate the goal and use case to match what the MVP will actually deliver."
+      "suggested_action": "Either raise the cap above the primary use case's volume or restate the goal and use case to match what the MVP will actually deliver.",
+      "register_ref": null
     },
     {
       "title": "\"Exports are fast\" is not verifiable",
       "severity": "MEDIUM",
       "description": "Goals (MVP) bullet 2 reads \"exports are fast.\" Someone who did not write this plan cannot check that. There is no threshold, no percentile, no row count it applies at, and no observable to measure — so it can be declared met or unmet at will.",
-      "suggested_action": "Restate as a threshold at a stated volume, e.g. a p95 completion time for an export of the size named in Who / Use cases."
+      "suggested_action": "Restate as a threshold at a stated volume, e.g. a p95 completion time for an export of the size named in Who / Use cases.",
+      "register_ref": null
     }
   ],
   "plan_corrections": [],

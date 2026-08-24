@@ -1,1 +1,44 @@
-{"verdict":"REVISE","findings":[{"title":"Rollback section contradicts inline correction behavior","severity":"HIGH","description":"The Rollback / abort modes section says \"The skill only ever appends HISTORICAL sections — it never deletes plan content.\" But Phase 2 says Opus/the skill auto-folds findings into the plan and \"applies corrections inline\" before appending the audit-trail section. Those are different write models. If implemented from the rollback statement, corrections would never be applied inline; if implemented from Phase 2, the rollback guarantee is false.","suggested_action":"Clarify the write model consistently: distinguish audit-trail appends from inline plan edits, and make rollback expectations match the actual Phase 2 behavior."},{"title":"State-loss description still implies Codex session continuity","severity":"MEDIUM","description":"Rollback / abort modes says losing a state file means \"the next pass starts a fresh Codex session\" and \"loses Codex's continuity.\" The v3/v4 design is explicitly stateless per pass, with continuity supplied by HISTORICAL sections in the plan. Losing state should not lose reviewer continuity in the Codex-session sense; it mainly affects pass numbering, hashes/manual-edit detection, timestamps, and last verdict.","suggested_action":"Update the state-loss risk description so it matches the stateless design and identifies the actual consequences of losing state."}],"plan_corrections":[{"location":"Open questions for Codex pass 3","issue":"The section remains phrased as an active pass-3 question even though pass 3 is already historical and marked APPROVE later in the document.","fix":"Mark this as historical context, or replace it with a current open-questions section that says billing remains unresolved pending Phase 0 empirical testing."},{"location":"Status line","issue":"The status contains a non-ASCII green-circle emoji while the rest of the plan mostly uses plain Markdown status language. This is harmless, but may be undesirable for a skill artifact intended to be copied into prompts and schemas.","fix":"Consider using ASCII status text only if prompt/file portability is a priority."}],"open_question_answers":[{"question_id":"Q1","answer":"Billing remains unresolved from the plan text alone. The plan's Phase 0 empirical billing test is still the correct resolution path, and no Phase 1 implementation should bake in a billing assumption until that test is run."}],"new_questions":[{"question":"Should Phase 2 be implemented as the skill directly editing the plan file, or as instructions for Opus to perform the inline edits and append the HISTORICAL section? The current text uses both framings, and the answer affects the single-editor invariant.","settled_by":"resolvable_in_fold","why":"The plan's Opus-sole-editor invariant settles it; the conflicting framings appear in two sections the editor can read together."}]}
+{
+  "verdict": "REVISE",
+  "findings": [
+    {
+      "title": "Rollback section contradicts inline correction behavior",
+      "severity": "HIGH",
+      "description": "The Rollback / abort modes section says \"The skill only ever appends HISTORICAL sections — it never deletes plan content.\" But Phase 2 says Opus/the skill auto-folds findings into the plan and \"applies corrections inline\" before appending the audit-trail section. Those are different write models. If implemented from the rollback statement, corrections would never be applied inline; if implemented from Phase 2, the rollback guarantee is false.",
+      "suggested_action": "Clarify the write model consistently: distinguish audit-trail appends from inline plan edits, and make rollback expectations match the actual Phase 2 behavior.",
+      "register_ref": null
+    },
+    {
+      "title": "State-loss description still implies Codex session continuity",
+      "severity": "MEDIUM",
+      "description": "Rollback / abort modes says losing a state file means \"the next pass starts a fresh Codex session\" and \"loses Codex's continuity.\" The v3/v4 design is explicitly stateless per pass, with continuity supplied by HISTORICAL sections in the plan. Losing state should not lose reviewer continuity in the Codex-session sense; it mainly affects pass numbering, hashes/manual-edit detection, timestamps, and last verdict.",
+      "suggested_action": "Update the state-loss risk description so it matches the stateless design and identifies the actual consequences of losing state.",
+      "register_ref": null
+    }
+  ],
+  "plan_corrections": [
+    {
+      "location": "Open questions for Codex pass 3",
+      "issue": "The section remains phrased as an active pass-3 question even though pass 3 is already historical and marked APPROVE later in the document.",
+      "fix": "Mark this as historical context, or replace it with a current open-questions section that says billing remains unresolved pending Phase 0 empirical testing."
+    },
+    {
+      "location": "Status line",
+      "issue": "The status contains a non-ASCII green-circle emoji while the rest of the plan mostly uses plain Markdown status language. This is harmless, but may be undesirable for a skill artifact intended to be copied into prompts and schemas.",
+      "fix": "Consider using ASCII status text only if prompt/file portability is a priority."
+    }
+  ],
+  "open_question_answers": [
+    {
+      "question_id": "Q1",
+      "answer": "Billing remains unresolved from the plan text alone. The plan's Phase 0 empirical billing test is still the correct resolution path, and no Phase 1 implementation should bake in a billing assumption until that test is run."
+    }
+  ],
+  "new_questions": [
+    {
+      "question": "Should Phase 2 be implemented as the skill directly editing the plan file, or as instructions for Opus to perform the inline edits and append the HISTORICAL section? The current text uses both framings, and the answer affects the single-editor invariant.",
+      "settled_by": "resolvable_in_fold",
+      "why": "The plan's Opus-sole-editor invariant settles it; the conflicting framings appear in two sections the editor can read together."
+    }
+  ]
+}
