@@ -246,7 +246,7 @@ Now, because: the data gate on issue #6 is met; the prose rule is live in Resear
 
 ## Open questions
 
-- **Q1.** Fire *at* the third pass, before folding that finding (as the CSRF code review did), or *after* the third fold, before a fourth? Recommendation: at the third, before folding; the third fold is the one the evidence says gets wasted. *Pass 1: both lenses agree — fire before the first qualifying fold on that label, computed as a candidate streak (committed record + this pass); the finding stays pending until the card is answered. Folded into §2/§3; Kyle to confirm at Converge. Pass 2: both lenses answered equivalently (freeze streak 2). Pass 3: same resolution, but the architect attached a new condition (checkpoint-event protection, its F2); conservatively not equivalent, streak resets to 1. That condition is now moot: pass 3's fold removed checkpoint events from observation counting entirely. Pass 4: both lenses equivalent, the architect withdrawing the condition explicitly (streak 2).*
+- **Q1.** Fire *at* the third pass, before folding that finding (as the CSRF code review did), or *after* the third fold, before a fourth? Recommendation: at the third, before folding; the third fold is the one the evidence says gets wasted. *Pass 1: both lenses agree — fire before the first qualifying fold on that label, computed as a candidate streak (committed record + this pass); the finding stays pending until the card is answered. Folded into §2/§3; Kyle to confirm at Converge. Pass 2: both lenses answered equivalently (freeze streak 2). Pass 3: same resolution, but the architect attached a new condition (checkpoint-event protection, its F2); conservatively not equivalent, streak resets to 1. That condition is now moot: pass 3's fold removed checkpoint events from observation counting entirely. Pass 4: both lenses equivalent, the architect withdrawing the condition explicitly (streak 2). Pass 5: equivalent again.* — FROZEN at pass 5 (answered identically ×3; reopens on any edit touching this question or new evidence)
 - **Q2.** Should a FAILED-lens pass skip (neither count nor reset) as the freeze tracker does? Recommendation: yes, same reasoning; a lens that didn't run says nothing about the component. *Pass 1: both lenses agree — skip streak accounting for the whole pass, still disposition the findings the completed lenses returned; N qualifying passes may span more than N attempts. Folded into §2. Pass 2: both lenses answered equivalently (freeze streak 2). Pass 3: equivalent again.* — FROZEN at pass 3 (answered identically ×3; reopens on any edit touching this question or new evidence)
 - **Q3.** Does a streak carry across chunk boundaries within one pass log (delegate-grants reviewed chunks B and C in one log)? Recommendation: yes, the log is the unit; the editor retires a label when its component leaves the diff, and the tracker's reset-on-absence handles the rest. *Pass 1: both lenses agree, with a sharpening — mechanism continuity, not the shared log, is what carries a streak; explicit retirement (persisted) is distinct from a quiet pass (reset). Folded into §1; a cross-chunk case is in the tracker fixtures. Pass 2: both lenses answered equivalently (freeze streak 2). Pass 3: equivalent again.* — FROZEN at pass 3 (answered identically ×3; reopens on any edit touching this question or new evidence)
 - **Q4.** In `iterate-plan`, what is a "component"? Recommendation: a plan mechanism as the plan names it (a D-numbered decision, an invariant, a named lock or classifier), which is how the CSRF plan's Q7 already described the cluster. *Pass 1: both lenses agree with one correction — the mechanism or invariant is the identity; a D-number or section may cite it but never defines it, and unrelated mechanisms under one decision get separate labels. Folded into §1. Pass 2: both lenses answered equivalently (freeze streak 2). Pass 3: equivalent again.* — FROZEN at pass 3 (answered identically ×3; reopens on any edit touching this question or new evidence)
@@ -443,6 +443,29 @@ REVISE (worst-of: architect REVISE, product-manager APPROVE; no FAILED lens). Me
 
 ### Lens run summary
 - architect: REVISE · product-manager: APPROVE
+
+## Codex review pass 5 — answers (2026-09-28) [HISTORICAL]
+
+### Verdict
+APPROVE (architect APPROVE, product-manager APPROVE; no FAILED lens). Merged HIGH+MEDIUM count: 0 (from 2).
+
+### Findings
+- (none)
+
+### Plan corrections applied
+- (none)
+
+### Open-question answers
+1. Q1 — both lenses: before the first affected fold on the third qualifying pass; the chosen operation's persisted accounting covers alternatives; no checkpoint-event condition. Equivalent ×3 → **FROZEN at pass 5**. (Q2–Q5 remain frozen since pass 3.)
+
+### New questions Codex raised
+- (none)
+
+### Convergence reasoning
+Five passes. HIGH+MEDIUM per pass: 5 → 3 → 3 → 2 → 0. Thirteen merged findings, all incorporated; 0 disputed, 0 accepted-risk, 0 register-match; 7 of 13 fold-caused (introduced by passes 1 or 2), which is the fold-chaining pattern this plan exists to gate, on display in its own review. Every open question frozen with lens agreement on the recommendation. No pending decision cards. Converge is Kyle's call.
+
+### Lens run summary
+- architect: APPROVE · product-manager: APPROVE
 
 ## Codex review pass N — answers (YYYY-MM-DD) [HISTORICAL]
 
