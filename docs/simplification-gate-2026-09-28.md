@@ -75,7 +75,7 @@ reused or renamed once referenced.
 ## Goals (MVP)
 
 - Every finding in both skills' HISTORICAL blocks carries a `[component: <label>]` tag beside `[introduced_by_pass: N]`, assigned by the editor at fold time under written labeling rules.
-- Both skills' per-pass state summaries record the components seen this pass and each component's current consecutive-pass streak; `tools/cluster_tracker.py` pins the counting semantics executably, fixture-tested by `tools/check-cluster-streak.py`, the same pattern as `freeze_tracker.py`.
+- Both skills' per-pass state summaries record the components seen this pass, each component's committed streak, explicit retirements, and every simplification card presented with its outcome; `tools/cluster_tracker.py` pins the counting semantics executably, fixture-tested by `tools/check-cluster-streak.py`, the same pattern as `freeze_tracker.py`.
 - Both skills present a **simplification card** at fold time when a component's HIGH/MEDIUM streak reaches 3, before folding that pass's finding on it. Recommendation: remove, narrow or replace. Alternatives include "fold once more" and, in `iterate-plan`, "split the plan." Never an auto-stop.
 - The existing non-convergence and max-pass-cap cards gain a cluster check: HIGH/MEDIUM findings grouped by component, streaks shown, so the cap becomes the trigger for the check rather than the only signal.
 - The card shows fold-provenance as corroboration ("N of this streak's findings are fold-caused"), consuming `introduced_by_pass` for the first time, which lifts the "no guardrail may consult it" reservation in both SKILL.md files.
@@ -102,23 +102,25 @@ Each finding's `→ Editor:` line gains `[component: <label>]` after `[introduce
 Labeling rules, written into both SKILL.md fold steps:
 - **Same mechanism, same label**, regardless of how the finding is worded or which lens raised it. The CSRF classifier drew six findings with six different titles; all six are `get-lock-sql-classifier`.
 - **A replacement mechanism gets a new label.** When impersonation-c1b's reload guard was redesigned away at pass 7, the recovery mechanism that replaced it is a new component with a fresh streak. This is what makes the rule fire again correctly on passes 8–10.
-- **Narrowing is not replacement.** A mechanism that was reduced but kept retains its label.
-- **When uncertain, use the file or function name** the finding cites. Under-clustering is the conservative error: a missed streak costs one more pass, a false streak costs a spurious card.
+- **A label names a mechanism, never a document location.** In `iterate-review` the mechanism is a guard, a lock, a recovery path, a classifier; in `iterate-plan` it is the mechanism or invariant a decision describes (a D-number or section may *cite* it, but numbering and headings change while the mechanism stays the same, so they never *define* identity), and unrelated mechanisms that happen to sit under one broad decision get separate labels.
+- **Three simplification outcomes, three label lifecycles** (the tracker in §2 pins each): *remove* → the label **retires**; *replace* → the old label retires and the replacement gets a **new label with a fresh streak**; *narrow* → the mechanism was kept, so the label is **retained** and its streak **resets to 0** (a human decision was made and applied; continued findings on the narrowed mechanism start a fresh three-pass count, and the card returns if they reach it).
+- **Retirement is explicit and persisted; absence is only a reset.** When a component leaves the review's scope (a chunk boundary drops it, a fold deletes it), the editor writes `retired: <label> (<why>)` in that pass's HISTORICAL block; a resumed session reconstructs identity from that record. A pass on which a label merely draws no HIGH/MEDIUM finding resets its streak and nothing more.
+- **When uncertain, use the file or function name** the finding cites. Under-clustering is the conservative error, but its cost is not bounded to one pass: persistent label drift can delay the card indefinitely. The existing cap and stall cards remain the backstop, and their new cluster section (§4) lists labels side by side so drift is visible to the human there.
 - Corrections (`code_corrections` / plan corrections) are not tagged; only merged findings count.
 
 ### §2 Streak tracker (both skills, Phase 0)
 
 `tools/cluster_tracker.py` is a reference implementation in the style of `freeze_tracker.py`: not invoked by any runner, pinning the counting semantics so prose ambiguity can't reopen them. A pass is represented as `("failed",)` or `("findings", {label: worst_severity})`. Semantics:
-- The streak for a label counts **consecutive completed passes** on which that label appears on at least one HIGH or MEDIUM merged finding. LOW findings never count.
+- The streak for a label counts **consecutive completed passes** on which that label appears on at least one HIGH or MEDIUM merged finding. **One pass is one observation**, however many findings on the label it carries. LOW findings never count.
 - A pass on which the label appears only on LOW findings, or not at all, **resets** the streak to 0.
-- A FAILED-lens pass is **skipped**: it neither counts nor resets (the same rule the freeze tracker uses, for the same reason: a lens that didn't run says nothing about the component).
-- The gate fires when the streak reaches `CLUSTER_N = 3`, on the third pass, before that pass's finding on the label is folded.
-- After a **simplify** outcome the label is retired; a replacement gets a new label and a fresh streak (§1).
-- After a **fold once more** outcome the streak is *not* reset; it keeps counting, and the card is re-presented on every further pass on that label.
+- A pass with a FAILED lens after retry is **skipped** for streak purposes: it neither counts nor resets (the freeze tracker's rule, for the same reason: a lens that didn't run says nothing about the component). Findings the completed lenses did return are still dispositioned normally; only the streak accounting skips. Three qualifying passes may therefore span more than three attempted passes.
+- **The committed record is the pass log** (the HISTORICAL blocks; in `iterate-plan` the plan file itself), never the state file, which both skills derive only at exit. The **candidate streak** at fold time = the streak committed by prior completed passes + 1 if this pass's *merged* findings carry the label at HIGH/MEDIUM. The gate fires when the candidate streak reaches `CLUSTER_N`, before the first fold on that label this pass (§3 defines the transition order).
+- Outcomes, per §1: *remove* → retired; *replace* → retired + new label at streak 0; *narrow* → retained, streak reset to 0; *fold once more* → the streak is **not** reset, it keeps counting, and the card returns on every further pass on that label; *accept the risk* / *split the plan* → the label retires from this review's tracking (the `AR-` lifecycle or the new plan owns it).
+- **`CLUSTER_N` has one source of truth: the constant in `tools/cluster_tracker.py`.** Every other place that states the number (both SKILL.md files' fold and checkpoint prose, the card's evidence length, §4's lookahead line, the `jq` recipe's `--arg n`) says "N" and cites the constant; `tools/check-cluster-streak.py` additionally asserts that any literal threshold appearing in either SKILL.md equals the constant, so a tuning change that misses a copy fails the suite instead of shipping two thresholds.
 
-`tools/check-cluster-streak.py` fixture-pins the boundary cases: first pass counts as 1; LOW-only pass resets; FAILED pass skips; two labels in one pass track independently; retire-and-replace starts a fresh streak; continue-anyway keeps counting.
+`tools/check-cluster-streak.py` fixture-pins the boundary cases: first pass counts as 1; LOW-only pass resets; FAILED pass skips; two labels in one pass track independently; several findings on one label in one pass count once; remove retires; replace starts a fresh label at 0; narrow retains the label at 0 and re-fires after N further passes; fold-once-more keeps counting and re-fires next pass; explicit retirement vs absence; the impersonation-c1b sequence end to end.
 
-Both skills' state summaries (`summary_schema` 1 → 2) add per pass: `components: {label: {"severity": ..., "fold_caused": bool}}` and `streaks: {label: n}`. `tools/provenance-recipe.jq` gains a `cluster_hits` query (labels that reached 3 across the accumulated state files, and what was chosen) so the measurement in §5 is a `jq` run, not a re-read.
+**State summary `summary_schema` 1 → 2, both skills, additive.** Per pass: `components: {label: {"worst_severity": ..., "findings": n, "fold_caused": n}}` (counts, not booleans: a label with mixed provenance reports how many of its findings were fold-caused), `streaks: {label: n}` (as committed at the end of the pass), `retired: [labels]`, and `cards: [{"type": "simplification", "component", "streak_at_fire", "findings_in_streak", "fold_caused_in_streak", "chosen": "simplify|replace|narrow|fold-once-more|accept-risk|split-plan|pending|aborted", "reason": "premature|deliberate|null"}]`, one row per card presented that pass. Rows are derived from the HISTORICAL blocks by the same deterministic procedure v2.4 uses for the existing rows; a schema-1 file, or a Phase-0-only run with no cards, reads as `cards: []`. `tools/provenance-recipe.jq` gains `cluster_hits` (every card row across the accumulated state files, with its outcome and the next completed pass's `components` entry for that label) so every §5 measure is a `jq` run over `cards` rows, not a re-read of prose. Fixtures: a Phase-0-only file, a mixed schema-1/schema-2 set, a pass with a pending card, a pass with two cards.
 
 ### §3 The simplification card (both skills, Phase 1)
 
@@ -132,18 +134,20 @@ Card content, all fields required:
 
 Outcome mapping: *simplify* → the fold removes/narrows/replaces; the finding is dispositioned `incorporated (by simplification)`, the label retires, and the next pass reviews the simplified head. *Replace* → `incorporated (via alternative)`, new label. *Fold once more* → ordinary fold, streak continues, card returns next pass on that label. *Accept the risk* → the existing `accepted-risk` lifecycle, `AR-<n>`, unchanged. *Split the plan* (`iterate-plan` only) → the component's decisions and questions move to a new plan stub; this plan's text references it; loop resumes on what remains. *discuss* → paused.
 
+**Transition order, so counting and presentation happen exactly once.** (1) Merge produces the pass's findings. (2) The editor classifies every finding's component label and computes each label's candidate streak from the committed record plus this pass, *before any fold*. (3) For each label whose candidate streak reaches N, the editor writes the card to this pass's `### Decision cards` with `chosen: (pending)`, the component label, the streak, and the findings it comprises; **the tagged findings' `→ Editor:` slots stay empty** (the tag lives in the card entry, not the disposition line), so the existing resume rule — an empty slot is unfinished work — remains true and a persisted classification never reads as a completed disposition. (4) The card is presented; folding of *other* labels' findings may proceed meanwhile, matching how the design-shaped-fold escalation pauses at one finding rather than the whole pass. (5) On the answer, the card is resolved in place and every finding on that label this pass is dispositioned in one move: `incorporated (by simplification)` for a remove/narrow/replace outcome (the one fold that implements it covers them all; no per-finding patches follow), or an ordinary fold for *fold once more*. (6) The pass's HISTORICAL block, once sealed, is what the next pass's candidate streak reads. A card is identified by `(pass, component)`; a resumed session that finds a `(pending)` card re-presents that one card and does not recount, and a resumed session that finds a resolved card with un-dispositioned same-label findings completes step (5) without re-presenting. The *fold once more* alternative records a one-word reason the human picks at the card, `premature` (the card wasn't warranted) or `deliberate` (warranted, but one more targeted fold is the right call), which §5 consumes.
+
 The card is written and resolved in two phases like every other card (pending write before presentation, resolution write on answer), so an interrupted session re-presents it on resume.
 
 ### §4 Cluster check on the existing cap and stall cards (both skills, Phase 1)
 
-When the max-pass cap or the non-convergence guardrail fires, the card gains a **cluster section**: HIGH/MEDIUM findings from the last three passes grouped by component with each label's streak, and an explicit line either "no component has a streak ≥ 2" or "`<label>` at 2 — one more pass on it triggers the simplification card." This is the ResearchLogix rule's second half ("at the six-pass cap, run the same cluster check before offering another pass"), and it turns the cap into a trigger for the check rather than a bare budget number.
+When the max-pass cap or the non-convergence guardrail fires, the card gains a **cluster section**: HIGH/MEDIUM findings from the last three passes grouped by component with each label's streak, and one explicit line per state: "no component has a streak ≥ N−1"; "`<label>` at N−1 — one more pass on it triggers the simplification card"; or, for a label already at or past N, "`<label>` at <n> — simplification card presented at pass <p>, chosen: <outcome>" (a *fold once more* label keeps climbing past N, and this line is how the cap card shows that a decision was already taken and what it was). This is the ResearchLogix rule's second half ("at the six-pass cap, run the same cluster check before offering another pass"), and it turns the cap into a trigger for the check rather than a bare budget number.
 
 ### §5 Measurement contract
 
 Success is judged on future loops in ResearchLogix_v2 (the cohort with instrumentation), not on this repo's own review of this plan. Measures, all computable by `tools/provenance-recipe.jq` from state files:
 - **Pass count** of reviews where the card fired, against the pre-rule long-loop baseline (8, 11, 12, 16).
 - **Card outcome mix**: simplify / replace / fold-once-more / accept / split. A rule whose cards are always answered "fold once more" is a false-positive generator and gets its threshold raised.
-- **False-positive signal**: cards where "fold once more" was chosen *and* the next pass had no finding on that label. If this exceeds one in three cards over the first ten firings, `CLUSTER_N` moves to 4 — a one-line change, recorded here as the rollback condition, not a re-litigation.
+- **False-positive signal**: cards where *fold once more* was chosen with reason `premature` (§3), the human's own verdict at the card that the escalation wasn't warranted. "The next pass was quiet on that label" is deliberately *not* the signal: that is also what a good fold looks like, so it cannot distinguish a needless card from a useful one. Denominator: cards with a resolved outcome; `pending` and `aborted` rows are excluded. If `premature` exceeds one in three over the first ten resolved cards, `CLUSTER_N` moves to 4, recorded here as the rollback condition. That is a coordinated change (constant, both SKILL.md files, fixtures, recipe argument) that `check-cluster-streak.py`'s threshold-consistency assertion keeps honest, not a re-litigation of the design.
 - **Fold-caused share** of findings across the cohort, currently 37%, expected to fall.
 
 This is a learning goal, never a ship gate.
@@ -158,9 +162,10 @@ New: `tools/cluster_tracker.py`, `tools/check-cluster-streak.py` (wired into `to
 **Deliverables:**
 - `[component: <label>]` tag and labeling rules (§1) in both SKILL.md fold steps, beside the provenance tag; HISTORICAL block template updated in both.
 - `tools/cluster_tracker.py` + `tools/check-cluster-streak.py` (§2), wired into `check-all.sh`.
-- State summary `summary_schema` 2 with `components` and `streaks` per pass, in both skills; both example state files updated; readers tolerate schema-1 files (missing fields read as empty).
-- `tools/provenance-recipe.jq` `cluster_hits` query + its checker fixture.
-- Parity rules: tag placement, labeling rules, LOW-excluded, FAILED-skips.
+- State summary `summary_schema` 2 with `components` (counts), `streaks`, `retired` and `cards` per pass, in both skills; both example state files updated; readers tolerate schema-1 files (missing fields read as empty, `cards` as `[]`); derivation procedure documented beside v2.4's.
+- `tools/provenance-recipe.jq` `cluster_hits` query taking the threshold as `--arg n`, + checker fixtures: Phase-0-only, mixed schema, pending card, two cards in one pass.
+- `check-cluster-streak.py` asserts every literal threshold in both SKILL.md files equals `cluster_tracker.CLUSTER_N`.
+- Parity rules: tag placement, labeling rules, three-outcome label lifecycle, explicit-retirement-vs-reset, one-observation-per-pass, LOW-excluded, FAILED-skips, threshold-cites-constant.
 
 **Acceptance:**
 - `tools/check-all.sh` green, including the new checker with every §2 boundary case pinned.
@@ -175,7 +180,7 @@ New: `tools/cluster_tracker.py`, `tools/check-cluster-streak.py` (wired into `to
 - The simplification card (§3) as the sixth named human-judgment moment in both skills: trigger, required fields, alternatives, outcome mapping, two-phase persistence, resume behavior.
 - New disposition wording `incorporated (by simplification)` recognized in both skills' accounting tables (it is an `incorporated` for every ledger).
 - Cluster section on the cap and stall cards (§4), both skills.
-- The `introduced_by_pass` reservation sentence in both SKILL.md files replaced with: consumed as card evidence only, never as a trigger.
+- **Every copy** of the `introduced_by_pass` reservation in both SKILL.md files rewritten in one fold: the per-finding prose in the fold step, the state-summary paragraph (which currently forbids consulting *any* field defined there, and would otherwise contradict the new `cards`/`components` consumers), and the Hard rules entry. The replacement text draws the line explicitly: **component-based triggering is permitted and is the only trigger; provenance fields are consumed as card evidence and §5 measurement only, never as a trigger.** `check-parity.py` pins the new sentence in both files and `tools/test-checkers.py` gains a negative case that the old "none may consult" wording is absent.
 - Parity rules: card fields, "fold once more never the recommendation," never auto-stop, split-the-plan is `iterate-plan`-only (a per-skill rule).
 
 **Acceptance:**
@@ -203,7 +208,8 @@ New: `tools/cluster_tracker.py`, `tools/check-cluster-streak.py` (wired into `to
 
 - [ ] Both skills tag findings with `[component: <label>]` under identical labeling rules, parity-pinned.
 - [ ] `tools/cluster_tracker.py` + `tools/check-cluster-streak.py` exist, pass, and are wired into `check-all.sh`.
-- [ ] State summaries at `summary_schema` 2 carry `components` and `streaks`; schema-1 files still read.
+- [ ] State summaries at `summary_schema` 2 carry `components` (counts), `streaks`, `retired` and `cards`; schema-1 files still read; every §5 measure is demonstrated from state-file fixtures including a multi-finding label and a pending card.
+- [ ] `CLUSTER_N` has one source; the checker fails on any SKILL.md literal that disagrees with it.
 - [ ] The simplification card fires at streak 3, before the fold, with all required fields, in both skills; "fold once more" is always an alternative and never the recommendation.
 - [ ] No path exists by which the gate stops a loop or removes a mechanism without a card being answered by a human.
 - [ ] Cap and stall cards show the cluster section.
@@ -213,7 +219,7 @@ New: `tools/cluster_tracker.py`, `tools/check-cluster-streak.py` (wired into `to
 ## Risks
 
 ### R1 — Label drift: the same mechanism gets different labels across passes, so the streak never forms
-**Mitigation:** the labeling rules in §1, a worked example in each SKILL.md, and the cluster section on the cap card (§4), which shows labels side by side so a human can spot two names for one thing. Under-clustering costs one extra pass, which is today's behavior, not a regression.
+**Mitigation:** the labeling rules in §1, a worked example in each SKILL.md, and the cluster section on the cap card (§4), which shows labels side by side so a human can spot two names for one thing. Stated honestly: persistent drift can delay the card indefinitely, not by one pass, and the cap card is an opportunity for human detection rather than a guaranteed recovery. That is today's behavior, not a regression, and every existing guardrail stays in force.
 
 ### R2 — The card fires immediately before a load-bearing finding (issue #6's regression risk)
 **Mitigation:** the gate presents a card and never stops anything; "fold once more" is always available; findings on the component are never suppressed or downgraded. The worst case is one card the human dismisses.
@@ -232,7 +238,7 @@ New: `tools/cluster_tracker.py`, `tools/check-cluster-streak.py` (wired into `to
 
 ## Rollback plan
 
-Every change is prose plus stdlib tooling; `git revert` of the Phase 0 or Phase 1 merge restores the prior behavior with no data migration. Schema-2 state files remain readable by schema-1 prose (extra fields are ignored). The tuning rollback (`CLUSTER_N` 3 → 4) is a one-line change recorded in §5.
+Every change is prose plus stdlib tooling; `git revert` of the Phase 0 or Phase 1 merge restores the prior behavior with no data migration. Schema-2 state files remain readable by schema-1 prose (extra fields are ignored). The tuning rollback (`CLUSTER_N` 3 → 4) is the coordinated change §5 describes, kept consistent by the checker's threshold assertion.
 
 ## Sequencing decision
 
@@ -240,11 +246,11 @@ Now, because: the data gate on issue #6 is met; the prose rule is live in Resear
 
 ## Open questions
 
-- **Q1.** Fire *at* the third pass, before folding that finding (as the CSRF code review did), or *after* the third fold, before a fourth? Recommendation: at the third, before folding; the third fold is the one the evidence says gets wasted.
-- **Q2.** Should a FAILED-lens pass skip (neither count nor reset) as the freeze tracker does? Recommendation: yes, same reasoning; a lens that didn't run says nothing about the component.
-- **Q3.** Does a streak carry across chunk boundaries within one pass log (delegate-grants reviewed chunks B and C in one log)? Recommendation: yes, the log is the unit; the editor retires a label when its component leaves the diff, and the tracker's reset-on-absence handles the rest.
-- **Q4.** In `iterate-plan`, what is a "component"? Recommendation: a plan mechanism as the plan names it (a D-numbered decision, an invariant, a named lock or classifier), which is how the CSRF plan's Q7 already described the cluster.
-- **Q5.** Should the card also fire on a streak of *two* when both findings are fold-caused? Recommendation: no for MVP; show provenance as evidence, keep one trigger, revisit with §5 data.
+- **Q1.** Fire *at* the third pass, before folding that finding (as the CSRF code review did), or *after* the third fold, before a fourth? Recommendation: at the third, before folding; the third fold is the one the evidence says gets wasted. *Pass 1: both lenses agree — fire before the first qualifying fold on that label, computed as a candidate streak (committed record + this pass); the finding stays pending until the card is answered. Folded into §2/§3; Kyle to confirm at Converge.*
+- **Q2.** Should a FAILED-lens pass skip (neither count nor reset) as the freeze tracker does? Recommendation: yes, same reasoning; a lens that didn't run says nothing about the component. *Pass 1: both lenses agree — skip streak accounting for the whole pass, still disposition the findings the completed lenses returned; N qualifying passes may span more than N attempts. Folded into §2.*
+- **Q3.** Does a streak carry across chunk boundaries within one pass log (delegate-grants reviewed chunks B and C in one log)? Recommendation: yes, the log is the unit; the editor retires a label when its component leaves the diff, and the tracker's reset-on-absence handles the rest. *Pass 1: both lenses agree, with a sharpening — mechanism continuity, not the shared log, is what carries a streak; explicit retirement (persisted) is distinct from a quiet pass (reset). Folded into §1; a cross-chunk case is in the tracker fixtures.*
+- **Q4.** In `iterate-plan`, what is a "component"? Recommendation: a plan mechanism as the plan names it (a D-numbered decision, an invariant, a named lock or classifier), which is how the CSRF plan's Q7 already described the cluster. *Pass 1: both lenses agree with one correction — the mechanism or invariant is the identity; a D-number or section may cite it but never defines it, and unrelated mechanisms under one decision get separate labels. Folded into §1.*
+- **Q5.** Should the card also fire on a streak of *two* when both findings are fold-caused? Recommendation: no for MVP; show provenance as evidence, keep one trigger, revisit with §5 data. *Pass 1: both lenses agree — one trigger until the single-trigger behavior is measured.*
 
 ## Out of scope
 
@@ -321,6 +327,41 @@ What state the plan was in when this pass ran.
 ### Verdict
 APPROVE / NEEDS REVISION
 -->
+
+## Codex review pass 1 — answers (2026-09-28) [HISTORICAL]
+
+### Verdict
+REVISE (worst-of: architect REVISE, product-manager REVISE; no FAILED lens). Merged HIGH+MEDIUM count: 5.
+
+### Findings
+1. **Narrowing both retains and retires the component label** — HIGH · lens: architect, product-manager (co-reported, same defect): §1 said narrowing keeps the label while §2/§3 retired the label after every simplify outcome, so a narrowed mechanism that keeps drawing findings had two incompatible tracking paths.
+   → Editor: incorporated — §1 now defines three outcomes with three lifecycles (remove → retire; replace → retire + new label at 0; narrow → retain, streak reset to 0) and §2's tracker fixtures pin "narrow, then keeps drawing findings, re-fires after N". Not plan-shaping: a rule clarification inside the approved mechanism. [introduced_by_pass: null]
+2. **Pre-fold counting lacks a durable, idempotent transition** — HIGH · lens: architect: §2 counted completed passes while §3 fired mid-fold; no distinction between a candidate streak and committed history; multiple same-label findings and resume could double-count or double-present; tagging a finding before its card is answered could collide with the existing empty-slot resume rule; state files can't serve as the live record since both skills derive them at exit.
+   → Editor: incorporated — §2 names the pass log as the committed record and defines the candidate streak; §3 gains a six-step transition order: classify before fold, card keyed by (pass, component) with tags in the card entry and `→ Editor:` slots left empty, one-move disposition of all same-label findings on answer, resume rules for pending and resolved-but-incomplete cards. [introduced_by_pass: null]
+3. **State summaries cannot support the promised §5 measurements** — HIGH · lens: product-manager (HIGH), architect (MEDIUM; merged, same gap): schema 2 recorded a worst severity, one boolean and a streak, with no card records, no outcome, no next-pass association, and no aggregation rule for mixed provenance on one label.
+   → Editor: incorporated — schema 2 now carries `components` as counts, `retired`, and a `cards` array (type, component, streak at fire, findings and fold-caused counts in the streak, chosen outcome incl. pending/aborted, reason); `cluster_hits` joins each card to the next completed pass's entry; fixtures added for Phase-0-only, mixed schema, pending card, two cards. Goals bullet 2 and Phase 0 deliverables updated to match. Judged a mapping correction of an approved goal, not plan-shaping. [introduced_by_pass: null]
+4. **The one-line threshold rollback has no runtime source of truth** — MEDIUM · lens: architect: the tracker is not invoked by runners, so changing its constant would leave SKILL.md prose, card evidence length, the checkpoint lookahead and the recipe firing at three.
+   → Editor: incorporated — §2 makes `cluster_tracker.CLUSTER_N` the single source, all prose says "N" and cites it, the recipe takes `--arg n`, and `check-cluster-streak.py` asserts every literal threshold in both SKILL.md files equals the constant; §5 and Rollback now call tuning a coordinated change the checker keeps honest. [introduced_by_pass: null]
+5. **The false-positive rule also counts successful ordinary fixes** — MEDIUM · lens: product-manager: "fold once more, then a quiet next pass" is also what a useful fold looks like; pending and FAILED next passes were untreated.
+   → Editor: incorporated — the signal is now the human's own reason recorded at the card (`premature` vs `deliberate` on the fold-once-more alternative, §3); denominator is resolved cards only; the next-pass-quiet heuristic is explicitly rejected in §5. [introduced_by_pass: null]
+
+### Plan corrections applied
+- §4 cluster section: the status line now has three cases, including a label already at or past N with its card outcome shown (both lenses filed this).
+- §1 uncertainty rule + R1: under-clustering's cost stated honestly as an indefinitely delayed card with the cap card as an opportunity for detection, not a one-pass bound (both lenses filed this).
+- Phase 1 deliverables: the provenance-reservation replacement now covers every copy in both SKILL.md files (fold-step prose, state-summary paragraph, Hard rules) and states the permitted/forbidden line explicitly; parity rule + negative checker case added (architect).
+
+### Open-question answers
+1. Q1 — both lenses: fire before the first qualifying fold on the label; candidate streak = committed + this pass. Agree with the recommendation; folded.
+2. Q2 — both lenses: skip the whole pass for streak accounting on a FAILED lens; still disposition returned findings. Agree; folded.
+3. Q3 — both lenses: carry across chunks on mechanism continuity, not log sharing; persist explicit retirement, distinct from a reset. Agree with a sharpening; folded.
+4. Q4 — both lenses: identity is the mechanism/invariant, not the D-number or section. Agree with a correction; folded.
+5. Q5 — both lenses: no second trigger for MVP. Agree.
+
+### New questions Codex raised
+- (none)
+
+### Lens run summary
+- architect: REVISE · product-manager: REVISE
 
 ## Codex review pass N — answers (YYYY-MM-DD) [HISTORICAL]
 
