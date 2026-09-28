@@ -289,6 +289,9 @@ def test_contracts(env: Env) -> None:
            os.path.realpath(summary.get("log_path", "")) == os.path.realpath(expected_log)
            and summary.get("warnings") == [],
            summary.get("log_path", "(no summary)"))
+    record("pass-log: prior_passes is {count: 0, first_pass_header: None} on a genuine first pass",
+           summary.get("prior_passes") == {"count": 0, "first_pass_header": None},
+           str(summary.get("prior_passes")))
     record("pass-log: the runner never creates the log file",
            not os.path.exists(expected_log))
     record("run-pass: lock released on completion",
@@ -804,6 +807,28 @@ def test_pass2_fold(env: Env, shared) -> None:
                    "--scope-tag", "s18", "--pass-num", "1")
     record("boundary: a genuine pass log (matching header) is read fine",
            proc.returncode == 0, proc.stderr.strip()[-140:])
+    summary = json.loads(proc.stdout or "{}") if proc.returncode == 0 else {}
+    record("pass-log: prior_passes surfaces a pre-existing log's count + oldest header "
+           "(the run-pass side of the code-review-working.md collision incident)",
+           summary.get("prior_passes")
+           == {"count": 1, "first_pass_header": "Pass 1 — earlier [HISTORICAL]"},
+           str(summary.get("prior_passes")))
+    with open(genuine, "a") as fh:
+        fh.write("\n## Pass 2 — later [HISTORICAL]\nmore content\n")
+    proc = env.run("run-pass", "--diff", env.diff, "--intent", env.intent,
+                   "--scope-tag", "s18", "--pass-num", "2")
+    summary = json.loads(proc.stdout or "{}") if proc.returncode == 0 else {}
+    record("pass-log: prior_passes count reflects two HISTORICAL sections, oldest header first",
+           summary.get("prior_passes")
+           == {"count": 2, "first_pass_header": "Pass 1 — earlier [HISTORICAL]"},
+           str(summary.get("prior_passes")))
+    proc = env.run("run-lens", "--diff", env.diff, "--intent", env.intent,
+                   "--lens", "senior-dev", "--scope-tag", "s18", "--log-path", genuine)
+    lens_result = json.loads(proc.stdout or "{}")
+    record("pass-log: run-lens echoes the same prior_passes shape as run-pass",
+           lens_result.get("prior_passes")
+           == {"count": 2, "first_pass_header": "Pass 1 — earlier [HISTORICAL]"},
+           str(lens_result.get("prior_passes")))
 
     # Scope tags are constrained to a boring charset — a crafted tag can't
     # smuggle path components or masquerade as an arbitrary heading.

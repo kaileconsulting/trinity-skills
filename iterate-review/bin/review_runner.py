@@ -232,6 +232,34 @@ def read_prior_passes(log_path: Path, scope_tag: str, boundaries=None) -> str:
     return text
 
 
+_PASS_HEADER_RE = re.compile(r"^## Pass (\d+) — (.+)$", re.MULTILINE)
+
+
+def summarize_prior_passes(prior_text: str) -> dict:
+    """Cheap defense-in-depth signal, echoed in the pass summary: how many
+    prior HISTORICAL pass sections the resolved log already holds, and the
+    oldest one's header line.
+
+    SKILL.md's own steps 7-8 already have the orchestrator detect prior
+    passes and surface a scope summary to the human before the first Codex
+    call — this exists as a second line of defense for exactly the failure
+    mode where that manual step gets skipped: a resolved log path that
+    collides with an unrelated review's history (e.g. two different
+    features both landing on the generic `--scope=working` default) is now
+    visible directly in run-pass's own JSON output, not only in prose the
+    orchestrator has to remember to read first.
+
+    Returns {"count": 0, "first_pass_header": None} for an empty/missing
+    log (this is genuinely pass 1, nothing to flag)."""
+    if not prior_text:
+        return {"count": 0, "first_pass_header": None}
+    matches = _PASS_HEADER_RE.findall(prior_text)
+    if not matches:
+        return {"count": 0, "first_pass_header": None}
+    first_num, first_rest = matches[0]
+    return {"count": len(matches), "first_pass_header": f"Pass {first_num} — {first_rest}"}
+
+
 # --------------------------------------------------------------------------
 # One lens, end to end (composition → invocation → validation)
 # --------------------------------------------------------------------------

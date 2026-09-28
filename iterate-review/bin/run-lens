@@ -109,6 +109,7 @@ def main(argv=None):
     try:
         prior = rr.read_prior_passes(log_path, args.scope_tag,
                                      boundaries=[repo_root])
+        prior_passes = rr.summarize_prior_passes(prior)
         input_path, response_path = rr.debug_paths(state_dir, args.lens)
         input_path.parent.mkdir(parents=True, exist_ok=True)
         entry = rr.run_one_lens(args.lens, intent_text, diff_text, prior,
@@ -125,6 +126,7 @@ def main(argv=None):
         "scope_hash": shash,
         "log_path": str(log_path),
         "warnings": warnings,
+        "prior_passes": prior_passes,
         "input_path": str(input_path),
         **entry,
     }

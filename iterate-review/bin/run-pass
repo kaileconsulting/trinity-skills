@@ -141,6 +141,7 @@ def main(argv=None):
         lens_ids, reasons = select_lenses(diff_text, args.lenses)
         prior = rr.read_prior_passes(log_path, args.scope_tag,
                                      boundaries=[repo_root])
+        prior_passes = rr.summarize_prior_passes(prior)
     except (sel.RuleDataError, rr.CompositionError) as exc:
         sys.stderr.write(f"run-pass: {exc}\n")
         return EXIT_ERROR
@@ -205,7 +206,8 @@ def main(argv=None):
         # "a summary was published" even if the scope is pruned or the disk
         # errors immediately afterwards.
         _summary_file, summary_text = shared.publish_summary(
-            lock, state_dir, pass_num, shash, log_path, warnings, entries)
+            lock, state_dir, pass_num, shash, log_path, warnings, entries,
+            prior_passes=prior_passes)
     except shared.LockError as exc:
         sys.stderr.write(f"run-pass: {exc}\n")
         return EXIT_ERROR

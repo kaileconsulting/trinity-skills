@@ -678,18 +678,25 @@ def summary_path(state_dir, pass_num: int) -> Path:
 
 def publish_summary(lock: ScopeLock, state_dir: Path, pass_num: int,
                     scope_hash: str, log_path: Path, warnings: list,
-                    lenses: dict) -> "tuple[Path, str]":
+                    lenses: dict, prior_passes: "dict | None" = None) -> "tuple[Path, str]":
     """Publish pass-N.summary.json — the pass's single commit point. A pass
     exists iff its summary exists; readers discover passes only through
     summaries. Published atomically, last, inside the token-fenced critical
     section (verify_and), so a revocation cannot interleave the check and
-    the commit."""
+    the commit.
+
+    `prior_passes` (see review_runner.summarize_prior_passes) is a cheap
+    defense-in-depth signal: how many HISTORICAL pass sections the resolved
+    log already held before this pass, and the oldest one's header. Callers
+    that don't pass it (e.g. a direct test call) get the "nothing prior"
+    shape, same as a genuinely first pass."""
     payload = {
         "pass": pass_num,
         "scope_hash": scope_hash,
         "log_path": str(log_path),
         "warnings": list(warnings),
         "lenses": lenses,
+        "prior_passes": prior_passes if prior_passes is not None else {"count": 0, "first_pass_header": None},
         "complete": True,
     }
     path = summary_path(state_dir, pass_num)
