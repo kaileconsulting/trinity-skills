@@ -20,3 +20,7 @@
 ### Lens run summary
 
 - senior-dev: REVISE · security: APPROVE · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-09-29 12:05; head SHA `6e76679`.
