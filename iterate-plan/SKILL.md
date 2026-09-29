@@ -50,9 +50,20 @@ Optional flags:
    in-session — used for manual-edit detection between passes.
 4. Load state file at `~/.claude/skills/iterate-plan/state/<sha1-of-abs-path>.json`
    if present. If absent, this is pass 1; initialize an empty in-session
-   state record. (State is *written* only at convergence/abort — see step 9.
-   Light-shape; can harden later if cross-session resume becomes
-   load-bearing.)
+   state record. (State is *written* only at convergence/abort — see step 9.)
+
+   **Then, before any fan-out, check the plan for an unfinished pass** —
+   the state file is written only at exit, so it can never show one.
+   Read the plan's last `## Codex review pass N` block: a decision card
+   still reading `chosen: (pending)`, a finding with an empty `→ Editor:`
+   slot, or a correction or question still reading `(pending)` means pass
+   N is unfinished. **Resume it under its own pass number** — re-present
+   each pending card, complete the remaining dispositions (reconciling
+   against the plan text first, so a fold already applied is recorded,
+   not re-applied), and finish its checkpoint — instead of starting pass
+   N+1. Every card type promises this resume; the simplification card
+   depends on it, since a fresh pass would bypass its pending card and
+   leave its findings undispositioned without a human decision.
 
 ## Per-pass loop
 
@@ -440,7 +451,7 @@ performed by the runner, deterministically.
    **Classification happens before the fold, and the pending card is
    persisted before any structural mutation** — an escalation that fires
    after the plan is already changed would defeat its purpose. Outcome
-   mapping (shared with the other four card types, step 8 below): *adopt
+   mapping (shared with the other five card types, step 8 below): *adopt
    the mechanism* → the fold proceeds this pass; *cheaper alternative*
    (when one exists) → the alternative is folded instead, recorded as
    `incorporated (via alternative)`, and re-reviewed next pass; *accept
@@ -633,8 +644,10 @@ performed by the runner, deterministically.
    items leave the non-convergence count) while remaining impossible to
    converge past unconfirmed. **`incorporated (by simplification)`** — a
    finding a simplification card's chosen operation resolves, per that
-   operation's per-finding accounting — is an `incorporated` in every
-   ledger (and in the state summary's `incorporated` key).
+   operation's per-finding accounting — and **`incorporated (moved to
+   <stub path>)`** — a finding carried to a new plan by the card's *split
+   the plan* scope transfer — are each an `incorporated` in every ledger
+   (and in the state summary's `incorporated` key).
 
    **Worked example — the accounting table state by state**, the same
    inspection standard the freeze tracker's worked example above and every
@@ -727,8 +740,10 @@ performed by the runner, deterministically.
    - **Simplification card**: *simplify (remove | narrow | replace)* → one
      fold applies that operation, findings dispositioned by its per-finding
      accounting; *fold once more* (reason `premature` or `deliberate`) →
-     ordinary fold, streak continues; *split the plan* → the mechanism
-     moves to a new plan stub, label retired here; *discuss* → paused. Full
+     ordinary fold, streak continues; *split the plan* → a scope transfer:
+     the mechanism and its findings move to a new plan stub, findings
+     `incorporated (moved to <stub>)`, label retired here; *discuss* →
+     paused. Full
      rules below, after the component streak.
    - **Malformed or unavailable register source** (step 5) — one card
      type covering both of `resolve_register()`'s failure states, named
@@ -935,7 +950,7 @@ performed by the runner, deterministically.
    findings at fold time.
 
    **Transition order — counting and presentation happen exactly once.**
-   1. Step 11's merge produces the pass's findings; the block opens with
+   1. Step 7's merge produces the pass's findings; the block opens with
       them, `→ Editor:` slots empty.
    2. Classify every merged finding's component label and compute each
       label's candidate streak, **before any fold**.
@@ -960,7 +975,8 @@ performed by the runner, deterministically.
       an `accepted-risk` proposal under that lifecycle's own rules and
       trust-boundary exclusions — and is never marked incorporated by
       association. For *fold once more*, every finding takes its ordinary
-      path.
+      path. For *split the plan*, every same-label finding of this pass is
+      a **scope transfer** (outcome mapping below).
    6. The sealed block is what the next pass's candidate streak reads.
 
    A card is identified by `(pass, component)`. A resumed session that
@@ -1019,13 +1035,31 @@ performed by the runner, deterministically.
      outcome: `premature` (the card wasn't warranted) or `deliberate`
      (warranted, but one more targeted fold is the right call). The state
      summary's false-positive measure reads `premature` alone.
-   - *split the plan* → the component's decisions and open questions move
-     to a new plan stub (`create-plan` scaffolds it); this plan's text
-     references the stub where the mechanism was; the label **retires**
-     here (`retired:` line — the mechanism has left this plan's scope, and
-     the new plan tracks it from 0); the loop resumes on what remains.
-     Findings on the label take their ordinary path in the new plan, never
-     `incorporated` here by association.
+   - *split the plan* → a **scope transfer**, in this order, each write
+     durable before the next:
+     1. the new plan stub is created (`create-plan` scaffolds it), with the
+        component's decisions and open questions, and a `## Carried
+        findings` section holding every same-label finding of this pass
+        verbatim (title, severity, lens, description, `introduced_by_pass`)
+        — the defect travels with the mechanism, and the new plan's first
+        review must address each one;
+     2. this plan's text drops the mechanism's decisions, references the
+        stub where they were, and gains an `## Out of scope` entry naming
+        the stub;
+     3. the card's resolution is written, then each carried finding is
+        dispositioned here `incorporated (moved to <stub path>)` — the plan
+        edit that removed the mechanism from this plan *is* this plan's
+        fold, and the finding is not dropped, it is carried;
+     4. the label **retires** here (`retired:` line — the mechanism has left
+        this plan's scope; the new plan tracks it from 0) and the loop
+        resumes on what remains.
+
+     A resumed session completes a transfer from the first missing write:
+     a finding whose text is already in the stub's `## Carried findings`
+     is dispositioned without being copied twice. This is the shape every
+     split-off in the evidence took (a remainder named at a durable new
+     home, the originating finding `incorporated`), with a plan stub as
+     the home.
    - *discuss* → paused.
 
    Persistence is the shared two-phase contract: pending write before
@@ -1039,8 +1073,9 @@ performed by the runner, deterministically.
 
    Worked example: `examples/merge/02-simplification-card/` — the CSRF
    plan review's SQL-parsing classifier, a card at pass 6 (the real review
-   removed it at pass 10) whose per-finding accounting resolves two of
-   the three findings and leaves the third to an ordinary fold.
+   removed it at pass 10) whose per-finding accounting for *remove*
+   resolves three of the streak's four findings and leaves the fourth to
+   an ordinary fold, plus the same card answered *split the plan*.
 
 
 9. **Recompute `plan_content_hash` post-fold.** Stash for the next pass's
@@ -1112,16 +1147,20 @@ performed by the runner, deterministically.
     the HIGH/MEDIUM findings from the last three passes grouped by
     component label, each label with its committed streak, side by side so
     two names for one mechanism are visible to the human (label drift is
-    the one failure the labeling rules can't fully prevent). Then exactly
-    one status line per state that applies:
-    - "no component has reached one below the cluster threshold, 2, — no
-      simplification card is one pass away";
+    the one failure the labeling rules can't fully prevent); a retired
+    label is listed as retired, with the pass it retired on. Then the
+    status lines that apply:
+    - "no live component has reached one below the cluster threshold, 2,
+      — no simplification card is one pass away" (when no tracked label
+      is at 2 or more);
     - "`<label>` at one below the cluster threshold, 2, — one more
-      HIGH/MEDIUM pass on it triggers the simplification card";
-    - "`<label>` at `<n>` — simplification card presented at pass `<p>`,
-      chosen: `<outcome>`" for a label at or past the cluster threshold (a
-      *fold once more* label keeps climbing, and this line shows the
-      decision already taken).
+      HIGH/MEDIUM pass on it triggers the simplification card", one per
+      tracked label at 2;
+    - "`<label>` — simplification card presented at pass `<p>` at streak
+      `<n>`, chosen: `<outcome>`", one per card presented in the window,
+      `<n>` being the streak at fire (a *fold once more* label keeps
+      climbing, and this line shows the decision already taken; a removed
+      or split label reads as retired above).
 
     This turns the cap into a trigger for the cluster check rather than a
     bare budget number. It adds a section; it changes no guardrail's

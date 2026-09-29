@@ -632,16 +632,20 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     findings from the last three passes grouped by component label, each
     label with its committed streak, side by side so two names for one
     mechanism are visible to the human (label drift is the one failure the
-    labeling rules can't fully prevent). Then exactly one status line per
-    state that applies:
-    - "no component has reached one below the cluster threshold, 2, —
-      no simplification card is one pass away";
+    labeling rules can't fully prevent); a retired label is listed as
+    retired, with the pass it retired on. Then the status lines that
+    apply:
+    - "no live component has reached one below the cluster threshold, 2,
+      — no simplification card is one pass away" (when no tracked label
+      is at 2 or more);
     - "`<label>` at one below the cluster threshold, 2, — one more
-      HIGH/MEDIUM pass on it triggers the simplification card";
-    - "`<label>` at `<n>` — simplification card presented at pass `<p>`,
-      chosen: `<outcome>`" for a label at or past the cluster threshold (a
-      *fold once more* label keeps climbing, and this line shows the
-      decision already taken).
+      HIGH/MEDIUM pass on it triggers the simplification card", one per
+      tracked label at 2;
+    - "`<label>` — simplification card presented at pass `<p>` at streak
+      `<n>`, chosen: `<outcome>`", one per card presented in the window,
+      `<n>` being the streak at fire (a *fold once more* label keeps
+      climbing, and this line shows the decision already taken; a removed
+      one reads as retired above).
 
     This turns the cap into a trigger for the cluster check rather than a
     bare budget number. It adds a section; it changes no guardrail's

@@ -35,7 +35,7 @@ keeps the same label if D4 is renumbered.
 **Lens responses, pass 6:** [`pass-6.architect.response.json`](pass-6.architect.response.json)
 (one HIGH, one MEDIUM, one correction) and
 [`pass-6.product-manager.response.json`](pass-6.product-manager.response.json)
-(two HIGH). No FAILED lens.
+(two HIGH, one MEDIUM). No FAILED lens.
 
 ## Pass 6 — merge and classification
 
@@ -45,10 +45,12 @@ keeps the same label if D4 is renumbered.
 | 2 | Comment lexing is underspecified at a security boundary | MEDIUM · architect | `get-lock-sql-classifier` |
 | 3 | Compliance sentence overstates pre-authentication protections | HIGH · product-manager | `compliance-sentence` |
 | 4 | G3 contradicts the intentional console failure-state change | HIGH · product-manager | `g3-user-visible-change` |
+| 5 | Mutation-proof gate lacks planned evidence for I4 and I6 | MEDIUM · product-manager | `mutation-proof-gate` |
 
 Candidate streak for `get-lock-sql-classifier` = committed 2 + 1 = **3**
 (findings 1 and 2 are **one** observation). The card is written before
-either is folded; findings 3 and 4 fold meanwhile.
+either is folded; findings 3–5 fold meanwhile. Merged HIGH+MEDIUM this
+pass: **5**.
 
 ## Pass 6 — the card, pending then resolved
 
@@ -58,6 +60,7 @@ either is folded; findings 3 and 4 fold meanwhile.
 - **simplification** (`get-lock-sql-classifier`, pass 6, streak 3): streak findings — pass 4 #1 HIGH (architect, introduced_by_pass: null); pass 5 #1 HIGH (architect, introduced_by_pass: 4); pass 6 #1 HIGH (architect, introduced_by_pass: 5); pass 6 #2 MEDIUM (architect, introduced_by_pass: 4); 3 of this streak's 4 findings are fold-caused.
   recommendation — **simplify (remove)**: delete the SQL-parsing classifier (READ/WRITE/UNKNOWN model, read allow-list, comment lexing); make no read-vs-write judgement from SQL text. Guarantee lost: per-statement classification of what an unlisted GET runs. Covering layer: MySQL's read-only transaction (L1b) for single-statement reads, the GET script manifest pinning which scripts a GET may run, and the L2 test-time monitor. Per-finding: pass 4 #1 — resolves (nothing parses, so nothing fails open; MySQL decides); pass 5 #1 — resolves (the read-only transaction rejects writes whatever the leading keyword); pass 6 #1 — does not (L2 still observes L1b's own `SET` command and needs its own exemption); pass 6 #2 — resolves (no lexer remains to specify).
   alternatives — **fold once more** (specify the comment grammar and exempt L1b's command). · **split the plan**: move D4's GET write lock into its own plan and ship this one without it. · **simplify (narrow)**: classify single statements only and route every multi-statement script through the manifest. Guarantee lost: script-level classification. Covering layer: the manifest. Per-finding: pass 4 #1 — does not (unparseable single statements still need a fail-closed rule); pass 5 #1 — does not; pass 6 #1 — does not; pass 6 #2 — does not (the lexer stays).
+  discuss — always available (the harness's free-form response; never counted against the four options).
   chosen: (pending)
 ```
 
@@ -75,20 +78,53 @@ retired: get-lock-sql-classifier (removed by simplification card, pass 6)
 
 ## Checkpoint — stall + cap, with the cluster section
 
-HIGH+MEDIUM 4 → 5 → 5 (not strictly decreasing across two transitions)
-and pass 6 is the last of the budget, so the loop hands back with the
-non-convergence stall card. Its cluster section:
+HIGH+MEDIUM 4 → 5 → 5 across passes 4–6 (not strictly decreasing across
+two transitions) and pass 6 is the last of the budget, so the loop hands
+back with the non-convergence stall card. Its cluster section (pass 4's
+and 5's other labels omitted here for brevity):
 
 ```
 Cluster (HIGH/MEDIUM, passes 4–6, by component):
-- get-lock-sql-classifier — p4 HIGH · p5 HIGH · p6 HIGH + MEDIUM — streak 3
+- get-lock-sql-classifier — p4 HIGH · p5 HIGH · p6 HIGH + MEDIUM — retired at pass 6
 - compliance-sentence — p6 HIGH — streak 1
 - g3-user-visible-change — p6 HIGH — streak 1
-- `get-lock-sql-classifier` at 3 — simplification card presented at pass 6, chosen: simplify (remove)
+- mutation-proof-gate — p6 MEDIUM — streak 1
+- no live component has reached one below the cluster threshold, 2, — no simplification card is one pass away
+- `get-lock-sql-classifier` — simplification card presented at pass 6 at streak 3, chosen: simplify (remove)
 ```
 
 The stall card's own options are unchanged; the section only shows that
 the mechanism behind the stall has already been decided on.
+
+## Variant — the same card answered *split the plan*
+
+The scope transfer's four writes, in order:
+
+1. `docs/get-write-lock-2026-09-24.md` is scaffolded with D4's decisions,
+   Q5–Q6, and:
+
+```markdown
+## Carried findings
+- **L2 rejects L1b's own read-only transaction command** — HIGH · lens: architect · introduced_by_pass: 5 — <description verbatim>
+- **Comment lexing is underspecified at a security boundary** — MEDIUM · lens: architect · introduced_by_pass: 4 — <description verbatim>
+```
+
+2. This plan's D4 is replaced by a one-line reference to the stub, and
+   `## Out of scope` gains "GET write lock — its own plan,
+   `docs/get-write-lock-2026-09-24.md` (split at pass 6)".
+3. `chosen: split the plan (…)`, then both findings:
+   `→ Editor: incorporated (moved to docs/get-write-lock-2026-09-24.md) — carried verbatim; the stub's first review must address it.`
+   The HIGH is incorporated for every ledger, so the loop may continue —
+   and it is not lost, because it is in the stub.
+4. `retired: get-lock-sql-classifier (split to docs/get-write-lock-2026-09-24.md, pass 6)`.
+
+Interrupted after write 1 but before write 3, the card still reads
+`(pending)` on disk, so a resumed session (Setup step 4's unfinished-pass
+check) re-presents it; if the answer is *split the plan* again, the stub
+and its carried findings already exist and are not written twice.
+Interrupted after write 3, it finds the resolution and both findings in
+`## Carried findings`, and writes the missing dispositions and the
+`retired:` line without re-presenting the card.
 
 ## What a wrong result looks like
 
@@ -100,4 +136,7 @@ the mechanism behind the stall has already been decided on.
 | Finding 1 marked `incorporated (by simplification)` | Incorporation by association — remove's accounting says it does not resolve finding 1 |
 | Finding 2 given its own patch after the removal | One implementation fold covers every finding the chosen operation resolves |
 | *accept the risk* on the card | `iterate-plan`'s card offers *split the plan* in that slot |
+| On split, the findings left with empty slots, or `skipped` | A split is a scope transfer: carried to the stub first, then `incorporated (moved to …)` |
+| On split, the findings `incorporated (moved to …)` but absent from the stub | The carry is write 1; the disposition may only follow it |
+| The cluster section still lists the classifier with a live streak of 3 | A removed label is retired; 3 is its streak at fire, shown on the card line |
 | The stall card's options changed by the cluster section | The section is information; it changes no guardrail's condition or outcome |
