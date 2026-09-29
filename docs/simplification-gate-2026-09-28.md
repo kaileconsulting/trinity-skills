@@ -173,7 +173,7 @@ New: `tools/cluster_tracker.py`, `tools/check-cluster-streak.py` (wired into `to
 - The "no guardrail may consult `introduced_by_pass`" sentence is *still present* at the end of Phase 0: this phase collects, it does not gate.
 
 **Iterate-review:** YES (rationale: touches the fold path in both skills and adds a fixture-pinned tracker tool; wrong tagging rules silently under- or over-count streaks)
-**Status:** not started
+**Status:** in progress — built 2026-09-29 (`056f971`, `adf983c`, `62c1eb7`); `check-all.sh` green; iterate-review pending
 
 ### Phase 1 — Simplification decision card + checkpoint wiring (~5h)
 **Deliverables:**
