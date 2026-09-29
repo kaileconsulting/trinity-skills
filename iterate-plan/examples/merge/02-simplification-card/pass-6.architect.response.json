@@ -1,0 +1,28 @@
+{
+  "verdict": "REVISE",
+  "findings": [
+    {
+      "title": "L2 rejects L1b's own read-only transaction command",
+      "severity": "HIGH",
+      "description": "D4: L2 records any GET-time statement not classified READ; the classifier calls SET UNKNOWN; L1b emits SET TRANSACTION READ ONLY before every GET-time read. With the flag on, every GET test, and the L1b proof itself, would fail.",
+      "suggested_action": "Exempt L1b's own command from L2 without reclassifying SET in general.",
+      "register_ref": null
+    },
+    {
+      "title": "Comment lexing is underspecified at a security boundary",
+      "severity": "MEDIUM",
+      "description": "D4 classification contract: the classifier strips comments before keyword classification, but the plan does not specify nested comments, comment markers inside string literals, or `--` without a following space, so two implementations could classify the same statement differently at the GET write lock.",
+      "suggested_action": "Specify the comment grammar the classifier implements, or stop depending on it.",
+      "register_ref": null
+    }
+  ],
+  "plan_corrections": [
+    {
+      "location": "Risks",
+      "issue": "R10 appears after R11.",
+      "fix": "Move R10 back before R11 so the sequence reads R9, R10, R11, R12."
+    }
+  ],
+  "open_question_answers": [],
+  "new_questions": []
+}

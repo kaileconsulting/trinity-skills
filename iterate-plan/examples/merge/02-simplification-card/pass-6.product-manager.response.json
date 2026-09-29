@@ -1,0 +1,22 @@
+{
+  "verdict": "REVISE",
+  "findings": [
+    {
+      "title": "Compliance sentence overstates pre-authentication protections",
+      "severity": "HIGH",
+      "description": "Why / Context, the compliance sentence: \"inventoried with the secret it already requires\" is false for register and password-reset/request, and the manifest test proves membership, not the cited gates.",
+      "suggested_action": "Distinguish routes protected by an independent secret from routes safe because they carry no credential.",
+      "register_ref": null
+    },
+    {
+      "title": "G3 contradicts the intentional console failure-state change",
+      "severity": "HIGH",
+      "description": "G3 still promises no user-visible change, but the pass-3 qualification introduced a deliberate console failure state; the qualification reached the use case but not G3.",
+      "suggested_action": "Carry the qualification into G3.",
+      "register_ref": null
+    }
+  ],
+  "plan_corrections": [],
+  "open_question_answers": [],
+  "new_questions": []
+}

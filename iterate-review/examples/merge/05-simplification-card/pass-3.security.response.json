@@ -1,0 +1,14 @@
+{
+  "verdict": "REVISE",
+  "findings": [
+    {
+      "title": "A late or cross-tab bootstrap GET can restore a superseded session",
+      "severity": "HIGH",
+      "description": "frontend/src/services/authService.js — inFlightCsrfFetch is per-tab and checked once, so a mount-time GET /api/auth/csrf can start after the check, or run in another tab. If that GET loaded session S and completes after login/redeem invalidated S and issued S', the browser applies the late Set-Cookie: S, restoring the previous principal after redeeming another user's link. The generation fence protects only the store write. Third finding in this area.",
+      "suggested_action": "Ensure no bootstrap GET can be in flight across a session change, in this tab or another.",
+      "register_ref": null
+    }
+  ],
+  "code_corrections": [],
+  "new_questions": []
+}
