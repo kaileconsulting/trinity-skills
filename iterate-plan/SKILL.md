@@ -1066,8 +1066,10 @@ performed by the runner, deterministically.
       this is what tells a skipped pass from a quiet one, which the
       verdict alone cannot); `components` (object — one entry per label on
       that pass's merged findings, all severities: `{worst_severity,
-      findings, fold_caused}`, **counts**, not booleans, so mixed
-      provenance on one label is visible); `streaks` (object — each
+      findings, fold_caused}` — `worst_severity` the label's worst
+      severity, `HIGH|MEDIUM|LOW`; `findings` and `fold_caused`
+      **counts**, not booleans, so mixed provenance on one label is
+      visible); `streaks` (object — each
       tracked label's committed streak at the end of the pass; retired
       labels drop out); `retired` (array — labels retired on that pass);
       `cards` (array — one row per simplification card presented that

@@ -24,3 +24,27 @@
 ### Diff snapshot reference
 
 Diff captured at 2026-09-29 12:05; head SHA `6e76679`.
+
+## Pass 2 — 2026-09-29 12:24 [IN PROGRESS]
+
+**Scope:** branch · **Diff size:** 2536 lines · **Scope class:** production · **Verdict:** APPROVE (worst-of: senior-dev APPROVE, security APPROVE, qa APPROVE; no FAILED lens) · **Posture:** used docs/simplification-gate-2026-09-28.md · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+- (none)
+
+### Code corrections applied
+
+- `iterate-review/SKILL.md` schema-2 `components` prose (senior-dev, qa; merged) — calls `worst_severity`, `findings` and `fold_caused` all counts, but `worst_severity` is a HIGH/MEDIUM/LOW label → reworded so only `findings`/`fold_caused` are counts and `worst_severity` is the severity label; the same wording in `iterate-plan/SKILL.md`'s schema-2 bullet fixed identically (sibling copy, same defect)
+
+### New questions Codex raised
+
+- (none)
+
+### Lens run summary
+
+- senior-dev: APPROVE · security: APPROVE · qa: APPROVE
+
+### Diff snapshot reference
+
+Diff captured at 2026-09-29 12:20; head SHA `65a8367`.

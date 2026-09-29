@@ -594,9 +594,10 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
       after retry, read from the block's Lens run summary line (this is
       what tells a skipped pass from a quiet one, which the verdict alone
       cannot); `components` — one entry per label on that pass's merged
-      findings, all severities, with `worst_severity`, `findings` and
-      `fold_caused` as **counts**, not booleans, so mixed provenance on one
-      label is visible; `streaks` — each tracked label's committed streak
+      findings, all severities, with `worst_severity` (the label's worst
+      severity, `HIGH|MEDIUM|LOW`) and `findings` and `fold_caused` as
+      **counts**, not booleans, so mixed provenance on one label is
+      visible; `streaks` — each tracked label's committed streak
       at the end of the pass (retired labels drop out); `retired` — labels
       retired on that pass; `cards` — one row per simplification card
       presented that pass (`type`, `component`, `streak_at_fire`,
