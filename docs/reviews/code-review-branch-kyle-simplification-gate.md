@@ -1,6 +1,6 @@
 # Code Review — branch-kyle-simplification-gate
 
-## Pass 1 — 2026-09-29 12:10 [HISTORICAL]
+## Pass 1 — 2026-09-29 ≈07:04 [HISTORICAL]
 
 **Scope:** branch · **Diff size:** 2460 lines · **Scope class:** production · **Verdict:** REVISE (worst-of: senior-dev REVISE, security APPROVE, qa REVISE; no FAILED lens) · **Posture:** used docs/simplification-gate-2026-09-28.md · **Lenses:** senior-dev, security, qa
 
@@ -23,9 +23,9 @@
 
 ### Diff snapshot reference
 
-Diff captured at 2026-09-29 12:05; head SHA `6e76679`.
+Diff captured at 2026-09-29 ≈07:03; head SHA `6e76679`. (Timestamps for passes 1–2 corrected from commit times: their summaries were pruned at Converge, and the originally written times were not taken from the summary mtime.)
 
-## Pass 2 — 2026-09-29 12:24 [HISTORICAL]
+## Pass 2 — 2026-09-29 ≈07:08 [HISTORICAL]
 
 **Scope:** branch · **Diff size:** 2536 lines · **Scope class:** production · **Verdict:** APPROVE (worst-of: senior-dev APPROVE, security APPROVE, qa APPROVE; no FAILED lens) · **Posture:** used docs/simplification-gate-2026-09-28.md · **Lenses:** senior-dev, security, qa
 
@@ -47,13 +47,13 @@ Diff captured at 2026-09-29 12:05; head SHA `6e76679`.
 
 ### Diff snapshot reference
 
-Diff captured at 2026-09-29 12:20; head SHA `65a8367`.
+Diff captured at 2026-09-29 ≈07:07; head SHA `65a8367`.
 
 ### Checkpoint
 
 APPROVE reached (loop mode stops). No `AR-` items, no `register-match`, no FAILED lens, no pending folds; the one correction is a three-line wording fix, suite green at `9083cdf`. HIGH+MEDIUM trajectory 1 → 0. Component streaks: `cluster-tracker-lifecycle-events` 1 → 0 (no label near the cluster threshold). **Converged by Kyle 2026-09-29** (Phase 0 of `docs/simplification-gate-2026-09-28.md`).
 
-## Pass 3 — 2026-09-29 14:02 [HISTORICAL]
+## Pass 3 — 2026-09-29 09:09 [HISTORICAL]
 
 **Scope:** branch (Phase 1 focus; Phase 0 converged at pass 2) · **Diff size:** 3692 lines · **Scope class:** production · **Verdict:** REVISE (worst-of: senior-dev REVISE, security APPROVE, qa REVISE; no FAILED lens) · **Posture:** used docs/simplification-gate-2026-09-28.md · **Lenses:** senior-dev, security, qa
 
@@ -88,8 +88,24 @@ APPROVE reached (loop mode stops). No `AR-` items, no `register-match`, no FAILE
 
 ### Diff snapshot reference
 
-Diff captured at 2026-09-29 13:58; head SHA `bbcde58`.
+Diff captured at 2026-09-29 09:08; head SHA `bbcde58`.
 
 ### Checkpoint
 
 Both HIGHs incorporated via Kyle's cards; suite green. HIGH+MEDIUM trajectory 1 → 0 → 3 (a new phase's first pass; one non-decreasing transition, the stall needs two). Component streaks: `split-plan-outcome` 1, `plan-resume-entry` 1, `plan-fixture-02` 1 — none at one below the cluster threshold. Loop mode → **Continue** to pass 4 (auto-continued passes used: 1 of 6 in this activation).
+
+## Pass 4 — 2026-09-29 10:12 [IN PROGRESS]
+
+**Scope:** branch (Phase 1 focus) · **Diff size:** 3851 lines · **Scope class:** production · **Verdict:** (pending) until the lens retries complete · **Posture:** used docs/simplification-gate-2026-09-28.md · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+- (pending — no lens has returned)
+
+### Lens run summary
+
+- senior-dev: failed (exit 1, empty stderr) · security: failed (exit 1, empty stderr) · qa: failed (exit 1, empty stderr). Direct probe: "You've hit your usage limit … try again at 12:03 PM." Each lens's one `run-lens` retry is **owed, not spent** — deferred until the limit resets, since a retry now would fail identically. Resume: retry the three lenses against this pass's diff (head `79852d8`), then merge into this block.
+
+### Diff snapshot reference
+
+Diff captured at 2026-09-29 10:12; head SHA `79852d8`.
