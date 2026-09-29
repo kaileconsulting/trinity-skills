@@ -189,7 +189,7 @@ New: `tools/cluster_tracker.py`, `tools/check-cluster-streak.py` (wired into `to
 - A dry read-through of the CSRF code review's passes 1–3 against the new SKILL.md text produces the card at pass 3 with the same recommendation Kyle actually chose.
 
 **Iterate-review:** YES (rationale: this is the trust boundary — the card is the only new human decision point, and both skills' Converge/checkpoint logic changes; parity-pinned across skills)
-**Status:** not started
+**Status:** in progress — built 2026-09-29 (`f97134a`, `2098f35`); `check-all.sh` green; iterate-review pending
 
 ### Phase 2 — Closeout — issue #6, CHANGELOG, README, doc sweep (~1h)
 **Deliverables:**
@@ -302,7 +302,7 @@ workflows"). Single-page view of where each phase stands. -->
 | Phase | Iterate-review | Status | Last pass | Pass log |
 |-------|----------------|--------|-----------|----------|
 | Phase 0 | YES | reviewed — converged 2026-09-29 | pass 2 (APPROVE ×3) | `docs/reviews/code-review-branch-kyle-simplification-gate.md` |
-| Phase 1 | YES | not started | — | — |
+| Phase 1 | YES | built, review pending | — | — |
 | Phase 2 | NO | not started | — | — |
 
 ## Pre-flight review pass (the editor, YYYY-MM-DD) [HISTORICAL]
