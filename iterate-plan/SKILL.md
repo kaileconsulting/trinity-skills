@@ -748,8 +748,10 @@ performed by the runner, deterministically.
 
    ### Findings
    1. **<title>** — <severity> · lens: <architect|product-manager|both>: <description>
-      → Editor: <incorporated|skipped|disputed|accepted-risk (AR-<n>)|register-match (RR-<n>, entry-digest <hash>)> — <reasoning> [introduced_by_pass: <N | null>]
+      → Editor: <incorporated|skipped|disputed|accepted-risk (AR-<n>)|register-match (RR-<n>, entry-digest <hash>)> — <reasoning> [introduced_by_pass: <N | null>] [component: <label>]
    ...
+
+   retired: <label> (<why>)   <!-- one line per component label retired this pass; omit when none -->
 
    ### Plan corrections applied
    - <location>: <fix description>
@@ -801,6 +803,89 @@ performed by the runner, deterministically.
    (the issue #6 decision it feeds): no guardrail, checkpoint, or budget
    in this skill consults `introduced_by_pass`, and none may until that
    issue is resolved.
+
+   **`[component: <label>]` — the mechanism a finding targets, per
+   finding.** Beside `introduced_by_pass`, every merged finding's
+   `→ Editor:` line carries a short, stable slug naming the *mechanism*
+   the finding targets — the mechanism or invariant a plan decision
+   describes (a named lock, a classifier, a recovery path, an ordering
+   invariant) — chosen at the same fold-time judgment moment, while the
+   causal chain is freshest. Labeling rules:
+   - **Same mechanism, same label**, regardless of how the finding is
+     worded or which lens raised it. Six findings with six different
+     titles on one SQL classifier are all `get-lock-sql-classifier`.
+   - **A replacement mechanism gets a new label.** When a fold (or a
+     decision card) replaces a mechanism with a different one, the
+     replacement starts a fresh streak under its own label; reusing the
+     old label would carry the dead mechanism's history onto it.
+   - **A label names a mechanism, never a location.** A D-number or
+     section may *cite* it, but numbering and headings change while the
+     mechanism stays the same, so location never *defines* identity;
+     unrelated mechanisms that happen to sit under one broad decision get
+     separate labels.
+   - **Label lifecycles follow what happened to the mechanism.** *Removed*
+     → the label **retires**. *Replaced* → the old label retires and the
+     replacement gets a **new label with a fresh streak**. *Narrowed* (kept,
+     with a smaller surface) by a human decision → the label is
+     **retained** and its streak **resets to 0**. A risk accepted on it
+     (`accepted-risk`) → **retained**, streak **reset to 0**; the `AR-<n>`
+     lifecycle owns only that finding, so a later HIGH/MEDIUM merged
+     finding on the label is an ordinary observation. *Split into its own
+     plan* → the label **retires** here; the new plan tracks it from 0. An
+     ordinary fold changes nothing: the streak keeps counting.
+   - **Retirement is explicit and persisted; absence is only a reset.**
+     When a component leaves the plan's scope (a fold deletes it, it moves
+     to another plan), write `retired: <label> (<why>)` in that pass's
+     HISTORICAL block; a resumed session reconstructs identity from that
+     record. A retired label is never reused. A pass on which a label
+     merely draws no HIGH/MEDIUM finding resets its streak and nothing
+     more.
+   - **When uncertain, use the name the finding cites** — the decision's
+     or mechanism's own name in the plan. Under-clustering is the
+     conservative error, but its cost is not bounded to one pass —
+     persistent label drift can hide a streak indefinitely — so reuse an
+     existing label whenever the mechanism is genuinely the same.
+   - `plan_corrections` are not tagged; only merged findings count.
+
+   **Component streak.** A label's streak counts **consecutive completed
+   passes** on which it appears on at least one HIGH or MEDIUM merged
+   finding. **One pass is one observation**, however many findings on the
+   label it carries. **LOW findings never count**: a pass on which the
+   label appears only on LOW findings, or not at all, resets its streak to
+   0. A pass with a `FAILED` lens after retry is **skipped** for streak
+   purposes — it neither counts nor resets (a lens that didn't run says
+   nothing about the component) — though its findings are still
+   dispositioned normally and any retirement recorded on it still
+   persists. The committed record is the plan's own HISTORICAL blocks,
+   never the state file. A streak reaching **the cluster threshold, 3,**
+   marks the label a simplification candidate. This threshold is stated
+   here as a literal because a copied install of this skill has no
+   `tools/`; the counting semantics are pinned by
+   `../tools/cluster_tracker.py`, whose development-side `CLUSTER_N` must
+   equal this number (and `iterate-review`'s), which
+   `../tools/check-cluster-streak.py` enforces.
+
+   *Worked example* (impersonation-c1b, an 11-pass `iterate-review` run;
+   the counting is identical here, and the sequence is a fixture in
+   `check-cluster-streak.py`):
+
+   | Pass | Merged HIGH/MEDIUM findings by label | Streaks after the pass |
+   |---|---|---|
+   | 1 | — | — |
+   | 2 | `account-fallback` HIGH | `account-fallback` 1 |
+   | 3 | `reload-guard` HIGH + MEDIUM (two findings, one observation) | `account-fallback` 0 · `reload-guard` 1 |
+   | 4 | `reload-guard` HIGH | `reload-guard` 2 |
+   | 5 | `reload-guard` MEDIUM | `reload-guard` **3** — reaches the cluster threshold |
+   | 6 | `reload-guard` MEDIUM | `reload-guard` 4 |
+   | 7 | `reload-guard` MEDIUM; the fold replaces the guard with in-memory recovery → `retired: reload-guard (replaced by in-memory-recovery)` | `in-memory-recovery` 0 |
+   | 8 | `in-memory-recovery` HIGH | `in-memory-recovery` 1 |
+   | 9 | `in-memory-recovery` HIGH | `in-memory-recovery` 2 |
+   | 10 | `in-memory-recovery` HIGH | `in-memory-recovery` **3** |
+   | 11 | — | `in-memory-recovery` 0 |
+
+   The redesign actually came at pass 7; the guard's streak first reached
+   the threshold at pass 5. The replacement's new label is what lets its
+   own streak form on passes 8–10 instead of inheriting the guard's.
 
 9. **Recompute `plan_content_hash` post-fold.** Stash for the next pass's
    manual-edit detection.
@@ -946,11 +1031,11 @@ performed by the runner, deterministically.
     unresolved, in which case the plan's own HISTORICAL blocks remain the
     authority on what's pending.
 
-    **Per-pass summary (`summary_schema: 1`) — the data half of issue #6.**
+    **Per-pass summary (`summary_schema: 2`) — the data half of issue #6.**
     At Converge and Abort alike, the state file additionally carries:
-    - `summary_schema: 1` — versions this row shape so a future change
-      (e.g. Phase 1's proportionality port) populates existing keys rather
-      than reshaping the row.
+    - `summary_schema: 2` — versions this row shape. Schema 2 is schema 1
+      plus the component fields below, additively; a schema-1 file still
+      reads, with the missing fields as empty (`cards` as `[]`).
     - `scope_class: null` — iterate-plan has no diff to classify. The
       field exists in both skills' schemas (iterate-review's is
       `production`/`non-production`, per its own §3) so the cross-skill
@@ -967,11 +1052,30 @@ performed by the runner, deterministically.
       `register-match` at a standing `0` (the disposition didn't exist
       yet); Phase 1 populates those same keys with real counts — the row
       shape itself never changed.
+    - Component fields per row (schema 2): `observation` (bool — `true`
+      when every selected lens completed, `false` when any lens was
+      `FAILED` after retry, read from the block's Lens run summary line;
+      this is what tells a skipped pass from a quiet one, which the
+      verdict alone cannot); `components` (object — one entry per label on
+      that pass's merged findings, all severities: `{worst_severity,
+      findings, fold_caused}`, **counts**, not booleans, so mixed
+      provenance on one label is visible); `streaks` (object — each
+      tracked label's committed streak at the end of the pass; retired
+      labels drop out); `retired` (array — labels retired on that pass);
+      `cards` (array — one row per simplification card presented that
+      pass: `{type: "simplification", component, streak_at_fire,
+      findings_in_streak, fold_caused_in_streak, chosen:
+      remove|narrow|replace|fold-once-more|accept-risk|split-plan|pending|aborted,
+      reason: premature|deliberate|null}`, `[]` when none).
 
       Rows are **derived from the plan's own HISTORICAL blocks** by a
       deterministic, idempotent procedure (re-deriving the same blocks
       always produces the same rows) — never hand-authored, and the plan
-      file remains the durable authority the rows are only a summary of.
+      file remains the durable authority the rows are only a summary of. The component fields derive from the same blocks: `components`
+      from the `[component: <label>]` tags, `retired` from the `retired:`
+      lines, `observation` from the Lens run summary, `cards` from the
+      `### Decision cards` entries, and `streaks` by replaying the
+      component-streak rules (step 8) over the blocks in pass order.
       **Abort produces the array exactly as Converge does**, covering
       every pass that completed before the abort. One stated limitation:
       a run interrupted before reaching Converge or Abort has no state-

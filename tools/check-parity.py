@@ -183,7 +183,7 @@ RULES: list[tuple[str, str, list[str] | dict[str, list[str]]]] = [
     ("provenance-uncertain-null", "uncertainty resolves to null with a note, not a guess",
      [r"null with a one-line note"]),
     ("provenance-summary-schema", "state file carries a versioned per-pass row schema",
-     [r"summary_schema: 1"]),
+     [r"summary_schema: 2", r"a schema-1 file still reads"]),
     ("provenance-scope-class", "state file carries a run-level scope_class field",
      [r"scope_class"]),
     ("provenance-disposition-keys", "dispositions use one fixed key set across both skills",
@@ -192,6 +192,36 @@ RULES: list[tuple[str, str, list[str] | dict[str, list[str]]]] = [
      [r"abort produces the array exactly as converge does"]),
     ("provenance-no-stop-machinery", "no guardrail/checkpoint/budget consults introduced_by_pass",
      [r"consults introduced_by_pass"]),
+
+    # --- component tags + streak (simplification gate Phase 0, §1/§2) -------
+    # The threshold's *value* is asserted by check-cluster-streak.py (both
+    # literals equal cluster_tracker.CLUSTER_N); parity only pins presence.
+    ("component-tag-placement", "[component: <label>] sits beside introduced_by_pass",
+     [r"\[introduced_by_pass: <n \| null>\] \[component: <label>\]"]),
+    ("component-same-mechanism", "same mechanism, same label, whatever the wording or lens",
+     [r"same mechanism, same label"]),
+    ("component-replacement-new-label", "a replacement mechanism gets a new label",
+     [r"a replacement mechanism gets a new label"]),
+    ("component-mechanism-not-location", "a label names a mechanism, never a location",
+     [r"a label names a mechanism, never a location"]),
+    ("component-lifecycles", "remove retires; replace retires + fresh label; narrow/accept retain at 0",
+     [r"removed .{1,3} the label retires",
+      r"replaced .{1,3} the old label retires and the replacement gets a new label with a fresh streak",
+      r"narrowed .{0,90} retained and its streak resets to 0",
+      r"accepted-risk\) .{1,3} retained, streak reset to 0"]),
+    ("component-retire-vs-reset", "retirement is explicit and persisted; absence only resets",
+     [r"retirement is explicit and persisted; absence is only a reset",
+      r"retired: <label> \(<why>\)"]),
+    ("component-one-observation", "one pass is one observation per label",
+     [r"one pass is one observation"]),
+    ("component-low-excluded", "LOW findings never count toward a streak",
+     [r"low findings never count"]),
+    ("component-failed-skips", "a FAILED-lens pass neither counts nor resets",
+     [r"failed lens after retry is skipped for streak purposes"]),
+    ("component-threshold-literal", "the threshold is a literal in each SKILL.md",
+     [r"the cluster threshold, \d+,"]),
+    ("component-summary-fields", "schema-2 rows carry observation/components/streaks/retired/cards",
+     [r"observation", r"components", r"streaks", r"retired", r"cards", r"counts, not booleans"]),
 
     # --- accepted-risk disposition + lifecycle (v2.4 Phase 1 port) --------
     # `iterate-review` shipped this in v2.3.0; `iterate-plan` gained it in

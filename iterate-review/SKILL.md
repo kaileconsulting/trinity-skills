@@ -340,8 +340,10 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     ### Findings
 
     1. **<title>** — <severity> · lens: <lensid(s)>: <description>
-       → Editor: <incorporated|skipped|disputed|accepted-risk (AR-<n>)|register-match (RR-<n>, entry-digest <hash>)> — <reasoning, written by the editor when folding> [introduced_by_pass: <N | null>]
+       → Editor: <incorporated|skipped|disputed|accepted-risk (AR-<n>)|register-match (RR-<n>, entry-digest <hash>)> — <reasoning, written by the editor when folding> [introduced_by_pass: <N | null>] [component: <label>]
     2. ...
+
+    retired: <label> (<why>)   <!-- one line per component label retired this pass; omit when none -->
 
     ### Code corrections applied
 
@@ -386,6 +388,85 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     (the issue #6 decision it feeds): no guardrail, checkpoint, or budget
     in this skill consults `introduced_by_pass`, and none may until that
     issue is resolved.
+
+    **`[component: <label>]` — the mechanism a finding targets, per
+    finding.** Beside `introduced_by_pass`, every merged finding's
+    `→ Editor:` line carries a short, stable slug naming the *mechanism*
+    the finding targets — a guard, a lock, a recovery path, a classifier —
+    chosen at the same fold-time judgment moment, while the causal chain
+    is freshest. Labeling rules:
+    - **Same mechanism, same label**, regardless of how the finding is
+      worded or which lens raised it. Six findings with six different
+      titles on one SQL classifier are all `get-lock-sql-classifier`.
+    - **A replacement mechanism gets a new label.** When a fold (or a
+      decision card) replaces a mechanism with a different one, the
+      replacement starts a fresh streak under its own label; reusing the
+      old label would carry the dead mechanism's history onto it.
+    - **A label names a mechanism, never a location.** A file, hunk or
+      line range may *cite* it, but code moves while the mechanism stays
+      the same, so location never *defines* identity; unrelated mechanisms
+      that happen to share a file get separate labels.
+    - **Label lifecycles follow what happened to the mechanism.** *Removed*
+      → the label **retires**. *Replaced* → the old label retires and the
+      replacement gets a **new label with a fresh streak**. *Narrowed* (kept,
+      with a smaller surface) by a human decision → the label is
+      **retained** and its streak **resets to 0**. A risk accepted on it
+      (`accepted-risk`) → **retained**, streak **reset to 0**; the `AR-<n>`
+      lifecycle owns only that finding, so a later HIGH/MEDIUM merged
+      finding on the label is an ordinary observation. An ordinary fold
+      changes nothing: the streak keeps counting.
+    - **Retirement is explicit and persisted; absence is only a reset.**
+      When a component leaves the review's scope (a chunk boundary drops
+      it, a fold deletes it), write `retired: <label> (<why>)` in that
+      pass's HISTORICAL block; a resumed session reconstructs identity from
+      that record. A retired label is never reused. A pass on which a label
+      merely draws no HIGH/MEDIUM finding resets its streak and nothing
+      more.
+    - **When uncertain, use the file or function name** the finding cites.
+      Under-clustering is the conservative error, but its cost is not
+      bounded to one pass — persistent label drift can hide a streak
+      indefinitely — so reuse an existing label whenever the mechanism is
+      genuinely the same.
+    - `code_corrections` are not tagged; only merged findings count.
+
+    **Component streak.** A label's streak counts **consecutive completed
+    passes** on which it appears on at least one HIGH or MEDIUM merged
+    finding. **One pass is one observation**, however many findings on the
+    label it carries. **LOW findings never count**: a pass on which the
+    label appears only on LOW findings, or not at all, resets its streak to
+    0. A pass with a `FAILED` lens after retry is **skipped** for streak
+    purposes — it neither counts nor resets (a lens that didn't run says
+    nothing about the component) — though its findings are still
+    dispositioned normally and any retirement recorded on it still
+    persists. The committed record is the pass log, never the state file.
+    A streak reaching **the cluster threshold, 3,** marks the label a
+    simplification candidate. This threshold is stated here as a literal
+    because a copied install of this skill has no `tools/`; the counting
+    semantics are pinned by `../tools/cluster_tracker.py`, whose
+    development-side `CLUSTER_N` must equal this number (and
+    `iterate-plan`'s), which `../tools/check-cluster-streak.py` enforces.
+
+    *Worked example* (impersonation-c1b, an 11-pass review; the same
+    sequence is a fixture in `check-cluster-streak.py`):
+
+    | Pass | Merged HIGH/MEDIUM findings by label | Streaks after the pass |
+    |---|---|---|
+    | 1 | — | — |
+    | 2 | `account-fallback` HIGH | `account-fallback` 1 |
+    | 3 | `reload-guard` HIGH + MEDIUM (two findings, one observation) | `account-fallback` 0 · `reload-guard` 1 |
+    | 4 | `reload-guard` HIGH | `reload-guard` 2 |
+    | 5 | `reload-guard` MEDIUM | `reload-guard` **3** — reaches the cluster threshold |
+    | 6 | `reload-guard` MEDIUM | `reload-guard` 4 |
+    | 7 | `reload-guard` MEDIUM; the fold replaces the guard with in-memory recovery → `retired: reload-guard (replaced by in-memory-recovery)` | `in-memory-recovery` 0 |
+    | 8 | `in-memory-recovery` HIGH | `in-memory-recovery` 1 |
+    | 9 | `in-memory-recovery` HIGH | `in-memory-recovery` 2 |
+    | 10 | `in-memory-recovery` HIGH | `in-memory-recovery` **3** |
+    | 11 | — | `in-memory-recovery` 0 |
+
+    The redesign actually came at pass 7; the guard's streak first
+    reached the threshold at pass 5. The replacement's new label is what
+    lets its own streak form on passes 8–10 instead of inheriting the
+    guard's.
 
 13. **Recompute pass log content.** The pass log now reflects the latest pass for subsequent passes' `=== PRIOR PASSES ===` context.
 
@@ -441,7 +522,7 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
       "final_action": "<converged|aborted|once-mode-exit>",
       "started_at": "<ISO timestamp of pass 1>",
       "completed_at": "<ISO timestamp of final action>",
-      "summary_schema": 1,
+      "summary_schema": 2,
       "scope_class": "<production|non-production, per §3's setup-time classification>",
       "passes": [
         {
@@ -453,7 +534,24 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
           "dispositions": {
             "incorporated": "<int>", "skipped": "<int>", "disputed": "<int>",
             "accepted-risk": "<int>", "register-match": "<int>"
-          }
+          },
+          "observation": "<bool -- true when every selected lens completed; false when any lens was FAILED after retry>",
+          "components": {
+            "<label>": {"worst_severity": "<HIGH|MEDIUM|LOW>", "findings": "<int>", "fold_caused": "<int>"}
+          },
+          "streaks": {"<label>": "<int -- committed streak at the end of this pass>"},
+          "retired": ["<label retired this pass>"],
+          "cards": [
+            {
+              "type": "simplification",
+              "component": "<label>",
+              "streak_at_fire": "<int>",
+              "findings_in_streak": "<int>",
+              "fold_caused_in_streak": "<int>",
+              "chosen": "<remove|narrow|replace|fold-once-more|accept-risk|pending|aborted>",
+              "reason": "<premature|deliberate|null>"
+            }
+          ]
         }
       ],
       "confirmed_accepted_risks": [
@@ -467,12 +565,12 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     }
     ```
 
-    **Per-pass summary (`summary_schema: 1`) — the data half of issue #6,
+    **Per-pass summary (`summary_schema: 2`) — the data half of issue #6,
     shared with `iterate-plan`.** Written at Converge, Abort, and
     once-mode-exit alike:
-    - `summary_schema: 1` — versions this row shape so a future change
-      (e.g. `iterate-plan`'s Phase 1 proportionality port) populates
-      existing keys rather than reshaping the row.
+    - `summary_schema: 2` — versions this row shape. Schema 2 is schema 1
+      plus the component fields below, additively; a schema-1 file still
+      reads, with the missing fields as empty (`cards` as `[]`).
     - `scope_class` — this run's `production`/`non-production`
       classification (§3, computed once at setup). The field exists in
       both skills' schemas — `iterate-plan`'s is always `null`, since it
@@ -483,10 +581,27 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
       object is a **fixed key set present in both skills' rows**:
       `incorporated`, `skipped`, `disputed`, `accepted-risk`,
       `register-match`, every key always an int, zero when unused.
+    - Component fields per row (schema 2): `observation` — `true` when
+      every selected lens completed, `false` when any lens was `FAILED`
+      after retry, read from the block's Lens run summary line (this is
+      what tells a skipped pass from a quiet one, which the verdict alone
+      cannot); `components` — one entry per label on that pass's merged
+      findings, all severities, with `worst_severity`, `findings` and
+      `fold_caused` as **counts**, not booleans, so mixed provenance on one
+      label is visible; `streaks` — each tracked label's committed streak
+      at the end of the pass (retired labels drop out); `retired` — labels
+      retired on that pass; `cards` — one row per simplification card
+      presented that pass (`type`, `component`, `streak_at_fire`,
+      `findings_in_streak`, `fold_caused_in_streak`, `chosen`, `reason`),
+      `[]` when none.
 
       Rows are **derived from the pass log** — which remains the durable
       authority — by a deterministic, idempotent procedure, never
-      hand-authored. **Abort produces the array exactly as Converge
+      hand-authored. The component fields derive from the same blocks: `components`
+      from the `[component: <label>]` tags, `retired` from the `retired:`
+      lines, `observation` from the Lens run summary, `cards` from the
+      `### Decision cards` entries, and `streaks` by replaying the
+      component-streak rules (step 12) over the blocks in pass order. **Abort produces the array exactly as Converge
       does**, covering every pass that completed before the abort. One
       stated limitation: a run interrupted before reaching Converge,
       Abort, or once-mode-exit has no state-file row at all — it's

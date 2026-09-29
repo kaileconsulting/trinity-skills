@@ -14,6 +14,7 @@ Usage:
 from __future__ import annotations
 
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -22,8 +23,35 @@ from cluster_tracker import (  # noqa: E402
     CLUSTER_N, advance, initial_state, observation, run,
 )
 
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SKILLS = ("iterate-plan", "iterate-review")
+
 FAILED = ("failed",)
 QUIET = ("findings", {})
+
+# Every place a SKILL.md states the threshold uses one of these phrasings,
+# so the literal is findable; emphasis/backticks are stripped first.
+THRESHOLD_RX = re.compile(r"(?<!one below )the cluster threshold, (\d+),")
+BELOW_RX = re.compile(r"one below the cluster threshold, (\d+),")
+
+
+def threshold_problems(skill_texts, n):
+    """Return a list of problems with the threshold literals across
+    `{skill: SKILL.md text}` against the development constant `n`: each
+    file must state it at least once, every literal must equal `n` (and
+    every "one below" literal `n - 1`), which also makes the files agree."""
+    problems = []
+    for skill, raw in skill_texts.items():
+        text = re.sub(r"\s+", " ", raw.replace("*", "").replace("`", ""))
+        found = [int(x) for x in THRESHOLD_RX.findall(text)]
+        below = [int(x) for x in BELOW_RX.findall(text)]
+        if not found:
+            problems.append(f"{skill}: no 'the cluster threshold, <n>,' literal")
+        problems += [f"{skill}: threshold literal {v} != CLUSTER_N {n}"
+                     for v in found if v != n]
+        problems += [f"{skill}: 'one below' literal {v} != CLUSTER_N-1 {n - 1}"
+                     for v in below if v != n - 1]
+    return problems
 
 
 def f(**labels):
@@ -69,8 +97,27 @@ def main() -> int:
         if got != want:
             failures.append(f"{label}: got {got!r}, want {want!r}")
 
-    check("CLUSTER_N is 3 (the SKILL.md literals are asserted separately)",
-          CLUSTER_N, 3)
+    check("CLUSTER_N is 3", CLUSTER_N, 3)
+
+    # -- the deployed threshold: a literal in each SKILL.md ------------------
+    texts = {}
+    for skill in SKILLS:
+        with open(os.path.join(REPO, skill, "SKILL.md"), encoding="utf-8") as fh:
+            texts[skill] = fh.read()
+    check("both SKILL.md threshold literals equal CLUSTER_N (and each other)",
+          threshold_problems(texts, CLUSTER_N), [])
+    # teeth: the assertion must fail on drift, not just pass on agreement
+    check("teeth: a literal that disagrees with CLUSTER_N is reported",
+          len(threshold_problems(
+              {"a": "the cluster threshold, **3**,", "b": "the cluster threshold, 4,"},
+              3)), 1)
+    check("teeth: a file with no literal is reported",
+          threshold_problems({"a": "no threshold here"}, 3),
+          ["a: no 'the cluster threshold, <n>,' literal"])
+    check("teeth: a wrong 'one below' literal is reported",
+          len(threshold_problems(
+              {"a": "the cluster threshold, 3, and one below the cluster threshold, 1,"},
+              3)), 1)
 
     # -- basic counting ------------------------------------------------------
     check("first HIGH/MEDIUM pass counts as 1",
