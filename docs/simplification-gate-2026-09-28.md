@@ -173,7 +173,7 @@ New: `tools/cluster_tracker.py`, `tools/check-cluster-streak.py` (wired into `to
 - The "no guardrail may consult `introduced_by_pass`" sentence is *still present* at the end of Phase 0: this phase collects, it does not gate.
 
 **Iterate-review:** YES (rationale: touches the fold path in both skills and adds a fixture-pinned tracker tool; wrong tagging rules silently under- or over-count streaks)
-**Status:** in progress — built 2026-09-29 (`056f971`, `adf983c`, `62c1eb7`); `check-all.sh` green; iterate-review pending
+**Status:** reviewed — built 2026-09-29 (`056f971`, `adf983c`, `62c1eb7`); iterate-review converged at pass 2 (1 HIGH folded in `5cc566f`: tracker outcomes split into mechanism events vs card answers, narrow/accept-risk resets card-answer-only; 1 wording correction in `9083cdf`); pass log `docs/reviews/code-review-branch-kyle-simplification-gate.md`
 
 ### Phase 1 — Simplification decision card + checkpoint wiring (~5h)
 **Deliverables:**
@@ -296,16 +296,14 @@ the tooling will populate them.
 
 ## Review checkpoints
 
-<!-- TOOLING-MAINTAINED by iterate-review for multi-phase plans.
-Updated automatically on each iterate-review pass. Single-page view of
-where each phase stands in the review lifecycle.
+<!-- Maintained by hand in v1 (iterate-review's "Using in plan-driven
+workflows"). Single-page view of where each phase stands. -->
 
 | Phase | Iterate-review | Status | Last pass | Pass log |
 |-------|----------------|--------|-----------|----------|
-| Phase 0 | NO  | n/a | n/a | n/a |
+| Phase 0 | YES | reviewed — converged 2026-09-29 | pass 2 (APPROVE ×3) | `docs/reviews/code-review-branch-kyle-simplification-gate.md` |
 | Phase 1 | YES | not started | — | — |
-| Phase 2 | CONDITIONAL | not started | — | — |
--->
+| Phase 2 | NO | not started | — | — |
 
 ## Pre-flight review pass (the editor, YYYY-MM-DD) [HISTORICAL]
 

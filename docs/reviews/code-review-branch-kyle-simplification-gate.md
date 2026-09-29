@@ -25,7 +25,7 @@
 
 Diff captured at 2026-09-29 12:05; head SHA `6e76679`.
 
-## Pass 2 — 2026-09-29 12:24 [IN PROGRESS]
+## Pass 2 — 2026-09-29 12:24 [HISTORICAL]
 
 **Scope:** branch · **Diff size:** 2536 lines · **Scope class:** production · **Verdict:** APPROVE (worst-of: senior-dev APPROVE, security APPROVE, qa APPROVE; no FAILED lens) · **Posture:** used docs/simplification-gate-2026-09-28.md · **Lenses:** senior-dev, security, qa
 
@@ -48,3 +48,7 @@ Diff captured at 2026-09-29 12:05; head SHA `6e76679`.
 ### Diff snapshot reference
 
 Diff captured at 2026-09-29 12:20; head SHA `65a8367`.
+
+### Checkpoint
+
+APPROVE reached (loop mode stops). No `AR-` items, no `register-match`, no FAILED lens, no pending folds; the one correction is a three-line wording fix, suite green at `9083cdf`. HIGH+MEDIUM trajectory 1 → 0. Component streaks: `cluster-tracker-lifecycle-events` 1 → 0 (no label near the cluster threshold). **Converged by Kyle 2026-09-29** (Phase 0 of `docs/simplification-gate-2026-09-28.md`).
