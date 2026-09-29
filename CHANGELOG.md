@@ -1,5 +1,128 @@
 # Changelog
 
+## 2.5.0 — unreleased — the simplification gate
+
+<!-- FINALIZE AT MERGE: the date, the Phase 1 review's trajectory and
+closing pass count, and any pass-5+ changes. Kept as a comment so the
+pre-merge doc sweep cannot miss it. -->
+
+Plan: `docs/simplification-gate-2026-09-28.md` (design converged after 5
+`iterate-plan` passes, 5 → 3 → 3 → 2 → 0 HIGH+MEDIUM, 13 findings, 7 of
+them fold-caused). **Closes
+[issue #6](https://github.com/kaileconsulting/trinity-skills/issues/6)**,
+whose data-gated revisit condition was met: 71 instrumented reviews in a
+downstream repo, 408 findings annotated with `introduced_by_pass`, 37%
+fold-caused.
+
+**The failure mode.** When a loop keeps finding fault with the *same
+component* pass after pass, each fold patching one more edge case, the
+design is wrong, not the wording. The HIGH+MEDIUM stall guardrail can't see
+it: every fold produces a new, distinct finding, so the count keeps moving.
+In six September loops (8, 11, 12 and 16 passes among them) every escape
+came from the human saying "stop refining and simplify" from outside the
+loop. The two loops that ran under a written clustering rule (a repo
+playbook paragraph adopted 2026-09-25) converged in 4 and 5 passes. This
+release moves that rule into the skills.
+
+**What was deliberately not built:** issue #6's original framing, a stop
+condition on fold-provenance itself. Fold-caused findings are sometimes
+load-bearing (v2.4.0's own review showed it), so provenance is shown on the
+card as evidence and never used as a trigger.
+
+### Added (Phase 0 — component tags + streak tracking, the data half)
+
+- **Every merged finding carries `[component: <label>]`** beside
+  `[introduced_by_pass: N]`, in both loop skills, under written labeling
+  rules: same mechanism, same label, whatever the wording or lens; a
+  replacement mechanism gets a new label; a label names a mechanism, never
+  a location (file, hunk, D-number); retirement is explicit and persisted
+  (`retired: <label> (<why>)`), while absence only resets.
+- **A component streak**: consecutive completed passes on which a label
+  draws at least one HIGH/MEDIUM merged finding. One observation per pass;
+  LOW never counts; a `FAILED`-lens pass is skipped. The threshold (**3**)
+  is a literal in each SKILL.md, because a copied install has no `tools/`.
+- **`tools/cluster_tracker.py` + `tools/check-cluster-streak.py`**: a
+  reference implementation of the counting semantics, in the pattern of
+  `freeze_tracker.py`, fixture-tested down to the impersonation-c1b review
+  end to end (cards at passes 5, 6, 7 and 10). The checker also asserts
+  both SKILL.md threshold literals equal `CLUSTER_N`, with teeth tests.
+- **State summaries move to `summary_schema: 2`**, additively: per pass
+  `observation`, `components` (counts, not booleans), `streaks`, `retired`,
+  `cards`. Schema-1 files still read. `tools/provenance-recipe.jq` reads
+  both and adds `cluster_hits`, the card outcome mix, the `premature`
+  false-positive rate and the pass counts of card-bearing runs, taking the
+  threshold as `--arg n` rather than assuming it.
+
+### Hardened (Phase 0's 2-pass review — APPROVE×3 at pass 2)
+
+HIGH+MEDIUM 1 → 0. The one finding: the tracker accepted streak resets
+only as card answers while the prose applied them to any fold. The fix
+split outcomes into **mechanism events** (retire, replace: facts about the
+code, recordable on any pass) and **card answers** (remove, narrow,
+accept-risk, fold-once-more, split-plan). It also closed a gap the prose
+had opened: an editor's own `accepted-risk` *proposal* would have reset a
+streak and deferred the card with no human decision. Only a human's answer
+on the card resets it now.
+
+### Added (Phase 1 — the simplification card)
+
+- **The simplification card, the sixth named human-judgment moment in both
+  skills.** It fires at fold time, before the first fold on a label whose
+  candidate streak (committed record + this pass) reaches 3, and pauses
+  that label's fold and the loop until answered. It fires again on every
+  further pass after *fold once more*. Checkpoint lifecycle events never
+  count as observations.
+- **Required content, or the card is malformed and not presented**: the
+  streak's findings with pass, lens, severity and fold-provenance; and,
+  for **every** simplification option offered, the guarantee lost, the
+  layer that still covers it (or "none"), and a per-finding accounting of
+  what *that* operation resolves.
+- **Mandatory options**: *remove the mechanism* on every card (recommended
+  or first alternative) and *fold once more* on every card, **never
+  recommended**. The escape-hatch slot is *accept the risk* in
+  `iterate-review` (omitted on trust-boundary code) and *split the plan* in
+  `iterate-plan`.
+- **Dispositions follow the chosen operation's persisted accounting, never
+  as a batch**: resolved findings become `incorporated (by
+  simplification)`; the rest keep their ordinary path and are never
+  incorporated by association. *Split the plan* is a **scope transfer**:
+  the resolution is recorded first, then findings are carried verbatim to
+  the new plan's `## Carried findings`, then recorded `incorporated (moved
+  to <stub>)` here.
+- **A cluster section on the max-pass cap and stall hand-backs**: recent
+  HIGH/MEDIUM findings grouped by component, labels side by side so drift
+  is visible, and status lines for labels one pass from a card and for
+  cards already answered.
+- **The v2.4 reservation is lifted, in every copy**: component-based
+  triggering is the only trigger, and provenance is card evidence and
+  measurement only. `tools/check-parity.py` gains a **FORBIDDEN** check
+  (phrases that must be absent) that pins the old wording's removal and
+  the one deliberate asymmetry: split-the-plan exists only in
+  `iterate-plan`.
+- **iterate-plan resumes an unfinished pass.** Pass blocks carry `[IN
+  PROGRESS]` until their last write (ported from `iterate-review`), and
+  Setup resumes such a block under its own number before any fan-out. This
+  gap predated the card for every card type; the card made it load-bearing.
+- Worked examples from two real reviews: the CSRF code review's sign-in
+  bootstrap race, where the card fires at pass 3 recommending the removal
+  the human actually chose (this release's dry read-through), and the CSRF
+  plan review's SQL classifier, where the card fires at pass 6 against the
+  real pass-10 removal, with a *split the plan* variant.
+
+### Hardened (Phase 1's review — in progress)
+
+<!-- FINALIZE AT MERGE -->
+- **The split-the-plan outcome had no disposition** that let the loop
+  resume, and then, once given one, **mutated both plans before recording
+  the human's choice**. Now it is a scope transfer with the resolution
+  written first. Both came from folds (passes 3 and 4) and landed on the
+  same label; `split-plan-outcome` reached a streak of 2, the gate
+  measuring its own review.
+- **Plan-side resume detection** went from "only the exit-time state file"
+  to "any pending slot" to the `[IN PROGRESS]` tag, the last because slots
+  can all be filled while retirements or checkpoint cards are still
+  unwritten (`plan-resume-entry`, also at 2).
+
 ## 2.4.0 — 2026-08-21 — fold-chaining fixes + proportionality parity
 
 Plan: `docs/archive/trinity-v2-4-2026-08-21.md` (design converged after 3

@@ -54,13 +54,14 @@ Every folded finding records which lens raised it, so you can measure whether th
 
 ## Loop mode
 
-Both skills accept `--loop` (alias `--until-approve`), and every checkpoint offers `(L)oop from here`. Loop mode **automates `Continue` only — never `Converge`.** It auto-continues through REVISE passes and halts, handing back to you, on any of five guardrails:
+Both skills accept `--loop` (alias `--until-approve`), and every checkpoint offers `(L)oop from here`. Loop mode **automates `Continue` only — never `Converge`.** It auto-continues through REVISE passes and halts, handing back to you, on any of six guardrails:
 
 - **APPROVE reached** — stops so you make the Converge call.
-- **Max-pass cap** — default 6, `--max-passes=N`, a fresh budget per activation.
+- **Max-pass cap** — default 6, `--max-passes=N`, a fresh budget per activation. The hand-back groups recent findings by component (see [the simplification gate](#the-simplification-gate)).
 - **BLOCK verdict.**
-- **Non-convergence** — the merged HIGH+MEDIUM count fails to strictly decrease across two consecutive transitions.
+- **Non-convergence** — the merged HIGH+MEDIUM count fails to strictly decrease across two consecutive transitions. Same component grouping on the card.
 - **A fold needing human judgment** — an un-incorporated HIGH, or an open question only you can settle (see below).
+- **A simplification card** — one component has drawn HIGH/MEDIUM findings on three consecutive passes (see [the simplification gate](#the-simplification-gate)).
 
 Every auto-continued pass still appends its HISTORICAL block, so the loop is unattended but not silent.
 
@@ -75,6 +76,17 @@ A reviewer that raises a question classifies it by **who can settle it**, and th
 | `needs_human` | no fact settles it — your preference, risk tolerance, or product judgment | **halts**, always |
 
 Without this, the guardrail read "a question the editor can't answer from the plan + repo context," which lumped all three together: an unattended loop would stop to ask something one file read would have answered. **When a reviewer is unsure, the contract requires `needs_human`** — an unnecessary escalation costs a question, while mislabeling your decision as machine-resolvable invites a fabricated answer. Each label carries a one-line `why` so it can be audited rather than trusted, and the editor overrides a label it doesn't believe.
+
+## The simplification gate
+
+The stall guardrail counts findings, and that misses the most expensive failure: a loop that keeps finding fault with **the same mechanism**, pass after pass, each fold patching one more edge case. The count keeps moving, because every fold produces a new, distinct finding, so the counter sees progress where a human sees churn. In practice the escape always came from you, outside the loop, saying "stop refining and simplify." Since 2.5.0 both skills ask that question themselves.
+
+- **Every finding is tagged with the mechanism it targets** (`[component: <label>]`), chosen by the editor at fold time: same mechanism, same label, however it's worded or whichever lens raised it; a replacement mechanism gets a new label.
+- **When one component draws HIGH or MEDIUM findings on three consecutive passes**, the editor stops before folding the third and shows you a **simplification card**. It recommends removing, narrowing or replacing the mechanism. It states what guarantee each option loses and which remaining layer still covers it, and which of the streak's findings each option actually resolves. *Remove the mechanism* is always offered. *Fold once more* is always offered too, and never recommended.
+- **It only presents.** Nothing ends a loop, deletes a mechanism, or drops a finding because of a streak. The worst case of an early card is one answer of *fold once more (premature)*, and those answers are counted: if more than one in three early cards is called premature, the threshold moves to 4.
+- **Fold-provenance is shown as evidence, not used as a trigger.** Each card lists how many of the streak's findings a previous fold caused, but a fold-caused finding is sometimes the important one, so it never triggers anything by itself ([issue #6](https://github.com/kaileconsulting/trinity-skills/issues/6)).
+
+The rule came from a downstream repo's playbook, where it ended two long loops in 4 and 5 passes. Replayed against the history, it presents the card at pass 3 of a code review whose human made the same call at pass 3, and at pass 6 of a plan review that ground on to pass 10 before removing the mechanism. Both are worked examples under `examples/merge/`.
 
 ## Risk posture & proportionality
 
@@ -238,7 +250,9 @@ Its output is the live count of what's covered — deliberately not restated her
 |---|---|
 | `iterate-review/examples/selection/check-selection.py` | A **second implementation** of the deterministic selection rules, run against a set of golden diff fixtures. The rules claim any two implementations agree; until this existed there was one, and it was a language model reading prose. |
 | `tools/check-examples.py` | Every fixture validates against its skill's schema — and fixtures whose *names* make a claim have that claim verified. |
-| `tools/check-parity.py` | Every shared-machinery rule is present in **both** skills' per-pass loops (semantic parity, not byte-identity: prose may differ, rules may not) — and the designated shared runner files (`runner_shared.py`, `prune-state`) are **byte-identical** across both `bin/` directories, by content hash. |
+| `tools/check-parity.py` | Every shared-machinery rule is present in **both** skills' per-pass loops (semantic parity, not byte-identity: prose may differ, rules may not); phrases that must be **absent** stay absent (a lifted rule's old wording, the sibling side of a deliberate asymmetry); and the designated shared runner files (`runner_shared.py`, `prune-state`) are **byte-identical** across both `bin/` directories, by content hash. |
+| `tools/check-cluster-streak.py` | The simplification gate's streak counting (`cluster_tracker.py`), boundary case by boundary case, including a real 11-pass review end to end — and that the threshold written into each SKILL.md matches the development constant. |
+| `tools/check-provenance-recipe.py` | The shared `jq` analytics recipe reproduces its tallies from sample state files, reading schema 1 and 2 side by side, including the simplification-card measures. |
 | `tools/check-runners.py` | The iterate-review runner scripts' promised behavior: byte-deterministic composition, exit contracts, lock lifecycle, pass-log resolution, prune safety — against a copied install with a fake `codex`. |
 | `tools/check-plan-runners.py` | The iterate-plan port's adapted behavior: section extraction, always-all selection, `--plan`/`--note` boundaries, plus a wiring smoke over the shared contracts. |
 | `tools/test-checkers.py` | Tests that the checkers above actually fail when they should. |

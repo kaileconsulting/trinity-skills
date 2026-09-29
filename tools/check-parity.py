@@ -136,7 +136,7 @@ RULES: list[tuple[str, str, list[str] | dict[str, list[str]]]] = [
     ("loop-never-converges", "loop mode never auto-converges",
      [r"never auto-converges"]),
 
-    # --- loop-mode guardrails (all five) ---------------------------------
+    # --- loop-mode guardrails (five here; the sixth, the simplification card, is pinned by card-halts-fold) ---
     ("guard-approve", "guardrail: APPROVE reached halts the loop",
      [r"approve reached"]),
     ("guard-max-passes", "guardrail: max-pass cap, default 6, overridable",

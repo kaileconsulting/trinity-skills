@@ -201,7 +201,7 @@ New: `tools/cluster_tracker.py`, `tools/check-cluster-streak.py` (wired into `to
 - Closeout checklist below fully checked; plan archived.
 
 **Iterate-review:** NO (rationale: docs-only; no code surface to review)
-**Status:** not started
+**Status:** drafted 2026-09-29 while Phase 1's review was blocked on the Codex limit (CHANGELOG 2.5.0 marked `unreleased` with FINALIZE comments, README guardrails + simplification-gate section + dev-checks rows, tools/README, issue #6 comment drafted in Closeout); re-sweep after Phase 1 converges
 
 
 ## Acceptance criteria
@@ -271,6 +271,22 @@ Now, because: the data gate on issue #6 is met; the prose rule is live in Resear
   mark closed inline.
 - [ ] Move plan to archive: `git mv docs/<plan>.md docs/archive/<plan>.md`.
 - [ ] Final commit with a "shipped" message referencing this plan.
+- [ ] Post the issue #6 closing comment below (update the ship commit and the archived path), then close #6.
+- [ ] ResearchLogix_v2 follow-up (done in that repo, not here): reduce `docs/hardening-playbook.md` §7's clustering paragraph to a pointer at the skills once 2.5.0 is installed there.
+- [ ] Next up: issue #10 (review-diff exclusions), drafted as its own plan while this PR was blocked on the Codex limit.
+
+<!-- DRAFT — issue #6 closing comment (post at merge):
+
+Closed by 2.5.0 (<ship commit>; plan archived at `docs/archive/simplification-gate-2026-09-28.md`).
+
+**Built:** a component-clustering stop *question*, not a provenance stop condition. Every finding is tagged with the mechanism it targets; when one component draws HIGH/MEDIUM findings on 3 consecutive completed passes, both loop skills pause before folding and present a simplification card: remove / narrow / replace, each with the guarantee lost, the covering layer, and a per-finding accounting. *Remove the mechanism* is always offered, as is *fold once more* (never recommended). `iterate-plan` offers *split the plan* as its escape hatch. The card is always a card: no auto-stop, no auto-simplify. Your three carried constraints hold: always a card, delete-the-mechanism and split-the-plan both offered, never an auto-stop.
+
+**Deliberately not built:** the original framing, "halt when consecutive passes produce only fold-caused findings." Fold-caused findings are sometimes load-bearing (the regression risk this issue named). `introduced_by_pass` is now *consumed*, but only as evidence on the card and in `tools/provenance-recipe.jq`'s measures, never as a trigger.
+
+**Measuring it:** `cluster_hits` in the recipe; the recorded rollback is threshold 3 → 4 if more than 1 in 3 of the first 10 resolved cards are answered *fold once more (premature)*.
+-->
+
+
 
 ## References
 
