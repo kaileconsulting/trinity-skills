@@ -98,9 +98,11 @@ the mechanism behind the stall has already been decided on.
 
 ## Variant — the same card answered *split the plan*
 
-The scope transfer's four writes, in order:
+The scope transfer's five writes, in order:
 
-1. `docs/get-write-lock-2026-09-24.md` is scaffolded with D4's decisions,
+1. The resolution, naming the destination, before anything changes:
+   `chosen: split the plan (→ docs/get-write-lock-2026-09-24.md)`.
+2. `docs/get-write-lock-2026-09-24.md` is scaffolded with D4's decisions,
    Q5–Q6, and:
 
 ```markdown
@@ -109,22 +111,26 @@ The scope transfer's four writes, in order:
 - **Comment lexing is underspecified at a security boundary** — MEDIUM · lens: architect · introduced_by_pass: 4 — <description verbatim>
 ```
 
-2. This plan's D4 is replaced by a one-line reference to the stub, and
+3. This plan's D4 is replaced by a one-line reference to the stub, and
    `## Out of scope` gains "GET write lock — its own plan,
    `docs/get-write-lock-2026-09-24.md` (split at pass 6)".
-3. `chosen: split the plan (…)`, then both findings:
+4. Both findings:
    `→ Editor: incorporated (moved to docs/get-write-lock-2026-09-24.md) — carried verbatim; the stub's first review must address it.`
    The HIGH is incorporated for every ledger, so the loop may continue —
    and it is not lost, because it is in the stub.
-4. `retired: get-lock-sql-classifier (split to docs/get-write-lock-2026-09-24.md, pass 6)`.
+5. `retired: get-lock-sql-classifier (split to docs/get-write-lock-2026-09-24.md, pass 6)`.
 
-Interrupted after write 1 but before write 3, the card still reads
-`(pending)` on disk, so a resumed session (Setup step 4's unfinished-pass
-check) re-presents it; if the answer is *split the plan* again, the stub
-and its carried findings already exist and are not written twice.
-Interrupted after write 3, it finds the resolution and both findings in
-`## Carried findings`, and writes the missing dispositions and the
-`retired:` line without re-presenting the card.
+The block stays `[IN PROGRESS]` throughout, and through the stall/cap
+checkpoint card that follows; it flips to `[HISTORICAL]` only after that
+card is answered. Resume, by interruption point (Setup step 4 finds the
+block `[IN PROGRESS]` in every case):
+
+| Interrupted after | On disk | A resumed session |
+|---|---|---|
+| the pending card, before an answer | `chosen: (pending)`, plans untouched | re-presents the card |
+| write 1 | resolution recorded, plans untouched | never re-presents; performs writes 2–5 |
+| write 3 | stub with carried findings; D4 gone from this plan | never re-presents; writes 4–5, copying nothing twice |
+| write 5 | every slot filled, no stall card yet | runs the checkpoint, writes and presents the stall card, then seals |
 
 ## What a wrong result looks like
 
@@ -137,6 +143,9 @@ Interrupted after write 3, it finds the resolution and both findings in
 | Finding 2 given its own patch after the removal | One implementation fold covers every finding the chosen operation resolves |
 | *accept the risk* on the card | `iterate-plan`'s card offers *split the plan* in that slot |
 | On split, the findings left with empty slots, or `skipped` | A split is a scope transfer: carried to the stub first, then `incorporated (moved to …)` |
-| On split, the findings `incorporated (moved to …)` but absent from the stub | The carry is write 1; the disposition may only follow it |
+| On split, the stub written before the resolution | The choice is recorded first, so no mutation sits under a `(pending)` card |
+| On split, the findings `incorporated (moved to …)` but absent from the stub | The carry is write 2; the disposition may only follow it |
+| After a split interrupted at write 3, the card re-presented | A resolved card is never re-presented; resume continues the recorded transfer |
+| Fresh fan-out after every slot is filled but before the stall card | The block is still `[IN PROGRESS]`; the tag, not the slots, marks the pass complete |
 | The cluster section still lists the classifier with a live streak of 3 | A removed label is retired; 3 is its streak at fire, shown on the card line |
 | The stall card's options changed by the cluster section | The section is information; it changes no guardrail's condition or outcome |

@@ -54,14 +54,15 @@ Optional flags:
 
    **Then, before any fan-out, check the plan for an unfinished pass** —
    the state file is written only at exit, so it can never show one.
-   Read the plan's last `## Codex review pass N` block: a decision card
-   still reading `chosen: (pending)`, a finding with an empty `→ Editor:`
-   slot, or a correction or question still reading `(pending)` means pass
-   N is unfinished. **Resume it under its own pass number** — re-present
-   each pending card, complete the remaining dispositions (reconciling
-   against the plan text first, so a fold already applied is recorded,
-   not re-applied), and finish its checkpoint — instead of starting pass
-   N+1. Every card type promises this resume; the simplification card
+   If the plan's last `## Codex review pass N` block is still tagged `[IN
+   PROGRESS]` (step 8), pass N is unfinished. **Resume it under its own
+   pass number** instead of starting pass N+1: re-present each `(pending)`
+   card, complete any empty `→ Editor:` slot or `(pending)` correction or
+   question (reconciling against the plan text first, so a fold already
+   applied is recorded, not re-applied), finish any resolved card's
+   remaining writes (a scope transfer, a `retired:` line), run the
+   checkpoint and write its cards if they are not there yet, and only
+   then flip the tag to `[HISTORICAL]`. Every card type promises this resume; the simplification card
    depends on it, since a fresh pass would bypass its pending card and
    leave its findings undispositioned without a human decision.
 
@@ -169,8 +170,8 @@ performed by the runner, deterministically.
    lens has run** (the plan-side analog of `iterate-review`'s own
    pre-fan-out exception for its malformed-posture card, scoped down to
    fit `iterate-plan`'s one-block-per-pass model): the instant `run-pass`
-   reports this abort, the editor opens this pass's HISTORICAL block
-   containing *only* the card — no `### Findings`, `### Verdict`, or
+   reports this abort, the editor opens this pass's block (tagged `[IN
+   PROGRESS]`, like every open block — step 8) containing *only* the card — no `### Findings`, `### Verdict`, or
    `### Lens run summary`, since none exist yet — with `chosen: (pending)`,
    per the usual two-phase persistence discipline (step 8). This is what
    makes the card resumable if the session is interrupted between the
@@ -762,11 +763,26 @@ performed by the runner, deterministically.
 
    Fold `plan_corrections` mechanically; incorporate HIGH/MEDIUM
    findings (skip/dispute only with explicit reasoning); LOW is informational.
-   Append a single HISTORICAL section for the whole pass, each finding tagged
-   with its originating **lens id(s)** and fold disposition:
+   Open a single section for the whole pass, each finding tagged with its
+   originating **lens id(s)** and fold disposition. **The block is tagged
+   `[IN PROGRESS]` from the moment it opens — right after step 7's merge,
+   before any fold, with every merged finding listed and its `→ Editor:`
+   slot empty — and flips to `[HISTORICAL]` as the last write of the
+   pass**, after every disposition, `retired:` line and correction, and
+   after step 10's checkpoint cards are written and answered. The tag, not
+   any single slot, is the pass-completion marker: a block still `[IN
+   PROGRESS]` is unfinished work however complete its slots look (the
+   same rule `iterate-review` step 12 uses). Within an open block, the
+   pending slots and `(pending)` cards say *where* to resume.
 
    ```markdown
    ## Codex review pass N — answers (YYYY-MM-DD) [HISTORICAL]
+
+   <!-- Tagged `[IN PROGRESS]` from the moment the block opens (right after
+   the merge) until the pass's last write — dispositions, `retired:` lines,
+   and the checkpoint's cards all recorded — then flipped to `[HISTORICAL]`.
+   A block still `[IN PROGRESS]` is an unfinished pass; Setup step 4
+   resumes it. -->
 
    ### Verdict
    APPROVE / REVISE / BLOCK   (worst-of; note any FAILED lenses)
@@ -1037,26 +1053,34 @@ performed by the runner, deterministically.
      summary's false-positive measure reads `premature` alone.
    - *split the plan* → a **scope transfer**, in this order, each write
      durable before the next:
-     1. the new plan stub is created (`create-plan` scaffolds it), with the
+     1. **the card's resolution is written first**, naming the destination:
+        `chosen: split the plan (→ <stub path>)` — the human's choice is on
+        disk before anything is changed, so no mutation ever sits under a
+        card that still reads `(pending)`;
+     2. the new plan stub is created (`create-plan` scaffolds it), with the
         component's decisions and open questions, and a `## Carried
         findings` section holding every same-label finding of this pass
         verbatim (title, severity, lens, description, `introduced_by_pass`)
         — the defect travels with the mechanism, and the new plan's first
         review must address each one;
-     2. this plan's text drops the mechanism's decisions, references the
+     3. this plan's text drops the mechanism's decisions, references the
         stub where they were, and gains an `## Out of scope` entry naming
         the stub;
-     3. the card's resolution is written, then each carried finding is
-        dispositioned here `incorporated (moved to <stub path>)` — the plan
-        edit that removed the mechanism from this plan *is* this plan's
-        fold, and the finding is not dropped, it is carried;
-     4. the label **retires** here (`retired:` line — the mechanism has left
+     4. each carried finding is dispositioned here `incorporated (moved to
+        <stub path>)` — only once its text is in the stub; the plan edit
+        that removed the mechanism from this plan *is* this plan's fold,
+        and the finding is not dropped, it is carried;
+     5. the label **retires** here (`retired:` line — the mechanism has left
         this plan's scope; the new plan tracks it from 0) and the loop
         resumes on what remains.
 
-     A resumed session completes a transfer from the first missing write:
-     a finding whose text is already in the stub's `## Carried findings`
-     is dispositioned without being copied twice. This is the shape every
+     A resumed session that finds a resolved split card in an `[IN
+     PROGRESS]` block **never re-presents it**: it continues the recorded
+     transfer from the first missing write — creates the stub if absent,
+     adds a finding to `## Carried findings` only if its text is not
+     already there, drops the decisions and adds the Out-of-scope entry if
+     this plan still carries them, then writes the missing dispositions and
+     the `retired:` line. This is the shape every
      split-off in the evidence took (a remainder named at a durable new
      home, the originating finding `incorporated`), with a plan stub as
      the home.

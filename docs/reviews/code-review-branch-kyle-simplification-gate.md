@@ -94,18 +94,37 @@ Diff captured at 2026-09-29 09:08; head SHA `bbcde58`.
 
 Both HIGHs incorporated via Kyle's cards; suite green. HIGH+MEDIUM trajectory 1 → 0 → 3 (a new phase's first pass; one non-decreasing transition, the stall needs two). Component streaks: `split-plan-outcome` 1, `plan-resume-entry` 1, `plan-fixture-02` 1 — none at one below the cluster threshold. Loop mode → **Continue** to pass 4 (auto-continued passes used: 1 of 6 in this activation).
 
-## Pass 4 — 2026-09-29 10:12 [IN PROGRESS]
+## Pass 4 — 2026-09-29 10:12 [HISTORICAL]
 
-**Scope:** branch (Phase 1 focus) · **Diff size:** 3851 lines · **Scope class:** production · **Verdict:** (pending) until the lens retries complete · **Posture:** used docs/simplification-gate-2026-09-28.md · **Lenses:** senior-dev, security, qa
+**Scope:** branch (Phase 1 focus) · **Diff size:** 3851 lines · **Scope class:** production · **Verdict:** REVISE (worst-of: senior-dev REVISE, security REVISE, qa REVISE — all via retry; no FAILED lens) · **Posture:** used docs/simplification-gate-2026-09-28.md · **Lenses:** senior-dev, security, qa
 
 ### Findings
 
-- (pending — no lens has returned)
+1. **Split mutates both plans before durably recording the human's choice** — HIGH · lens: senior-dev, security, qa (co-reported): the pass-3 scope transfer writes the stub and edits the original plan before the resolution write, so an interruption after write 2 leaves a removed mechanism under a card still reading `(pending)`; resume re-presents it as unanswered, and a different answer leaves a removal nobody authorized — contradicting the shared resolution-on-answer contract.
+   → Editor: incorporated — the transfer is now five writes with the **resolution first**, naming the destination (`chosen: split the plan (→ <stub path>)`), then stub + carried findings, plan edit + Out-of-scope entry, dispositions (only once a finding's text is in the stub), `retired:`. A resolved split card is never re-presented; resume continues the recorded transfer from the first missing write, copying nothing twice. Fixture 02's variant now walks all four interruption points in a table. Not design-shaped: a reordering inside the approved transfer that restores the shared contract. [introduced_by_pass: 3 — the pass-3 fold put the resolution third] [component: split-plan-outcome]
+2. **Plan resume detection misses unfinished work after the last disposition** — HIGH · lens: senior-dev, qa (co-reported): the pass-3 Setup check recognizes an unfinished pass only by pending cards or slots, so an interruption after every disposition is filled but before the `retired:` line, or before a required stall/cap card is written, leaves no signal; a fresh fan-out then skips the checkpoint, and a later decreasing count can erase the stall.
+   → Editor: incorporated (via the design-shaped-fold card below, Kyle: port the block tag) — iterate-plan pass blocks open `[IN PROGRESS]` right after the merge and flip to `[HISTORICAL]` as the pass's last write (after dispositions, `retired:` lines and the checkpoint's answered cards); the pre-fan-out register-card block opens the same way; the block template carries the rule. Setup step 4's predicate is now the tag: an `[IN PROGRESS]` last block is resumed under its own number, including finishing a resolved card's writes and running a checkpoint whose card was never written. Per-skill parity rule `block-tag-completion-marker` pins each skill's wording; `resume-unfinished-pass` tightened. Prose-only: no runner parses plan-block tags. [introduced_by_pass: 3 — the pass-3 fold made slots the only signal] [component: plan-resume-entry]
+
+### Code corrections applied
+
+- (none)
+
+### New questions Codex raised
+
+- (none)
+
+### Decision cards
+
+- **design-shaped-fold escalation** (finding 2 — a durable pass-completion marker in plan files): recommendation — port `iterate-review`'s block tag: a plan pass block opens `[IN PROGRESS]` right after the merge and flips to `[HISTORICAL]` as its last write, after retirements and the checkpoint's cards; Setup's predicate becomes "the last pass block is `[IN PROGRESS]`" (prose-only — no runner parses plan tags); alternatives — a closing `### Checkpoint` line written last, whose absence means unfinished; keep slot-based detection and add retirement + stall checks to it one by one; chosen: port the block tag (Kyle, 2026-09-29) — `[IN PROGRESS]` from merge to the pass's last write, Setup resumes any `[IN PROGRESS]` block.
 
 ### Lens run summary
 
-- senior-dev: failed (exit 1, empty stderr) · security: failed (exit 1, empty stderr) · qa: failed (exit 1, empty stderr). Direct probe: "You've hit your usage limit … try again at 12:03 PM." Each lens's one `run-lens` retry is **owed, not spent** — deferred until the limit resets, since a retry now would fail identically. Resume: retry the three lenses against this pass's diff (head `79852d8`), then merge into this block.
+- senior-dev: failed → **retry REVISE** · security: failed → **retry REVISE** · qa: failed → **retry REVISE**. First attempts hit the Codex usage limit ("try again at 12:03 PM"); each lens's one `run-lens` retry ran after the reset (debug responses `debug/20260929T162050787709Z-82601-f073ec76-senior-dev`, `…787708Z-82603-82ca2fc1-security`, `…787707Z-82605-244ab6ab-qa`).
 
 ### Diff snapshot reference
 
 Diff captured at 2026-09-29 10:12; head SHA `79852d8`.
+
+### Checkpoint
+
+Both HIGHs incorporated (one via Kyle's card); suite green. HIGH+MEDIUM trajectory 1 → 0 → 3 → 2 (strictly decreasing from pass 3). Component streaks: `split-plan-outcome` **2**, `plan-resume-entry` **2** — both at one below the cluster threshold, 2: one more HIGH/MEDIUM pass on either triggers the simplification card (this review is now exercising the gate it adds); `plan-fixture-02` 0. Loop mode → **Continue** to pass 5 (auto-continued passes used: 2 of 6).
