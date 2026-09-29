@@ -233,7 +233,7 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
 
     **Non-mechanisms — fold normally, no escalation:** guard clauses, error-handling and message fixes, test additions, bounded refactors within existing types. On a genuinely ambiguous case, use the signals above as a checklist; if none clearly apply and you're still unsure, err toward escalating (the same asymmetry as `needs_human` — an unnecessary card costs one decision, a missed one costs a mid-loop design commitment nobody approved).
 
-    **Outcome mapping** (this is the first of the five decision-card types — shared format below): *adopt the mechanism* → the fold proceeds this pass, updating the plan or posture too if the mechanism changes either; *cheaper alternative* (when one exists) → the alternative is folded instead, recorded as `incorporated (via alternative)`, and re-reviewed next pass (Codex hasn't seen its implementation yet); *accept the risk* → routes to the `accepted-risk` lifecycle below — **excluded from the card entirely** when the finding concerns code named as a trust boundary by `PF-shipbar` (checked both current-pass and base-revision, same dual-check as step 11's register-match trust-boundary gate, so a same-diff posture edit can't make this option available either); *discuss* → loop stays paused, no fold this pass.
+    **Outcome mapping** (this is the first of the six decision-card types — shared format below): *adopt the mechanism* → the fold proceeds this pass, updating the plan or posture too if the mechanism changes either; *cheaper alternative* (when one exists) → the alternative is folded instead, recorded as `incorporated (via alternative)`, and re-reviewed next pass (Codex hasn't seen its implementation yet); *accept the risk* → routes to the `accepted-risk` lifecycle below — **excluded from the card entirely** when the finding concerns code named as a trust boundary by `PF-shipbar` (checked both current-pass and base-revision, same dual-check as step 11's register-match trust-boundary gate, so a same-diff posture edit can't make this option available either); *discuss* → loop stays paused, no fold this pass.
 
     **New disposition: `accepted-risk`** — "real finding, disproportionate to this product's posture; not fixing." Requires a written rationale that references the posture via the dependency descriptor below — never a bare "not worth it."
 
@@ -271,7 +271,7 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     | register-match, all step-11 gates valid | satisfied | excluded | clear |
     | register-match, any gate broken/missing on recheck | treated as `reopened` | treated as `reopened` | **blocks** |
 
-    Accepting a risk therefore can't read as a stall (`proposed`/`confirmed` items leave the non-convergence count) while remaining impossible to converge past unconfirmed.
+    Accepting a risk therefore can't read as a stall (`proposed`/`confirmed` items leave the non-convergence count) while remaining impossible to converge past unconfirmed. **`incorporated (by simplification)`** — a finding a simplification card's chosen operation resolves, per that operation's per-finding accounting — is an `incorporated` in every ledger (and in the state summary's `incorporated` key), exactly like `incorporated (via alternative)`.
 
     **Decision cards — the shared contract for every human-judgment moment.** Whenever the loop hands back to the human with something needing judgment, it arrives in a fixed shape: (1) the editor's **recommendation**, with a one-line why; (2) **up to 3 genuine alternatives**, each with its trade-off (a target, not a hard minimum — see the cardinality rule below for the floor); (3) an always-available **discuss** path. Options are decisions, not descriptions — selecting any option other than *discuss* resumes the loop deterministically per that card type's outcome mapping, with no follow-up prose needed. *Discuss* is deliberately non-resuming: it transitions into a paused conversation, and when it concludes, the card is re-presented with the agreed direction as the new recommendation — "pick-one-resumes" governs every option except the one whose purpose is to pause.
 
@@ -281,26 +281,27 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
 
     **The card is never skipped, and the editor never auto-proceeds on the human's behalf — this holds even at zero listed alternatives, with no exception for design-shaped-fold escalations.** An earlier draft of this rule said a zero-alternative case could "proceed directly" without presenting anything — that was wrong, and dangerously so for design-escalation specifically: "adopt the mechanism" is very often the *only* legal continuation besides discuss in exactly this degenerate case, and skipping the card there would mean silently building an unapproved mechanism — precisely the outcome the whole escalation rule exists to prevent ("never happens silently," Hard rules). There is no card type and no cardinality for which presentation is optional; recommendation + discuss is the floor, not a trigger to bypass the human.
 
-    **Persistence and construction, uniformly across all five card types below:** the card is written to the pass log in **two phases**, because "before it is presented" and the log template's `chosen:` field can't both be satisfied by one write — there is no choice yet at presentation time.
+    **Persistence and construction, uniformly across all six card types below:** the card is written to the pass log in **two phases**, because "before it is presented" and the log template's `chosen:` field can't both be satisfied by one write — there is no choice yet at presentation time.
     1. **Pending write, before presentation.** Append the card with `chosen: (pending)` — recommendation, alternatives, and the item id, no outcome. This is the write that makes resume-after-interruption possible: a session that reads the log and finds a `(pending)` card re-presents it, unanswered, exactly as if the interruption hadn't happened.
     2. **Resolution write, once answered.** Update that same entry in place — replace `(pending)` with the actual `<option> (<one-line outcome>)`. A card found still `(pending)` on read is exactly the resume signal from step 1; a card with a real `chosen:` value is settled and never re-presented.
 
     **Context-sensitive omission** applies to both phases alike — an option whose transition is prohibited for this specific item is never displayed (every displayed option is a legal continuation, and omission only ever *reduces* the count, never risks exceeding it — see the cardinality rule above for the floor). In interactive sessions, present via the harness's structured-question mechanism (recommendation listed first and marked); in the pass log, the same card — including the `discuss` path — is recorded as text regardless of session type.
 
-    **The five named human-judgment moments and their outcome mappings** (design-shaped-fold escalation specified above; malformed posture source specified in step 9 — both under this same shared contract):
+    **The six named human-judgment moments and their outcome mappings** (design-shaped-fold escalation specified above; malformed posture source specified in step 9; the simplification card specified after the component-streak rules below — all under this same shared contract):
     - **Accepted-risk confirmation**: *confirm, this review only* → `confirmed` (pass log + state file; register untouched); *confirm + add to register* → `confirmed` and the `RR-` entry published to `docs/risk-posture.md` **as part of the transition** (a write failure surfaces at the checkpoint and the confirmation does not complete); *reject* → `reopened` (resolved credit reversed immediately, per the accounting table); *defer* → the item **stays `proposed`** under the same `AR-<n>` — no new state, re-presented at every subsequent checkpoint; *discuss* → paused.
     - **`needs_human` question**: *adopt the recommendation* or *pick an alternative* → recorded in the pass log and the plan's Open questions, loop resumes; *defer* → stays open and Converge-blocking, re-presented next checkpoint; *discuss* → paused.
-    - **Non-convergence stall**: *continue anyway* → loop resumes with a fresh two-transition comparison window; *switch to manual* → loop mode ends, per-pass checkpoints resume; *abort* → review ends per the abort path; *discuss* → paused.
+    - **Non-convergence stall**: *continue anyway* → loop resumes with a fresh two-transition comparison window; *switch to manual* → loop mode ends, per-pass checkpoints resume; *abort* → review ends per the abort path; *discuss* → paused. The card carries step 14's cluster section.
+    - **Simplification card**: *simplify (remove | narrow | replace)* → one fold applies that operation, findings dispositioned by its per-finding accounting; *fold once more* (reason `premature` or `deliberate`) → ordinary fold, streak continues; *accept the risk* → the `accepted-risk` lifecycle, label retained at streak 0; *discuss* → paused. Full rules below, after the component streak.
 
     **Read the pass log path first, always** — even on what you believe is pass 1, even if you never touched that path earlier this session: `prior_passes.count` in the summary (or step 7's own read) already tells you whether content is there. **Append via the Edit tool; use Write only to create a genuinely new file (nothing at that path yet).** A `Write` call that replaces existing content — at a path you have not just read in this turn — is exactly the mistake this rule exists to prevent: it silently destroys another review's HISTORICAL passes instead of erroring, because the file may never have been read in this session before. Never shell heredocs — log writes go through file-edit permissions, keeping the review's Bash surface to the single pre-approved runner rule. If the pass log doesn't exist, create it with a `# Code Review — <scope-tag>` H1 header — **load-bearing**: the runner reads an existing log as prior-pass context only when its first line is exactly that header for this scope tag (the format is the read capability; any file lacking the exact scope-tagged header is refused, and adopting another review's matching tag/header also adopts that same-repo review's identity — see `read_prior_passes`). Then append a single pass section (each finding tagged with its originating lens id):
 
     **When the block is opened: always immediately after the merge, before any folding — there is no after-the-fold case.** Every pass opens its block as soon as step 11's merge produces the merged list, card or no card, finding or no finding. This is unconditional on purpose: the two earlier reasons to open early (a mid-fold card's pending write, and the merged list serving as the resume ledger) both apply to ordinary card-free passes too, and an "ordinary case appends after folding" carve-out would mean a crash mid-fold on exactly those passes leaves no block and no record of what had already been applied. Write the `## Pass <N>` header and the `**Scope:** … **Diff size:** … **Verdict:** … **Posture:** … **Lenses:** …` line first, then fill the sections beneath it incrementally as folding proceeds. There is still exactly **one** block per pass: "append ONE block" constrains the block count, not the number of writes.
 
-    **One exception to "immediately after the merge," because one card type fires before the pass has any results.** The ordinary opening point above covers four of the five card types — they arise during folding, after the merge in step 11, by which time every field of the header line is settled (the worst-of verdict included) and the block opens fully populated. The **malformed posture source** card is the exception: it halts in step 9, *before fan-out*, so no lens has run, no verdict exists, and the lens list isn't final. That card persists the same way regardless — the block opens with the fields that are known (`Scope`, `Diff size`, `Scope class`, `Posture`) and writes `(pending)` for those that aren't — **`Verdict`, `Lenses`, and the header timestamp alike**, each replaced in place the moment the merge determines it. The timestamp needs this too, and it's easy to miss: the block's timestamp is the pass's Codex-run time (the `pass-N.summary.json` mtime), which does not exist before fan-out. `## Pass <N> — (pending) [IN PROGRESS]` is the correct opening form; the real time is written in when the summary lands. This is just the header line obeying the same two-phase discipline the card itself uses: **no card type is exempt from persistence-before-presentation, and none needs a location outside the pass block.** If the review aborts at that card, the block is tagged **`[ABORTED]`** per the tag rule below — never left `[IN PROGRESS]`, which would make a deliberate ending indistinguishable from a crash. Its `Verdict` and `Lenses` stay `(pending)` permanently (no lens ever ran, and no later write will change that), and its timestamp is stamped with the **abort's** wall-clock time, noted inline as such — the one case where the summary-mtime rule cannot apply, because no summary will ever exist. That block is an accurate record of a pass that deliberately never got results, not a malformed one.
+    **One exception to "immediately after the merge," because one card type fires before the pass has any results.** The ordinary opening point above covers five of the six card types — they arise during folding, after the merge in step 11, by which time every field of the header line is settled (the worst-of verdict included) and the block opens fully populated. The **malformed posture source** card is the exception: it halts in step 9, *before fan-out*, so no lens has run, no verdict exists, and the lens list isn't final. That card persists the same way regardless — the block opens with the fields that are known (`Scope`, `Diff size`, `Scope class`, `Posture`) and writes `(pending)` for those that aren't — **`Verdict`, `Lenses`, and the header timestamp alike**, each replaced in place the moment the merge determines it. The timestamp needs this too, and it's easy to miss: the block's timestamp is the pass's Codex-run time (the `pass-N.summary.json` mtime), which does not exist before fan-out. `## Pass <N> — (pending) [IN PROGRESS]` is the correct opening form; the real time is written in when the summary lands. This is just the header line obeying the same two-phase discipline the card itself uses: **no card type is exempt from persistence-before-presentation, and none needs a location outside the pass block.** If the review aborts at that card, the block is tagged **`[ABORTED]`** per the tag rule below — never left `[IN PROGRESS]`, which would make a deliberate ending indistinguishable from a crash. Its `Verdict` and `Lenses` stay `(pending)` permanently (no lens ever ran, and no later write will change that), and its timestamp is stamped with the **abort's** wall-clock time, noted inline as such — the one case where the summary-mtime rule cannot apply, because no summary will ever exist. That block is an accurate record of a pass that deliberately never got results, not a malformed one.
 
     **The header tag is the completeness marker, and it has three values, not two: `[IN PROGRESS]` while open, `[HISTORICAL]` when the pass is fully complete, `[ABORTED]` when the pass ended deliberately without completing.**
 
-    **"Fully complete" means through the checkpoint, not through folding — the block stays `[IN PROGRESS]` across step 14.** Two of the five card types (accepted-risk confirmation, non-convergence stall) are *presented at the checkpoint*, after folding is done, and the persistence contract requires them written to this pass's block before presentation. So the tag flips to `[HISTORICAL]` only once the checkpoint's cards are answered and their outcomes recorded — a block is never finalized and then reopened, and there is no second location for post-fold cards. Step 13's "the pass log now reflects the latest pass" is about content, not finalization: the block is readable as prior-pass context throughout, and simply hasn't been sealed yet.
+    **"Fully complete" means through the checkpoint, not through folding — the block stays `[IN PROGRESS]` across step 14.** Two of the six card types (accepted-risk confirmation, non-convergence stall) are *presented at the checkpoint*, after folding is done, and the persistence contract requires them written to this pass's block before presentation. So the tag flips to `[HISTORICAL]` only once the checkpoint's cards are answered and their outcomes recorded — a block is never finalized and then reopened, and there is no second location for post-fold cards. Step 13's "the pass log now reflects the latest pass" is about content, not finalization: the block is readable as prior-pass context throughout, and simply hasn't been sealed yet.
 
     **`[ABORTED]` scopes to the *pass*, not the review.** It marks a pass that ended while still open — the pre-fan-out malformed-posture abort is the canonical case. Choosing Abort at a checkpoint *after* a pass is fully recorded does not retag that pass: the pass really did complete, so it seals as `[HISTORICAL]`, and the review-level outcome is recorded by `final_action: aborted` in the step-16 state file. One tag answers "did this pass finish?"; the state file answers "how did the review end?" — never overload one to mean the other. `[ABORTED]` is terminal — a resuming session never resumes it, exactly as it never resumes a `[HISTORICAL]` block; only `[IN PROGRESS]` means resumable work. Write it as the last act of the abort path, with a one-line reason after the header line (e.g. "posture source malformed and the human chose abort at the step-9 card"), so the block records a decision rather than looking like a crash. Without this, a deliberate abort and an accidental interruption leave byte-identical state and a later invocation resumes a pass the human deliberately ended. A block opened early is written `## Pass <N> — <timestamp> [IN PROGRESS]`, and the tag flips to `[HISTORICAL]` as the last write of the pass — after every finding, correction, question, and card outcome is recorded. **The tag, not the card, is the authoritative resume signal.** `(pending)` is a *finer-grained* signal that survives only until a card is answered, so it cannot mark an interruption that happens after the answer but before the remaining findings are folded — the tag covers the whole window, from first durable write to last.
 
@@ -357,7 +358,7 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
 
     <!-- Only present when a card was presented this pass — design-shaped-fold
     escalation, accepted-risk confirmation, needs_human question, non-convergence
-    stall, or malformed posture source. One entry per card, written in two
+    stall, malformed posture source, or simplification card. One entry per card, written in two
     phases per step 12's persistence rule: appended as `(pending)` before
     presentation, then updated in place once answered. A card still reading
     `(pending)` when this log is read back is the resume signal — re-present
@@ -384,10 +385,15 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     while the causal chain from "what did pass N-1 change" to "what does
     this finding complain about" is freshest. When genuinely uncertain,
     record `null` with a one-line note rather than guessing `N` — under-
-    claiming keeps the data conservative. This is data collection only
-    (the issue #6 decision it feeds): no guardrail, checkpoint, or budget
-    in this skill consults `introduced_by_pass`, and none may until that
-    issue is resolved.
+    claiming keeps the data conservative. **Provenance is evidence, never a
+    trigger.** Component-based triggering is permitted and is the only
+    trigger: the simplification card fires on the component streak alone.
+    Provenance fields are consumed as card evidence and for measurement
+    only — the card shows each streak finding's `introduced_by_pass` and how
+    many are fold-caused, and `../tools/provenance-recipe.jq` tallies them —
+    but no guardrail, checkpoint, budget or card trigger in this skill
+    decides anything from them. (Issue #6's pure fold-provenance trigger was
+    deliberately not built: fold-caused findings are sometimes load-bearing.)
 
     **`[component: <label>]` — the mechanism a finding targets, per
     finding.** Beside `introduced_by_pass`, every merged finding's
@@ -447,8 +453,8 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     nothing about the component) — though its findings are still
     dispositioned normally and any retirement recorded on it still
     persists. The committed record is the pass log, never the state file.
-    A streak reaching **the cluster threshold, 3,** marks the label a
-    simplification candidate. This threshold is stated here as a literal
+    A streak reaching **the cluster threshold, 3,** triggers the
+    simplification card below. This threshold is stated here as a literal
     because a copied install of this skill has no `tools/`; the counting
     semantics are pinned by `../tools/cluster_tracker.py`, whose
     development-side `CLUSTER_N` must equal this number (and
@@ -474,7 +480,133 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     The redesign actually came at pass 7; the guard's streak first
     reached the threshold at pass 5. The replacement's new label is what
     lets its own streak form on passes 8–10 instead of inheriting the
-    guard's.
+    guard's. Under the simplification card below, the guard's card is
+    presented at pass 5 — two passes before the redesign actually came.
+
+    **Simplification card — the sixth named human-judgment moment.** When
+    one component keeps drawing findings pass after pass, each fold
+    patching one more edge case, the loop is saying the mechanism is wrong,
+    not the wording — and the HIGH+MEDIUM stall counter can't see it,
+    because every fold produces a new, distinct finding. This card makes
+    "stop refining and simplify" a structural question instead of one the
+    human has to think to ask.
+
+    **Trigger.** At fold time, a label's **candidate streak** — its
+    committed streak from prior completed passes (the pass log) plus 1 if
+    this pass's merged findings carry it at HIGH or MEDIUM — reaches the
+    cluster threshold, 3, and the card fires before the first fold on that
+    label this pass. It fires again on every further pass on which a label
+    left at or past the threshold by *fold once more* draws a HIGH/MEDIUM
+    finding. It never fires on a pass skipped for streak purposes (a
+    `FAILED` lens after retry), and never from a checkpoint lifecycle
+    event: an `AR-<n>` rejection or posture invalidation changes ledger
+    state exactly as step 12's accounting table says and nothing else,
+    and a reopened finding folded later without a reviewer re-reporting it
+    is not an observation. The one observation source is merged HIGH/MEDIUM
+    findings at fold time.
+
+    **Transition order — counting and presentation happen exactly once.**
+    1. Step 11's merge produces the pass's findings; the block opens with
+       them, `→ Editor:` slots empty.
+    2. Classify every merged finding's component label and compute each
+       label's candidate streak, **before any fold**.
+    3. For each label whose candidate streak reaches the threshold, write
+       the card to this pass's `### Decision cards` with `chosen:
+       (pending)`, naming the label, the streak and the findings it
+       comprises. The tag lives in the card entry; the findings' `→
+       Editor:` slots **stay empty**, so an empty slot still means
+       unfinished work and a persisted classification never reads as a
+       completed disposition.
+    4. Present the card. Folding of *other* labels' findings may proceed
+       meanwhile — the pause is scoped to this label, like the
+       design-shaped-fold escalation.
+    5. On the answer, resolve the card in place naming the chosen
+       operation, then disposition this label's findings **by that
+       operation's per-finding accounting as persisted in the pending card
+       — never the recommendation's by default, and never as a batch.** A
+       finding the chosen operation resolves → `incorporated (by
+       simplification)` (one implementation fold covers all of those; no
+       per-finding patches follow). A finding it does **not** resolve keeps
+       its ordinary path — an ordinary fold, `disputed` with reasoning, or
+       an `accepted-risk` proposal under that lifecycle's own rules and
+       trust-boundary exclusions — and is never marked incorporated by
+       association. For *fold once more*, every finding takes its ordinary
+       path.
+    6. The sealed block is what the next pass's candidate streak reads.
+
+    A card is identified by `(pass, component)`. A resumed session that
+    finds a `(pending)` card re-presents that one card and never recounts;
+    one that finds a resolved card with un-dispositioned same-label
+    findings completes step 5 without re-presenting it.
+
+    **Required content — a card missing any of it is malformed and is not
+    presented:**
+    - **The streak's findings** — every finding on the label across the
+      streak's passes — each with pass number, lens, severity and
+      fold-provenance, plus one line: "`<k>` of this streak's `<m>`
+      findings are fold-caused." The human sees the pattern, not just the
+      count.
+    - **Recommendation: simplify** — remove, narrow or replace the
+      component, with a concrete sketch of the change.
+    - **For every simplification operation the card offers, recommended or
+      alternative, three sub-fields:** *the guarantee lost*; *which
+      remaining layer covers it* (or "none," stated plainly); and a
+      **per-finding accounting** — one line per streak finding stating
+      whether *that operation* resolves it and how, or does not. Sharing a
+      mechanism doesn't mean one change closes every defect: narrowing a
+      classifier's inputs can close one bypass and leave another inside
+      the retained inputs, and removal and narrowing resolve different
+      subsets. *Fold once more* and *accept the risk* carry no accounting;
+      they change nothing about the mechanism.
+
+    **Options** — at most four listed, `discuss` the harness's free-form
+    response as for every card:
+    - **Mandatory on every card:** *remove the mechanism* (the
+      recommendation, or else the first alternative) and *fold once more*
+      (always listed, **never the recommendation**).
+    - **Remaining slots, in priority order when the four-option cap
+      bites:** *accept the risk* when the posture permits — omitted, as on
+      the design-shaped-fold card, for code named as a trust boundary by
+      `PF-shipbar` (current and base-revision alike); then the other
+      simplify operation (*narrow*, or *replace with a named cheaper
+      mechanism*) when one exists.
+    - Context-sensitive omission may drop optional options only, never the
+      two mandatory ones. A card recommending narrowing therefore reads:
+      recommendation narrow; alternatives remove, fold once more, and
+      accept-the-risk or replace.
+
+    **Outcome mapping:**
+    - *simplify (remove)*, *simplify (narrow)*, *simplify (replace)* → one
+      fold applies exactly that operation, and the resolution records which
+      (`chosen: simplify (remove)`, …). The label follows the lifecycle the
+      component-tag rules give that operation — remove → retired
+      (`retired:` line); narrow → retained, streak 0; replace → retired,
+      the replacement labeled fresh at 0 — never a rule of its own. The
+      next pass reviews the simplified head with every selected lens.
+    - *fold once more* → ordinary folds; the streak is **not** reset, and
+      the card returns on the next pass that draws HIGH/MEDIUM on the
+      label. The human also picks a one-word reason, recorded with the
+      outcome: `premature` (the card wasn't warranted) or `deliberate`
+      (warranted, but one more targeted fold is the right call). The state
+      summary's false-positive measure reads `premature` alone.
+    - *accept the risk* → the existing `accepted-risk` lifecycle, `AR-<n>`,
+      unchanged; the label is retained and its streak resets to 0.
+    - *discuss* → paused.
+
+    Persistence is the shared two-phase contract: pending write before
+    presentation, resolution write on the answer.
+
+    **Never an auto-stop, never an auto-simplify.** The card presents; the
+    human decides. Nothing in this skill ends a loop, removes or narrows a
+    mechanism, or suppresses or downgrades a finding because of a streak.
+    The worst case of a card fired too early is one card the human answers
+    *fold once more (premature)*.
+
+    Worked example: `examples/merge/05-simplification-card/` — the CSRF
+    code review's sign-in bootstrap race, a card at pass 3 whose
+    per-finding accounting resolves two of the three findings and routes
+    the third's remainder down its ordinary path.
+
 
 13. **Recompute pass log content.** The pass log now reflects the latest pass for subsequent passes' `=== PRIOR PASSES ===` context.
 
@@ -492,7 +624,28 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     - **Max-pass cap** (default 6 for a `production`-classified diff, **default 3 for `non-production`** — an explicit experiment, see below; `--max-passes=N` always overrides either default) — a *fresh per-activation budget* counting auto-continued passes (the activating pass doesn't count; manual/historical passes don't deplete it) → stop, "hit cap without converging." **A budget of N auto-continued passes means N passes beyond the activating one, not N total** — this pre-existing accounting is unchanged by the reduced non-production default, and matters concretely here: activating loop mode at pass 1 with the non-production default auto-continues through passes 2, 3, and 4 (three auto-continued passes), not through pass 3. **Budget exhaustion is a checkpoint, not a termination** — hitting the cap already halts the loop back to the human (this is that same existing behavior); the checkpoint recommendation additionally flags when the *last* auto-continued pass before the cap fires applied material folds no subsequent pass has reviewed, and recommends Continue in that case, so that fold never silently stands unverified. (A fold on the *second-to-last* auto-continued pass is already covered in the common case: the cap hasn't fired yet, so one more auto-continued pass remains to verify it.)
     - **BLOCK verdict** → stop.
     - **Non-convergence** — the merged **HIGH+MEDIUM** finding count fails to strictly decrease across two consecutive transitions (LOW / `FAILED` / open-questions excluded; a `FAILED`-lens pass is skipped in the comparison but still counts toward the cap) → stop, surface the stall.
+    - **Simplification card** — a label's candidate streak reached the cluster threshold this pass (step 12) → the fold of that label's findings pauses **immediately**, mid-fold, like a design-shaped-fold escalation, and the loop does not continue to another pass until the card is answered. Never an auto-stop and never an auto-simplify: the card is the whole effect.
     - **Fold needs human judgment** — any HIGH finding was *not incorporated*, *not* a fresh `accepted-risk` proposal, and *not* a valid `register-match` (i.e. it's `disputed`, or awaiting a design-shaped-fold escalation card), or a `new_question` classified **`needs_human`** survived the fold (after the label sanity-check and any override in step 11) → stop, escalate. A HIGH dispositioned `accepted-risk (proposed)` or a valid `register-match` does **not**, by itself, halt the loop — per Q1, accepted-risk proposals continue and batch for confirmation at the next checkpoint (no HIGH silently vanishes: the proposal is persisted immediately under a stable id and blocks Converge until confirmed). A **design-shaped-fold escalation does halt immediately**, unlike an accepted-risk proposal — continuing there would commit to an unapproved mechanism, which is exactly what the immediate halt exists to prevent. `resolvable_in_fold` and `needs_lookup` questions do **not** halt the loop: the editor resolves them and continues. If a `needs_lookup` resolution *fails*, it becomes `needs_human` and then halts. This is the whole point of the classification — an unattended loop shouldn't stop for a question it could have answered, and must never continue past one only the user can.
+
+    **Cluster section — on the max-pass cap hand-back and the non-convergence
+    stall card.** When either fires, the hand-back carries the HIGH/MEDIUM
+    findings from the last three passes grouped by component label, each
+    label with its committed streak, side by side so two names for one
+    mechanism are visible to the human (label drift is the one failure the
+    labeling rules can't fully prevent). Then exactly one status line per
+    state that applies:
+    - "no component has reached one below the cluster threshold, 2, —
+      no simplification card is one pass away";
+    - "`<label>` at one below the cluster threshold, 2, — one more
+      HIGH/MEDIUM pass on it triggers the simplification card";
+    - "`<label>` at `<n>` — simplification card presented at pass `<p>`,
+      chosen: `<outcome>`" for a label at or past the cluster threshold (a
+      *fold once more* label keeps climbing, and this line shows the
+      decision already taken).
+
+    This turns the cap into a trigger for the cluster check rather than a
+    bare budget number. It adds a section; it changes no guardrail's
+    condition or outcome.
 
     **The reduced non-production default is an explicit experiment, not a
     validated value — say so plainly, don't present it as settled.** The
@@ -624,11 +777,18 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     `jq` query that reproduces per-pass tallies from these rows across
     both skills' state files — including §3's rollback-cohort query
     (HIGH/MEDIUM findings landing after pass 2 in non-production
-    reviews). **No guardrail, checkpoint, or budget in this skill
-    consults `introduced_by_pass`, `fold_caused_count`, or any field
-    defined in this paragraph** — this ships data collection only; the
-    stop-condition decision stays with
-    [issue #6](https://github.com/kaileconsulting/trinity-skills/issues/6).
+    reviews) — and the simplification-card measures (`cluster_hits`,
+    outcome mix, the `premature` false-positive rate; pass the threshold
+    with `--arg n 3`). **These rows are derived at exit, so no guardrail,
+    checkpoint, budget or card trigger in this skill consults any field
+    defined in this paragraph.** The simplification card's trigger reads
+    the component streak from the pass log, its committed record;
+    component-based triggering is permitted and is the only trigger, and
+    provenance fields (`introduced_by_pass`, `fold_caused_count`,
+    `fold_caused`) are consumed as card evidence and for measurement only,
+    never as a trigger. This closes
+    [issue #6](https://github.com/kaileconsulting/trinity-skills/issues/6)
+    without its pure-provenance trigger.
 
     `confirmed_accepted_risks` is empty when the review never proposed one. Converge is impossible (per step 12's accounting table) while any `AR-<n>` remains `proposed` or `reopened`, so every entry here is `confirmed` at Converge time by construction — `Abort` may still leave `proposed`/`reopened` items unresolved. **The array is current-state, not historical: it lists exactly those items whose `confirmed` state still holds at the moment the file is written.** An item confirmed earlier and then returned to `proposed` by a posture-digest mismatch is **absent**, even though it "was confirmed" at some point during the review. **Posture invalidation is the only path out of `confirmed`** — `rejected`/`reopened` is a transition out of `proposed`, taken instead of confirming, never a revocation of a confirmation already given. There is deliberately no revoke-a-confirmation card: the one thing that can undo a confirmation is the posture text it was granted against changing underneath it, which the descriptor already detects. The field name is the contract: these are confirmations a consumer may act on, and a resume that trusted an invalidated one would proceed on a human decision that no longer applies to the current posture text. The pass log remains the authority on anything left pending — and on the fact that an absent item was ever confirmed at all.
 
@@ -657,7 +817,7 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
 - **Posture composition is editor-side; the runner never changes for it.** The `=== RISK POSTURE ===` block (when a source resolves) is composed by the editor into the intent file's content before `run-pass` runs — `bin/review_runner.py`'s `compose_input()` and its `INTENT`/`DIFF`/`PRIOR PASSES` structure are untouched by this feature. A malformed posture source halts before fan-out with a decision card rather than silently degrading to "none." Severity is never adjusted for posture (that's the reviewer's job to hold absolute); only disposition is.
 - **A mechanism-requiring fold never happens silently.** If incorporating a finding needs a new mechanism (schema/migration, new persisted or protocol field, a cross-request invariant, a background process, a new external dependency), that finding's fold pauses immediately — even in loop mode — for a design-shaped-fold escalation card, rather than batching to the next checkpoint like every other named judgment moment. This pause is scoped to that one finding, not the whole pass: once answered, folding continues with the pass's remaining findings (already returned by Codex), no new Codex call needed — it never freezes work already in hand the way a step-14 between-pass guardrail does.
 - **`accepted-risk` requires a posture-referencing rationale and human confirmation to converge.** The editor may propose it, but only the human confirms or rejects; Converge is impossible while any `AR-<n>` remains `proposed` or `reopened` (accounting table, step 12). both `accepted-risk` and `register-match` are unavailable for code named as a trust boundary in `PF-shipbar` — no exception, and this is checked against both the current and base-revision posture so a same-diff edit can't create the exception either.
-- **Every named human-judgment moment (accepted-risk confirmation, design-shaped-fold escalation, `needs_human` question, non-convergence stall, malformed posture source) uses the same decision-card contract** — recommendation + why, up to 3 alternatives (context-sensitive omission can reduce this to zero listed alternatives; recommendation + discuss is the floor and is always presented, never skipped), a standing discuss option, written to the pass log as pending before presentation and resolved once answered. Selecting any option but discuss resumes the loop deterministically; discuss pauses into conversation.
+- **Every named human-judgment moment (accepted-risk confirmation, design-shaped-fold escalation, `needs_human` question, non-convergence stall, malformed posture source, simplification card) uses the same decision-card contract** — recommendation + why, up to 3 alternatives (context-sensitive omission can reduce this to zero listed alternatives; recommendation + discuss is the floor and is always presented, never skipped), a standing discuss option, written to the pass log as pending before presentation and resolved once answered. Selecting any option but discuss resumes the loop deterministically; discuss pauses into conversation.
 - **The non-production reduced pass-budget default (step 3, step 14) is an
   explicit experiment, never presented as validated.** An explicit
   `--max-passes=N` always overrides it; hitting the cap is a checkpoint,
@@ -665,11 +825,19 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
   findings after pass 2 in non-production reviews) reverts the default to
   standard. Classification is editor-side per the written path heuristic —
   the runner never decides it.
-- **`introduced_by_pass` is data collection only.** No guardrail,
-  checkpoint, or budget in this skill consults `introduced_by_pass`,
-  `fold_caused_count`, or any field of the per-pass summary schema —
-  Phase 0 of Trinity v2.4 ships instrumentation, not a stop condition;
-  that decision stays with issue #6 until the data warrants revisiting it.
+- **The simplification card presents; it never stops or simplifies
+  anything by itself.** When one component draws HIGH/MEDIUM findings on
+  consecutive completed passes up to the cluster threshold, 3, the fold of
+  that component's findings pauses for a card whose options always include
+  *remove the mechanism* and *fold once more* — and *fold once more* is
+  never the recommendation. No path ends a loop, removes or narrows a
+  mechanism, or suppresses or downgrades a finding because of a streak
+  without the human answering that card.
+- **Component-based triggering is permitted and is the only trigger;
+  provenance is evidence only.** `introduced_by_pass`, `fold_caused_count`
+  and the per-pass summary's provenance fields are shown on the card and
+  measured by `tools/provenance-recipe.jq`; no guardrail, checkpoint,
+  budget or card trigger decides anything from them.
 
 ## Using in plan-driven workflows (v1 — manual coordination)
 

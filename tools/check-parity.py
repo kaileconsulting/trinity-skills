@@ -190,8 +190,11 @@ RULES: list[tuple[str, str, list[str] | dict[str, list[str]]]] = [
      [r"fixed key set", r"accepted-risk", r"register-match"]),
     ("provenance-abort-parity", "Abort produces the passes array exactly as Converge does",
      [r"abort produces the array exactly as converge does"]),
-    ("provenance-no-stop-machinery", "no guardrail/checkpoint/budget consults introduced_by_pass",
-     [r"consults introduced_by_pass"]),
+    # Simplification gate Phase 1 lifted the v2.4 "none may consult" reservation
+    # (its old wording is now FORBIDDEN below); the line it draws instead:
+    ("provenance-evidence-only", "component streak is the only trigger; provenance is evidence only",
+     [r"component-based triggering is permitted and is the only trigger",
+      r"provenance fields .{0,80}are consumed as card evidence and for measurement only"]),
 
     # --- component tags + streak (simplification gate Phase 0, §1/§2) -------
     # The threshold's *value* is asserted by check-cluster-streak.py (both
@@ -204,13 +207,23 @@ RULES: list[tuple[str, str, list[str] | dict[str, list[str]]]] = [
      [r"a replacement mechanism gets a new label"]),
     ("component-mechanism-not-location", "a label names a mechanism, never a location",
      [r"a label names a mechanism, never a location"]),
-    ("component-lifecycles", "remove retires; replace retires + fresh label; narrow/accept retain at 0",
-     [r"removed .{1,3} the label retires",
-      r"replaced .{1,3} the old label retires and the replacement gets a new label with a fresh streak",
-      r"narrowed .{0,90} in answer to the card .{1,3} the label is retained and its streak resets to 0",
-      r"accepted-risk\) .{1,3} retained, streak reset to 0",
-      r"no other outcome resets a streak",
-      r"a reset without a human decision would let the editor defer the card"]),
+    # Per-skill: each skill's card answers differ (iterate-review offers
+    # accept-the-risk, iterate-plan offers split-the-plan instead).
+    ("component-lifecycles", "remove retires; replace retires + fresh label; card-answer-only resets",
+     {"iterate-review": [
+         r"removed .{1,3} the label retires",
+         r"replaced .{1,3} the old label retires and the replacement gets a new label with a fresh streak",
+         r"narrowed .{0,90} in answer to the card .{1,3} the label is retained and its streak resets to 0",
+         r"accepted-risk\) .{1,3} retained, streak reset to 0",
+         r"no other outcome resets a streak",
+         r"a reset without a human decision would let the editor defer the card"],
+      "iterate-plan": [
+         r"removed .{1,3} the label retires",
+         r"replaced .{1,3} the old label retires and the replacement gets a new label with a fresh streak",
+         r"narrowed .{0,90} in answer to the card .{1,3} the label is retained and its streak resets to 0",
+         r"split into its own plan in answer to the card .{1,3} the label retires here",
+         r"no other outcome resets a streak",
+         r"a reset without a card answer would let the editor defer the card"]}),
     ("component-retire-vs-reset", "retirement is explicit and persisted; absence only resets",
      [r"retirement is explicit and persisted; absence is only a reset",
       r"retired: <label> \(<why>\)"]),
@@ -222,6 +235,54 @@ RULES: list[tuple[str, str, list[str] | dict[str, list[str]]]] = [
      [r"failed lens after retry is skipped for streak purposes"]),
     ("component-threshold-literal", "the threshold is a literal in each SKILL.md",
      [r"the cluster threshold, \d+,"]),
+    # --- simplification card (simplification gate Phase 1, §3/§4) ---------
+    ("card-sixth-moment", "the simplification card is the sixth named human-judgment moment",
+     [r"six named human-judgment moments", r"simplification card - the sixth named human-judgment moment"]),
+    ("card-trigger-candidate-streak", "fires on the candidate streak, before the first fold on the label",
+     [r"candidate streak", r"the card fires before the first fold on that label this pass"]),
+    ("card-refires-after-fold-once-more", "the card returns on every further pass past the threshold",
+     [r"fires again on every further pass on which a label left at or past the threshold by fold once more"]),
+    ("card-no-checkpoint-observations", "checkpoint lifecycle events are never observations",
+     [r"never from a checkpoint lifecycle event", r"the one observation source is merged high/medium findings at fold time"]),
+    ("card-transition-order", "classify before fold; pending card; slots stay empty",
+     [r"transition order - counting and presentation happen exactly once",
+      r"classify every merged finding's component label and compute each label's candidate streak, before any fold",
+      r"slots stay empty, so an empty slot still means unfinished work"]),
+    ("card-dispositions-per-operation", "findings dispositioned by the chosen operation's accounting, never batched",
+     [r"by that operation's per-finding accounting as persisted in the pending card",
+      r"never the recommendation's by default, and never as a batch",
+      r"never marked incorporated by association"]),
+    ("card-resume", "a card is keyed by (pass, component); resume re-presents, never recounts",
+     [r"a card is identified by \(pass, component\)", r"never recounts"]),
+    ("card-required-fields", "every offered simplify operation carries guarantee lost / covering layer / per-finding accounting",
+     [r"a card missing any of it is malformed and is not presented",
+      r"for every simplification operation the card offers, recommended or alternative, three sub-fields",
+      r"the guarantee lost", r"which remaining layer covers it", r"per-finding accounting",
+      r"of this streak's .{0,12}findings are fold-caused"]),
+    ("card-mandatory-options", "remove and fold-once-more are on every card; fold-once-more never recommended",
+     [r"mandatory on every card: remove the mechanism \(the recommendation, or else the first alternative\)",
+      r"fold once more \(always listed, never the recommendation\)",
+      r"context-sensitive omission may drop optional options only, never the two mandatory ones"]),
+    ("card-fold-once-more-reason", "fold once more records premature|deliberate; false-positive reads premature",
+     [r"premature \(the card wasn't warranted\)", r"deliberate \(warranted"]),
+    ("card-simplify-lifecycle", "simplify outcomes follow the component-tag lifecycle, never a rule of their own",
+     [r"chosen: simplify \(remove\)", r"never a rule of its own"]),
+    ("card-halts-fold", "the card halts that label's fold immediately and the loop until answered",
+     [r"the loop does not continue to another pass until the card is answered"]),
+    ("card-never-auto", "never an auto-stop, never an auto-simplify",
+     [r"never an auto-stop, never an auto-simplify",
+      r"the simplification card presents; it never stops or simplifies anything by itself"]),
+    ("card-incorporated-by-simplification", "incorporated (by simplification) is incorporated for every ledger",
+     [r"incorporated \(by simplification\) - a finding a simplification card's chosen operation resolves"]),
+    ("card-escape-hatch", "split-the-plan is iterate-plan's slot; accept-the-risk is iterate-review's",
+     {"iterate-plan": [r"split the plan \(this skill's escape hatch", r"split the plan -> the component's decisions"
+                       .replace("->", ".{1,3}")],
+      "iterate-review": [r"accept the risk when the posture permits",
+                         r"accept the risk .{1,3} the existing accepted-risk lifecycle"]}),
+    ("cluster-section", "cap and stall hand-backs carry the grouped-by-component cluster section",
+     [r"cluster section - on the max-pass cap hand-back and the non-convergence stall card",
+      r"one below the cluster threshold, \d+, - one more high/medium pass on it triggers the simplification card",
+      r"it changes no guardrail's condition or outcome"]),
     ("component-summary-fields", "schema-2 rows carry observation/components/streaks/retired/cards",
      [r"observation", r"components", r"streaks", r"retired", r"cards", r"counts, not booleans"]),
 
@@ -261,6 +322,23 @@ RULES: list[tuple[str, str, list[str] | dict[str, list[str]]]] = [
      [r"recommendation \+ discuss is the floor and is always presented, never skipped"]),
     ("malformed-source-halts-before-fanout", "a malformed posture/register source halts before any lens runs",
      [r"halts before fan-out with a decision card rather than silently"]),
+]
+
+
+# Phrases that must be ABSENT (same normalisation). A rule id maps to
+# {skill: [patterns]}; any match fails. This is how a deliberate asymmetry is
+# pinned from the sibling's side ("the sibling lacks it"), and how a lifted
+# rule's old wording is kept from lingering in any copy.
+FORBIDDEN: list[tuple[str, str, dict[str, list[str]]]] = [
+    ("provenance-reservation-lifted", "the v2.4 'none may consult introduced_by_pass' wording is gone",
+     {"iterate-plan": [r"none may until that issue is resolved", r"this ships data collection only",
+                       r"introduced_by_pass is data collection only"],
+      "iterate-review": [r"none may until that issue is resolved", r"this ships data collection only",
+                         r"introduced_by_pass is data collection only"]}),
+    ("split-plan-iterate-plan-only", "split-the-plan exists in iterate-plan only",
+     {"iterate-plan": [], "iterate-review": [r"split the plan", r"split-plan"]}),
+    ("accept-risk-not-on-plan-card", "iterate-plan's simplification card does not offer accept-the-risk",
+     {"iterate-plan": [r"accept the risk when the posture permits"], "iterate-review": []}),
 ]
 
 
@@ -356,6 +434,24 @@ def main(argv: list[str]) -> int:
                 where = first_line_matching(pats_for(patterns, skill)[0], lines)
                 print(f"              {skill}/SKILL.md:{where}")
 
+    # -- forbidden phrases: must be absent -----------------------------------
+    print()
+    print("forbidden phrases (must be absent)")
+    present_forbidden: list[str] = []
+    for rule_id, desc, per_skill in FORBIDDEN:
+        hits = []
+        for skill in SKILLS:
+            norm, _ = docs[skill]
+            hits += [f"{skill}: {p!r}" for p in per_skill.get(skill, [])
+                     if re.search(p, norm)]
+        if hits:
+            present_forbidden.append(rule_id)
+            print(f"  PRESENT     {rule_id:<{width}}  {desc}")
+            for h in hits:
+                print(f"              -> {h}")
+        else:
+            print(f"  OK          {rule_id:<{width}}  {desc}")
+
     # -- shared runner files: byte-identity by content hash -----------------
     print()
     print("shared runner files: byte-identity (sha256)")
@@ -387,11 +483,14 @@ def main(argv: list[str]) -> int:
         print(f"PARITY GAPS ({len(gaps)}): {', '.join(gaps)}")
     if missing:
         print(f"MISSING FROM BOTH ({len(missing)}): {', '.join(missing)}")
+    if present_forbidden:
+        print(f"FORBIDDEN PRESENT ({len(present_forbidden)}): "
+              f"{', '.join(present_forbidden)}")
     if drifted:
         print(f"SHARED-FILE DRIFT ({len(drifted)}): {', '.join(drifted)} — "
               f"re-copy the reviewed file byte-identically; never fix one "
               f"side alone")
-    if gaps or missing or drifted:
+    if gaps or missing or drifted or present_forbidden:
         print("\nSemantic parity means the same *rules* hold in both skills. "
               "Prose may differ; a rule may not — and a designated shared "
               "runner file may not differ by a single byte.")

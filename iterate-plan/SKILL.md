@@ -631,7 +631,10 @@ performed by the runner, deterministically.
 
    Accepting a risk therefore can't read as a stall (`proposed`/`confirmed`
    items leave the non-convergence count) while remaining impossible to
-   converge past unconfirmed.
+   converge past unconfirmed. **`incorporated (by simplification)`** — a
+   finding a simplification card's chosen operation resolves, per that
+   operation's per-finding accounting — is an `incorporated` in every
+   ledger (and in the state summary's `incorporated` key).
 
    **Worked example — the accounting table state by state**, the same
    inspection standard the freeze tracker's worked example above and every
@@ -655,7 +658,7 @@ performed by the runner, deterministically.
    against the new posture text before Converge can succeed again.
 
    **Decision cards — the shared contract for every human-judgment moment**
-   (ported from `iterate-review` step 12 verbatim; **five** total moments,
+   (ported from `iterate-review` step 12 verbatim; **six** total moments,
    as below — the plan-shaping-fold escalation above stands in for
    `iterate-review`'s design-shaped-fold escalation, and there is no
    plan-side equivalent of a mid-review posture-source malformed-*field*
@@ -680,7 +683,7 @@ performed by the runner, deterministically.
    card would mean silently committing to a decision nobody approved,
    exactly what every one of these moments exists to prevent).
 
-   **Persistence, uniformly across all five card types below: two
+   **Persistence, uniformly across all six card types below: two
    phases**, written into the plan's *current pass* HISTORICAL block under
    a `### Decision cards` subsection (only present when a card was
    presented that pass):
@@ -695,9 +698,10 @@ performed by the runner, deterministically.
       outcome>)`. A card still `(pending)` on read is the resume signal; a
       card with a real `chosen:` value is settled and never re-presented.
 
-   **The five named human-judgment moments and their outcome mappings**
+   **The six named human-judgment moments and their outcome mappings**
    (plan-shaping-fold escalation specified above; malformed/unavailable
-   register source specified in step 5 — both under this same shared
+   register source specified in step 5; the simplification card specified
+   after the component-streak rules below — all under this same shared
    contract, alongside the three below):
    - **Accepted-risk confirmation**: *confirm, this plan only* →
      `confirmed` (plan's HISTORICAL block; register untouched); *confirm +
@@ -719,7 +723,13 @@ performed by the runner, deterministically.
      *continue anyway* → loop resumes with a fresh two-transition
      comparison window; *switch to manual* → loop mode ends, per-pass
      checkpoints resume; *abort* → the plan's iteration ends per the abort
-     path; *discuss* → paused.
+     path; *discuss* → paused. The card carries step 10's cluster section.
+   - **Simplification card**: *simplify (remove | narrow | replace)* → one
+     fold applies that operation, findings dispositioned by its per-finding
+     accounting; *fold once more* (reason `premature` or `deliberate`) →
+     ordinary fold, streak continues; *split the plan* → the mechanism
+     moves to a new plan stub, label retired here; *discuss* → paused. Full
+     rules below, after the component streak.
    - **Malformed or unavailable register source** (step 5) — one card
      type covering both of `resolve_register()`'s failure states, named
      accurately at presentation time so the options read correctly for
@@ -768,7 +778,8 @@ performed by the runner, deterministically.
 
    <!-- Only present when a card was presented this pass — plan-shaping-fold
    escalation, accepted-risk confirmation, needs_human question,
-   non-convergence stall, or malformed or unavailable register source. One
+   non-convergence stall, malformed or unavailable register source, or
+   simplification card. One
    entry per card, written in two phases per the shared contract above: appended as
    `(pending)` before presentation, then updated in place once answered. -->
 
@@ -799,10 +810,15 @@ performed by the runner, deterministically.
    while the causal chain from "what did pass N-1 change" to "what does
    this finding complain about" is freshest. When genuinely uncertain,
    record `null` with a one-line note rather than guessing `N` — under-
-   claiming keeps the data conservative. This is data collection only
-   (the issue #6 decision it feeds): no guardrail, checkpoint, or budget
-   in this skill consults `introduced_by_pass`, and none may until that
-   issue is resolved.
+   claiming keeps the data conservative. **Provenance is evidence, never a
+   trigger.** Component-based triggering is permitted and is the only
+   trigger: the simplification card fires on the component streak alone.
+   Provenance fields are consumed as card evidence and for measurement
+   only — the card shows each streak finding's `introduced_by_pass` and how
+   many are fold-caused, and `tools/provenance-recipe.jq` tallies them —
+   but no guardrail, checkpoint, budget or card trigger in this skill
+   decides anything from them. (Issue #6's pure fold-provenance trigger was
+   deliberately not built: fold-caused findings are sometimes load-bearing.)
 
    **`[component: <label>]` — the mechanism a finding targets, per
    finding.** Beside `introduced_by_pass`, every merged finding's
@@ -830,17 +846,15 @@ performed by the runner, deterministically.
      they happen, on any pass. Two further outcomes exist only as the
      human's answer to a simplification card: *narrowed* (kept, with a
      smaller surface) in answer to the card → the label is **retained**
-     and its streak **resets to 0**; the risk accepted on it in answer
-     to the card (`accepted-risk`) → **retained**, streak **reset to
-     0**, and since the `AR-<n>` lifecycle owns only that finding, a
-     later HIGH/MEDIUM merged finding on the label is an ordinary
-     observation. *Split into its own plan* in answer to the card → the
-     label **retires** here; the new plan tracks it from 0. No other
-     outcome resets a streak (a pass with no HIGH/MEDIUM finding on the
-     label still does, per the streak rules below) — not an ordinary
-     fold, even one that narrows the mechanism, and not the editor's
-     own `accepted-risk` proposal: a reset without a human decision
-     would let the editor defer the card, so the streak keeps counting.
+     and its streak **resets to 0**; *split into its own plan* in
+     answer to the card → the label **retires** here, and the new plan
+     tracks it from 0. No other outcome resets a streak (a pass with no
+     HIGH/MEDIUM finding on the label still does, per the streak rules
+     below) — not an ordinary fold, even one that narrows the
+     mechanism, and not an `accepted-risk` proposal or confirmation on
+     one of its findings, since the `AR-<n>` lifecycle owns only that
+     finding: a reset without a card answer would let the editor defer
+     the card, so the streak keeps counting.
    - **Retirement is explicit and persisted; absence is only a reset.**
      When a component leaves the plan's scope (a fold deletes it, it moves
      to another plan), write `retired: <label> (<why>)` in that pass's
@@ -866,7 +880,7 @@ performed by the runner, deterministically.
    dispositioned normally and any retirement recorded on it still
    persists. The committed record is the plan's own HISTORICAL blocks,
    never the state file. A streak reaching **the cluster threshold, 3,**
-   marks the label a simplification candidate. This threshold is stated
+   triggers the simplification card below. This threshold is stated
    here as a literal because a copied install of this skill has no
    `tools/`; the counting semantics are pinned by
    `../tools/cluster_tracker.py`, whose development-side `CLUSTER_N` must
@@ -893,7 +907,141 @@ performed by the runner, deterministically.
 
    The redesign actually came at pass 7; the guard's streak first reached
    the threshold at pass 5. The replacement's new label is what lets its
-   own streak form on passes 8–10 instead of inheriting the guard's.
+   own streak form on passes 8–10 instead of inheriting the guard's. Under
+   the simplification card below, the guard's card is presented at pass 5
+   — two passes before the redesign actually came.
+
+   **Simplification card — the sixth named human-judgment moment.** When
+   one component keeps drawing findings pass after pass, each fold
+   patching one more edge case, the loop is saying the mechanism is wrong,
+   not the wording — and the HIGH+MEDIUM stall counter can't see it,
+   because every fold produces a new, distinct finding. This card makes
+   "stop refining and simplify" a structural question instead of one the
+   human has to think to ask.
+
+   **Trigger.** At fold time, a label's **candidate streak** — its
+   committed streak from prior completed passes (the plan's HISTORICAL
+   blocks) plus 1 if
+   this pass's merged findings carry it at HIGH or MEDIUM — reaches the
+   cluster threshold, 3, and the card fires before the first fold on that
+   label this pass. It fires again on every further pass on which a label
+   left at or past the threshold by *fold once more* draws a HIGH/MEDIUM
+   finding. It never fires on a pass skipped for streak purposes (a
+   `FAILED` lens after retry), and never from a checkpoint lifecycle
+   event: an `AR-<n>` rejection or posture invalidation changes ledger
+   state exactly as the accounting table above says and nothing else,
+   and a reopened finding folded later without a reviewer re-reporting it
+   is not an observation. The one observation source is merged HIGH/MEDIUM
+   findings at fold time.
+
+   **Transition order — counting and presentation happen exactly once.**
+   1. Step 11's merge produces the pass's findings; the block opens with
+      them, `→ Editor:` slots empty.
+   2. Classify every merged finding's component label and compute each
+      label's candidate streak, **before any fold**.
+   3. For each label whose candidate streak reaches the threshold, write
+      the card to this pass's `### Decision cards` with `chosen:
+      (pending)`, naming the label, the streak and the findings it
+      comprises. The tag lives in the card entry; the findings' `→
+      Editor:` slots **stay empty**, so an empty slot still means
+      unfinished work and a persisted classification never reads as a
+      completed disposition.
+   4. Present the card. Folding of *other* labels' findings may proceed
+      meanwhile — the pause is scoped to this label, like the
+      plan-shaping-fold escalation.
+   5. On the answer, resolve the card in place naming the chosen
+      operation, then disposition this label's findings **by that
+      operation's per-finding accounting as persisted in the pending card
+      — never the recommendation's by default, and never as a batch.** A
+      finding the chosen operation resolves → `incorporated (by
+      simplification)` (one implementation fold covers all of those; no
+      per-finding patches follow). A finding it does **not** resolve keeps
+      its ordinary path — an ordinary fold, `disputed` with reasoning, or
+      an `accepted-risk` proposal under that lifecycle's own rules and
+      trust-boundary exclusions — and is never marked incorporated by
+      association. For *fold once more*, every finding takes its ordinary
+      path.
+   6. The sealed block is what the next pass's candidate streak reads.
+
+   A card is identified by `(pass, component)`. A resumed session that
+   finds a `(pending)` card re-presents that one card and never recounts;
+   one that finds a resolved card with un-dispositioned same-label
+   findings completes step 5 without re-presenting it.
+
+   **Required content — a card missing any of it is malformed and is not
+   presented:**
+   - **The streak's findings** — every finding on the label across the
+     streak's passes — each with pass number, lens, severity and
+     fold-provenance, plus one line: "`<k>` of this streak's `<m>`
+     findings are fold-caused." The human sees the pattern, not just the
+     count.
+   - **Recommendation: simplify** — remove, narrow or replace the
+     component, with a concrete sketch of the change.
+   - **For every simplification operation the card offers, recommended or
+     alternative, three sub-fields:** *the guarantee lost*; *which
+     remaining layer covers it* (or "none," stated plainly); and a
+     **per-finding accounting** — one line per streak finding stating
+     whether *that operation* resolves it and how, or does not. Sharing a
+     mechanism doesn't mean one change closes every defect: narrowing a
+     classifier's inputs can close one bypass and leave another inside
+     the retained inputs, and removal and narrowing resolve different
+     subsets. *Fold once more* and *split the plan* carry no accounting;
+     they change nothing about the mechanism.
+
+   **Options** — at most four listed, `discuss` the harness's free-form
+   response as for every card:
+   - **Mandatory on every card:** *remove the mechanism* (the
+     recommendation, or else the first alternative) and *fold once more*
+     (always listed, **never the recommendation**).
+   - **Remaining slots, in priority order when the four-option cap
+     bites:** *split the plan* (this skill's escape hatch, and the reason
+     issue #6 named it: the mechanism may deserve its own plan rather than
+     a smaller place in this one); then the other simplify operation
+     (*narrow*, or *replace with a named cheaper mechanism*) when one
+     exists. `iterate-plan`'s card does not offer *accept the risk* — the
+     four slots are spent on the options above.
+   - Context-sensitive omission may drop optional options only, never the
+     two mandatory ones. A card recommending narrowing therefore reads:
+     recommendation narrow; alternatives remove, fold once more, and
+     split the plan.
+
+   **Outcome mapping:**
+   - *simplify (remove)*, *simplify (narrow)*, *simplify (replace)* → one
+     fold applies exactly that operation, and the resolution records which
+     (`chosen: simplify (remove)`, …). The label follows the lifecycle the
+     component-tag rules give that operation — remove → retired
+     (`retired:` line); narrow → retained, streak 0; replace → retired,
+     the replacement labeled fresh at 0 — never a rule of its own. The
+     next pass reviews the simplified plan with both lenses.
+   - *fold once more* → ordinary folds; the streak is **not** reset, and
+     the card returns on the next pass that draws HIGH/MEDIUM on the
+     label. The human also picks a one-word reason, recorded with the
+     outcome: `premature` (the card wasn't warranted) or `deliberate`
+     (warranted, but one more targeted fold is the right call). The state
+     summary's false-positive measure reads `premature` alone.
+   - *split the plan* → the component's decisions and open questions move
+     to a new plan stub (`create-plan` scaffolds it); this plan's text
+     references the stub where the mechanism was; the label **retires**
+     here (`retired:` line — the mechanism has left this plan's scope, and
+     the new plan tracks it from 0); the loop resumes on what remains.
+     Findings on the label take their ordinary path in the new plan, never
+     `incorporated` here by association.
+   - *discuss* → paused.
+
+   Persistence is the shared two-phase contract: pending write before
+   presentation, resolution write on the answer.
+
+   **Never an auto-stop, never an auto-simplify.** The card presents; the
+   human decides. Nothing in this skill ends a loop, removes or narrows a
+   mechanism, or suppresses or downgrades a finding because of a streak.
+   The worst case of a card fired too early is one card the human answers
+   *fold once more (premature)*.
+
+   Worked example: `examples/merge/02-simplification-card/` — the CSRF
+   plan review's SQL-parsing classifier, a card at pass 6 (the real review
+   removed it at pass 10) whose per-finding accounting resolves two of
+   the three findings and leaves the third to an ordinary fold.
+
 
 9. **Recompute `plan_content_hash` post-fold.** Stash for the next pass's
    manual-edit detection.
@@ -925,13 +1073,20 @@ performed by the runner, deterministically.
     - **Max-pass cap** (default 6, `--max-passes=N`) — a *fresh per-activation
       budget* counting auto-continued passes (the activating pass doesn't
       count; manual/historical passes don't deplete it) → stop, "hit cap
-      without converging."
+      without converging," with the cluster section below.
     - **BLOCK verdict** → stop.
     - **Non-convergence** — the merged **HIGH+MEDIUM** finding count fails to
       strictly decrease across two consecutive transitions (LOW / `FAILED` /
       open-questions excluded; a `FAILED`-lens pass is skipped in the
       comparison but still counts toward the cap) → stop, surface as the
-      non-convergence-stall decision card (step 8's shared contract).
+      non-convergence-stall decision card (step 8's shared contract), with
+      the cluster section below.
+    - **Simplification card** — a label's candidate streak reached the
+      cluster threshold this pass (step 8) → the fold of that label's
+      findings pauses **immediately**, mid-fold, like a plan-shaping-fold
+      escalation, and the loop does not continue to another pass until the
+      card is answered. Never an auto-stop and never an auto-simplify: the
+      card is the whole effect.
     - **Fold needs human judgment** — any HIGH finding was *not incorporated*,
       *not* a fresh `accepted-risk` proposal, and *not* a valid
       `register-match` (i.e. it's `disputed`, or awaiting a
@@ -951,6 +1106,26 @@ performed by the runner, deterministically.
       `needs_human` and then halts. This is the whole point of the
       classification — an unattended loop shouldn't stop for a question it
       could have answered, and must never continue past one only Kyle can.
+
+    **Cluster section — on the max-pass cap hand-back and the
+    non-convergence stall card.** When either fires, the hand-back carries
+    the HIGH/MEDIUM findings from the last three passes grouped by
+    component label, each label with its committed streak, side by side so
+    two names for one mechanism are visible to the human (label drift is
+    the one failure the labeling rules can't fully prevent). Then exactly
+    one status line per state that applies:
+    - "no component has reached one below the cluster threshold, 2, — no
+      simplification card is one pass away";
+    - "`<label>` at one below the cluster threshold, 2, — one more
+      HIGH/MEDIUM pass on it triggers the simplification card";
+    - "`<label>` at `<n>` — simplification card presented at pass `<p>`,
+      chosen: `<outcome>`" for a label at or past the cluster threshold (a
+      *fold once more* label keeps climbing, and this line shows the
+      decision already taken).
+
+    This turns the cap into a trigger for the cluster check rather than a
+    bare budget number. It adds a section; it changes no guardrail's
+    condition or outcome.
 
     On **Continue** (manual or loop-auto): increment pass count, loop to step 5.
     On **Converge**: enter the Sonnet-handoff sub-flow (Phase 3, below).
@@ -1075,7 +1250,7 @@ performed by the runner, deterministically.
       `cards` (array — one row per simplification card presented that
       pass: `{type: "simplification", component, streak_at_fire,
       findings_in_streak, fold_caused_in_streak, chosen:
-      remove|narrow|replace|fold-once-more|accept-risk|split-plan|pending|aborted,
+      remove|narrow|replace|fold-once-more|split-plan|pending|aborted,
       reason: premature|deliberate|null}`, `[]` when none).
 
       Rows are **derived from the plan's own HISTORICAL blocks** by a
@@ -1097,10 +1272,18 @@ performed by the runner, deterministically.
     (Abort path) for worked examples, and the shared
     `tools/provenance-recipe.jq` recipe (Pointers) for the documented `jq`
     query that reproduces per-pass tallies from these rows across both
-    skills' state files. **No guardrail, checkpoint, or budget in this
-    skill consults `introduced_by_pass`, `fold_caused_count`, or any field
-    defined in this paragraph** — this ships data collection only; the
-    stop-condition decision stays with [issue #6](https://github.com/kaileconsulting/trinity-skills/issues/6).
+    skills' state files — and the simplification-card measures
+    (`cluster_hits`, outcome mix, the `premature` false-positive rate; pass
+    the threshold with `--arg n 3`). **These rows are derived at exit, so
+    no guardrail, checkpoint, budget or card trigger in this skill consults
+    any field defined in this paragraph.** The simplification card's
+    trigger reads the component streak from the plan's HISTORICAL blocks,
+    its committed record; component-based triggering is permitted and is
+    the only trigger, and provenance fields (`introduced_by_pass`,
+    `fold_caused_count`, `fold_caused`) are consumed as card evidence and
+    for measurement only, never as a trigger. This closes
+    [issue #6](https://github.com/kaileconsulting/trinity-skills/issues/6)
+    without its pure-provenance trigger.
 
     **On Converge (Handoff or Stay), additionally prune the scope's state
     directory** — the plan's HISTORICAL sections are the durable audit
@@ -1206,11 +1389,20 @@ for standalone `run-lens` output. Pruned at Converge (step 15) unless
 - Sonnet-handoff at convergence is fully user-driven: skill writes
   the handoff prompt to disk, user copies into a fresh session and
   performs the `/clear` + model swap themselves.
-- **`introduced_by_pass` is data collection only.** No guardrail,
-  checkpoint, or budget in this skill consults `introduced_by_pass`,
-  `fold_caused_count`, or any field of the per-pass summary schema —
-  Phase 0 of Trinity v2.4 ships instrumentation, not a stop condition;
-  that decision stays with issue #6 until the data warrants revisiting it.
+- **The simplification card presents; it never stops or simplifies
+  anything by itself.** When one component draws HIGH/MEDIUM findings on
+  consecutive completed passes up to the cluster threshold, 3, the fold of
+  that component's findings pauses for a card whose options always include
+  *remove the mechanism* and *fold once more* — and *fold once more* is
+  never the recommendation. *Split the plan* is this skill's escape hatch
+  on the card. No path ends a loop, removes or narrows a mechanism, or
+  suppresses or downgrades a finding because of a streak without the human
+  answering that card.
+- **Component-based triggering is permitted and is the only trigger;
+  provenance is evidence only.** `introduced_by_pass`, `fold_caused_count`
+  and the per-pass summary's provenance fields are shown on the card and
+  measured by `tools/provenance-recipe.jq`; no guardrail, checkpoint,
+  budget or card trigger decides anything from them.
 - **`accepted-risk` requires a posture-referencing rationale and human
   confirmation to converge** (Phase 1, ported from `iterate-review`). The
   editor may propose it, but only the human confirms or rejects; the
@@ -1231,7 +1423,8 @@ for standalone `run-lens` output. Pruned at Converge (step 15) unless
   choice at the card.
 - **Every named human-judgment moment (accepted-risk confirmation,
   plan-shaping-fold escalation, `needs_human` question, non-convergence
-  stall, malformed or unavailable register source) uses the same decision-card contract**
+  stall, malformed or unavailable register source, simplification card)
+  uses the same decision-card contract**
   (Phase 1, step 8) — recommendation + why, up to 3 alternatives
   (context-sensitive omission can reduce this to zero listed alternatives;
   recommendation + discuss is the floor and is always presented, never
