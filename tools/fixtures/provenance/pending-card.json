@@ -1,0 +1,105 @@
+{
+  "_comment": "Fixture: iterate-review once-mode exit with a simplification card still pending (no later pass, so next is unknown).",
+  "scope": "branch",
+  "scope_tag": "branch-fixture-pending",
+  "pass_log_path": "/fixtures/code-review-pending.md",
+  "pass_count": 3,
+  "last_verdict": "REVISE",
+  "final_action": "once-mode-exit",
+  "summary_schema": 2,
+  "scope_class": "production",
+  "passes": [
+    {
+      "pass": 1,
+      "verdict": "REVISE",
+      "high_medium_count": 1,
+      "findings_total": 1,
+      "fold_caused_count": 0,
+      "dispositions": {
+        "incorporated": 1,
+        "skipped": 0,
+        "disputed": 0,
+        "accepted-risk": 0,
+        "register-match": 0
+      },
+      "observation": true,
+      "components": {
+        "cache-key": {
+          "worst_severity": "HIGH",
+          "findings": 1,
+          "fold_caused": 0
+        }
+      },
+      "streaks": {
+        "cache-key": 1
+      },
+      "retired": [],
+      "cards": []
+    },
+    {
+      "pass": 2,
+      "verdict": "REVISE",
+      "high_medium_count": 1,
+      "findings_total": 1,
+      "fold_caused_count": 1,
+      "dispositions": {
+        "incorporated": 1,
+        "skipped": 0,
+        "disputed": 0,
+        "accepted-risk": 0,
+        "register-match": 0
+      },
+      "observation": true,
+      "components": {
+        "cache-key": {
+          "worst_severity": "MEDIUM",
+          "findings": 1,
+          "fold_caused": 1
+        }
+      },
+      "streaks": {
+        "cache-key": 2
+      },
+      "retired": [],
+      "cards": []
+    },
+    {
+      "pass": 3,
+      "verdict": "REVISE",
+      "high_medium_count": 1,
+      "findings_total": 1,
+      "fold_caused_count": 1,
+      "dispositions": {
+        "incorporated": 0,
+        "skipped": 0,
+        "disputed": 0,
+        "accepted-risk": 0,
+        "register-match": 0
+      },
+      "observation": true,
+      "components": {
+        "cache-key": {
+          "worst_severity": "HIGH",
+          "findings": 1,
+          "fold_caused": 1
+        }
+      },
+      "streaks": {
+        "cache-key": 3
+      },
+      "retired": [],
+      "cards": [
+        {
+          "type": "simplification",
+          "component": "cache-key",
+          "streak_at_fire": 3,
+          "findings_in_streak": 3,
+          "fold_caused_in_streak": 2,
+          "chosen": "pending",
+          "reason": null
+        }
+      ]
+    }
+  ],
+  "confirmed_accepted_risks": []
+}

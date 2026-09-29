@@ -37,8 +37,15 @@ PLAN_ABORTED = os.path.join(REPO, "iterate-plan", "state", "example-aborted.json
 REVIEW_CONVERGED = os.path.join(REPO, "iterate-review", "state", "example.json")
 REVIEW_ABORTED = os.path.join(REPO, "iterate-review", "state", "example-aborted.json")
 
+# Simplification-gate recipe fixtures (schema 2 cards, schema-1 mixing).
+FIXTURES = os.path.join(REPO, "tools", "fixtures", "provenance")
+SCHEMA1 = os.path.join(FIXTURES, "schema1-run.json")
+TWO_CARDS = os.path.join(FIXTURES, "two-cards.json")
+PENDING = os.path.join(FIXTURES, "pending-card.json")
+ABORTED_CARD = os.path.join(FIXTURES, "aborted-card.json")
 
-def run_recipe(*state_files: str) -> dict:
+
+def run_recipe(*state_files: str, n: int | None = None) -> dict:
     if shutil.which("jq") is None:
         raise RuntimeError(
             "jq not found on PATH -- this checker runs the real "
@@ -46,8 +53,9 @@ def run_recipe(*state_files: str) -> dict:
             "reimplementing it, so jq is a prerequisite for this one check "
             "(not for the skills themselves). Install jq and re-run."
         )
+    arg = ["--arg", "n", str(n)] if n is not None else []
     result = subprocess.run(
-        ["jq", "-s", "-f", RECIPE, *state_files],
+        ["jq", "-s", *arg, "-f", RECIPE, *state_files],
         capture_output=True, text=True,
     )
     if result.returncode != 0:
@@ -77,7 +85,8 @@ def main() -> int:
     if not os.path.exists(RECIPE):
         print(f"error: {RECIPE} not found", file=sys.stderr)
         return 2
-    for f in (PLAN_CONVERGED, PLAN_ABORTED, REVIEW_CONVERGED, REVIEW_ABORTED):
+    for f in (PLAN_CONVERGED, PLAN_ABORTED, REVIEW_CONVERGED, REVIEW_ABORTED,
+              SCHEMA1, TWO_CARDS, PENDING, ABORTED_CARD):
         if not os.path.exists(f):
             print(f"error: sample state file not found: {f}", file=sys.stderr)
             return 2
@@ -141,6 +150,59 @@ def main() -> int:
         "non_production_rollback_hits": 2,
     })
 
+    # -- Phase-0-only: schema-2 examples with no cards read as empty ---------
+    failures += check("phase-0-only (examples, no cards)", combined, {
+        "cluster_threshold": None,
+        "cluster_hits": [],
+        "card_outcome_mix": {},
+        "card_false_positive": {"resolved": 0, "premature": 0},
+        "card_run_pass_counts": [],
+    })
+
+    # -- mixed schema: a schema-1 file still counts, with no cards ------------
+    mixed = run_recipe(SCHEMA1, REVIEW_CONVERGED, REVIEW_ABORTED, n=3)
+    failures += check("mixed schema-1/schema-2", mixed, {
+        "runs": 3,
+        "pass_count": 7,          # 2 (schema-1) + 2 + 3
+        "findings_total": 19,     # 7 + 7 + 5
+        "fold_caused_total": 3,   # 1 + 1 + 1
+        "cluster_hits": [],
+        "cluster_threshold": 3,
+    })
+
+    # -- cards: two on one pass, a pending one, an aborted one ----------------
+    cards = run_recipe(TWO_CARDS, PENDING, ABORTED_CARD, n=3)
+    hits = {(h["component"], h["pass"]): h for h in cards["cluster_hits"]}
+    failures += check("cards (two-cards + pending + aborted)", cards, {
+        "runs": 3,
+        "card_outcome_mix": {"remove": 1, "fold-once-more": 1,
+                             "pending": 1, "aborted": 1},
+        # pending and aborted rows are excluded from the denominator
+        "card_false_positive": {"resolved": 2, "premature": 1},
+        "card_run_pass_counts": [5, 3, 4],
+    })
+    want_hits = {
+        # removed label: the next observed pass is quiet on it -> null
+        ("sql-classifier", 3): {"chosen": "remove", "next": None,
+                                "recurrence": False},
+        # the join skips pass 4 (observation false) and lands on pass 5
+        ("grant-toggle", 3): {"chosen": "fold-once-more", "reason": "premature",
+                              "next": {"worst_severity": "LOW", "findings": 1,
+                                       "fold_caused": 0},
+                              "recurrence": False},
+        # no later completed pass -> unknown, never guessed
+        ("cache-key", 3): {"chosen": "pending", "next": "unknown"},
+        ("retry-loop", 4): {"chosen": "aborted", "next": "unknown"},
+    }
+    for key, want in want_hits.items():
+        failures += check(f"cluster_hits {key}", hits.get(key, {}), want)
+
+    # without --arg n the recipe never assumes a threshold
+    no_n = run_recipe(TWO_CARDS)
+    failures += check("cards without --arg n", no_n, {"cluster_threshold": None})
+    failures += [f"cards without --arg n: recurrence {h['recurrence']!r}, want None"
+                 for h in no_n["cluster_hits"] if h["recurrence"] is not None]
+
     if failures:
         print("provenance recipe: FAILED")
         for f in failures:
@@ -150,7 +212,8 @@ def main() -> int:
     print("provenance recipe: iterate-plan (converge+abort) OK")
     print("provenance recipe: iterate-review (converge+abort) OK")
     print("provenance recipe: combined cross-skill invocation OK")
-    print("3/3 recipe invocations verified against tracked sample state files")
+    print("provenance recipe: phase-0-only, mixed-schema, card fixtures OK")
+    print("7/7 recipe invocations verified against tracked sample and fixture state files")
     return 0
 
 

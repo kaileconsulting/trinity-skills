@@ -19,9 +19,10 @@ not a traceback, if `jq` is missing).
 | `check-plan-runners.py` | `iterate-plan`'s adapted runner behavior (composition, section extraction, selection, `--plan`/`--note` boundaries) plus the HEAD-sourced register resolution's four states (loaded / confirmed-absent / malformed / operational-failure) end to end | Behavioral fixtures |
 | `check-examples.py` | Every example response validates against its skill's schema; fixtures whose *names* make claims have those claims verified | Schema + contract |
 | `check-parity.py` | The shared machinery's rules are present in **both** skills' per-pass loops (semantic parity), plus byte-identity on the designated shared runner files | Drift alarm |
-| `check-provenance-recipe.py` | The shared `provenance-recipe.jq` query reproduces per-pass tallies (pass counts, fold-caused share, disposition mix, the non-production rollback query) from real sample state files, across both skills | Reference query |
+| `check-provenance-recipe.py` | The shared `provenance-recipe.jq` query reproduces per-pass tallies (pass counts, fold-caused share, disposition mix, the non-production rollback query) from real sample state files, across both skills; reads `summary_schema` 1 and 2 side by side; and answers the simplification-card measures (`cluster_hits`, outcome mix, false-positive rate) from the fixtures in `fixtures/provenance/` | Reference query |
 | `check-scope-classification.py` | `iterate-review`'s production/non-production diff-path heuristic (`scope_classifier.py`), boundary-case-tested | Reference implementation |
 | `check-question-freeze.py` | `iterate-plan`'s open-question freeze counting semantics (`freeze_tracker.py`) — the streak state machine, boundary-case-tested | Reference implementation |
+| `check-cluster-streak.py` | Both loop skills' component-streak counting semantics (`cluster_tracker.py`) — HIGH/MEDIUM-only, one observation per pass, FAILED skips, label lifecycles, the impersonation-c1b sequence; also asserts the threshold literal in each SKILL.md equals `CLUSTER_N` | Reference implementation |
 | `test-checkers.py` | The checks above actually fail when they should | Self-test |
 | `check-all.sh` | Runs all of the above | Runner |
 

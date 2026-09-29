@@ -1,0 +1,132 @@
+{
+  "_comment": "Fixture: iterate-review Abort taken at a simplification card (chosen aborted); excluded from the false-positive denominator.",
+  "scope": "branch",
+  "scope_tag": "branch-fixture-aborted",
+  "pass_log_path": "/fixtures/code-review-aborted.md",
+  "pass_count": 4,
+  "last_verdict": "REVISE",
+  "final_action": "aborted",
+  "summary_schema": 2,
+  "scope_class": "production",
+  "passes": [
+    {
+      "pass": 1,
+      "verdict": "REVISE",
+      "high_medium_count": 1,
+      "findings_total": 1,
+      "fold_caused_count": 0,
+      "dispositions": {
+        "incorporated": 1,
+        "skipped": 0,
+        "disputed": 0,
+        "accepted-risk": 0,
+        "register-match": 0
+      },
+      "observation": true,
+      "components": {
+        "retry-loop": {
+          "worst_severity": "MEDIUM",
+          "findings": 1,
+          "fold_caused": 0
+        }
+      },
+      "streaks": {
+        "retry-loop": 1
+      },
+      "retired": [],
+      "cards": []
+    },
+    {
+      "pass": 2,
+      "verdict": "REVISE",
+      "high_medium_count": 1,
+      "findings_total": 1,
+      "fold_caused_count": 0,
+      "dispositions": {
+        "incorporated": 0,
+        "skipped": 0,
+        "disputed": 1,
+        "accepted-risk": 0,
+        "register-match": 0
+      },
+      "observation": false,
+      "components": {
+        "retry-loop": {
+          "worst_severity": "MEDIUM",
+          "findings": 1,
+          "fold_caused": 0
+        }
+      },
+      "streaks": {
+        "retry-loop": 1
+      },
+      "retired": [],
+      "cards": []
+    },
+    {
+      "pass": 3,
+      "verdict": "REVISE",
+      "high_medium_count": 1,
+      "findings_total": 1,
+      "fold_caused_count": 1,
+      "dispositions": {
+        "incorporated": 1,
+        "skipped": 0,
+        "disputed": 0,
+        "accepted-risk": 0,
+        "register-match": 0
+      },
+      "observation": true,
+      "components": {
+        "retry-loop": {
+          "worst_severity": "HIGH",
+          "findings": 1,
+          "fold_caused": 1
+        }
+      },
+      "streaks": {
+        "retry-loop": 2
+      },
+      "retired": [],
+      "cards": []
+    },
+    {
+      "pass": 4,
+      "verdict": "REVISE",
+      "high_medium_count": 1,
+      "findings_total": 1,
+      "fold_caused_count": 1,
+      "dispositions": {
+        "incorporated": 0,
+        "skipped": 0,
+        "disputed": 0,
+        "accepted-risk": 0,
+        "register-match": 0
+      },
+      "observation": true,
+      "components": {
+        "retry-loop": {
+          "worst_severity": "HIGH",
+          "findings": 1,
+          "fold_caused": 1
+        }
+      },
+      "streaks": {
+        "retry-loop": 3
+      },
+      "retired": [],
+      "cards": [
+        {
+          "type": "simplification",
+          "component": "retry-loop",
+          "streak_at_fire": 3,
+          "findings_in_streak": 3,
+          "fold_caused_in_streak": 2,
+          "chosen": "aborted",
+          "reason": null
+        }
+      ]
+    }
+  ],
+  "confirmed_accepted_risks": []
+}
