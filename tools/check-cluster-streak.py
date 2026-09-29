@@ -216,6 +216,20 @@ def main() -> int:
     check("a card outcome must answer a card presented that pass",
           raises(lambda: run(seq((f(guard="HIGH"), [("narrow", "guard")])))),
           True)
+    # -- mechanism events need no card (review pass 1) -----------------------
+    check("a replacement before the threshold replays without a card",
+          (streaks([(f(guard="HIGH"), [("replace", "guard", "recovery")])]),
+           retired([(f(guard="HIGH"), [("replace", "guard", "recovery")])])),
+          ({"recovery": 0}, frozenset({"guard"})))
+    check("a replacement recorded on a FAILED pass persists",
+          streaks([f(guard="HIGH"), (FAILED, [("replace", "guard", "recovery")])]),
+          {"recovery": 0})
+    check("an ordinary narrowing fold or AR proposal resets nothing (no card answer)",
+          streaks([f(guard="HIGH"), f(guard="MEDIUM")]), {"guard": 2})
+    check("accept-risk without a card is rejected, not silently a reset",
+          raises(lambda: run(seq(f(guard="HIGH"),
+                                 (f(guard="HIGH"), [("accept-risk", "guard")])))),
+          True)
     check("a card cannot be answered on a FAILED pass",
           raises(lambda: run(seq(f(guard="HIGH"), f(guard="HIGH"),
                                  (FAILED, [("remove", "guard")])))), True)

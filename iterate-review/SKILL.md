@@ -406,15 +406,23 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
       line range may *cite* it, but code moves while the mechanism stays
       the same, so location never *defines* identity; unrelated mechanisms
       that happen to share a file get separate labels.
-    - **Label lifecycles follow what happened to the mechanism.** *Removed*
-      → the label **retires**. *Replaced* → the old label retires and the
-      replacement gets a **new label with a fresh streak**. *Narrowed* (kept,
-      with a smaller surface) by a human decision → the label is
-      **retained** and its streak **resets to 0**. A risk accepted on it
-      (`accepted-risk`) → **retained**, streak **reset to 0**; the `AR-<n>`
-      lifecycle owns only that finding, so a later HIGH/MEDIUM merged
-      finding on the label is an ordinary observation. An ordinary fold
-      changes nothing: the streak keeps counting.
+    - **Label lifecycles follow what happened to the mechanism.**
+      *Removed* → the label **retires**. *Replaced* → the old label
+      retires and the replacement gets a **new label with a fresh
+      streak**. Both are facts about the mechanism, recorded whenever
+      they happen, on any pass. Two further outcomes exist only as the
+      human's answer to a simplification card: *narrowed* (kept, with
+      a smaller surface) in answer to the card → the label is
+      **retained** and its streak **resets to 0**; the risk accepted
+      on it in answer to the card (`accepted-risk`) → **retained**,
+      streak **reset to 0**, and since the `AR-<n>` lifecycle owns
+      only that finding, a later HIGH/MEDIUM merged finding on the
+      label is an ordinary observation. No other outcome resets a
+      streak (a pass with no HIGH/MEDIUM finding on the label still
+      does, per the streak rules below) — not an ordinary fold, even
+      one that narrows the mechanism, and not the editor's own
+      `accepted-risk` proposal: a reset without a human decision would
+      let the editor defer the card, so the streak keeps counting.
     - **Retirement is explicit and persisted; absence is only a reset.**
       When a component leaves the review's scope (a chunk boundary drops
       it, a fold deletes it), write `retired: <label> (<why>)` in that

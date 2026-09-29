@@ -40,11 +40,25 @@ Semantics, per label:
       `CLUSTER_N` -- including a label already past N after a
       "fold-once-more", so the card returns on every further pass.
 
-Outcomes applied on a pass (answered cards and explicit retirements), after
-the candidate streaks are computed:
-    ("remove", label)                 -- retire the label
-    ("replace", label, new_label)     -- retire the label; new_label is
+Outcomes applied on a pass, after the candidate streaks are computed, come
+in two kinds.
+
+Mechanism events -- facts about what happened to the code or plan, recorded
+on any pass, with or without a card, including a FAILED one (lifecycle
+changes made during a skipped pass still persist):
+    ("retire", label)                 -- the label retires (a fold deleted
+                                         the mechanism, a chunk boundary
+                                         dropped it)
+    ("replace", label, new_label)     -- the label retires; new_label is
                                          tracked from a fresh streak of 0
+
+Card answers -- the human's choice on a simplification card; each must
+answer a card that fired for that label on that same pass (a card is
+identified by `(pass, component)`):
+    ("remove", label)                 -- retire the label
+    ("replace", label, new_label)     -- as above (the card's replace option
+                                         and a replacing fold land the same
+                                         state)
     ("narrow", label)                 -- label retained, streak reset to 0
     ("accept-risk", label)            -- label retained, streak reset to 0
                                          (the AR-<n> lifecycle owns only
@@ -53,16 +67,14 @@ the candidate streaks are computed:
     ("fold-once-more", label)         -- no change: the streak keeps counting
     ("split-plan", label)             -- retire the label (iterate-plan
                                          only; the new plan tracks it from 0)
-    ("retire", label)                 -- explicit retirement with no card
-                                         (a chunk boundary dropped the
-                                         component, a fold deleted it)
 
-Every card outcome must answer a card that fired on that same pass (a card
-is identified by `(pass, component)`). An explicit `retire` may happen on
-any pass, including a FAILED one -- lifecycle changes made during a skipped
-pass still persist. A retired label may never be reused: a replacement
-mechanism gets a new label, which is what lets the gate fire again
-correctly on it.
+The streak resets on narrow and accept-risk exist only as card answers,
+because they are a human decision applied. An ordinary fold that narrows
+a mechanism, or an editor's `accepted-risk` proposal on one finding, is not
+a card answer: it resets nothing, and the streak keeps counting -- otherwise
+the editor could defer the card with no human decision point. A retired
+label may never be reused: a replacement mechanism gets a new label, which
+is what lets the gate fire again correctly on it.
 
 Checkpoint lifecycle events (an AR-<n> rejection or posture invalidation)
 are never observations and have no representation here: the one
@@ -76,8 +88,8 @@ CLUSTER_N = 3
 COUNTING = {"HIGH", "MEDIUM"}
 SEVERITIES = COUNTING | {"LOW"}
 
-CARD_OUTCOMES = {"remove", "replace", "narrow", "accept-risk",
-                 "fold-once-more", "split-plan"}
+CARD_ONLY = {"remove", "narrow", "accept-risk", "fold-once-more", "split-plan"}
+MECHANISM_EVENTS = {"retire", "replace"}
 RETIRING = {"remove", "replace", "split-plan", "retire"}
 
 
@@ -136,11 +148,11 @@ def advance(state, pass_record, outcomes=()):
 
     for outcome in outcomes:
         kind, label = outcome[0], outcome[1]
-        if kind in CARD_OUTCOMES and label not in fired:
+        if kind not in CARD_ONLY and kind not in MECHANISM_EVENTS:
+            raise ValueError(f"unknown outcome {outcome!r}")
+        if kind in CARD_ONLY and label not in fired:
             raise ValueError(f"{kind!r} on {label!r} answers no card "
                              "presented this pass")
-        if kind not in CARD_OUTCOMES and kind != "retire":
-            raise ValueError(f"unknown outcome {outcome!r}")
         if kind in RETIRING:
             streaks.pop(label, None)
             retired.add(label)

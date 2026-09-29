@@ -213,7 +213,7 @@ def main() -> int:
     print("provenance recipe: iterate-review (converge+abort) OK")
     print("provenance recipe: combined cross-skill invocation OK")
     print("provenance recipe: phase-0-only, mixed-schema, card fixtures OK")
-    print("7/7 recipe invocations verified against tracked sample and fixture state files")
+    print("6/6 recipe invocations verified against tracked sample and fixture state files")
     return 0
 
 
