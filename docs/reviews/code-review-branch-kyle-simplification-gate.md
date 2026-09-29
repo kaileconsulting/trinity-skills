@@ -128,3 +128,19 @@ Diff captured at 2026-09-29 10:12; head SHA `79852d8`.
 ### Checkpoint
 
 Both HIGHs incorporated (one via Kyle's card); suite green. HIGH+MEDIUM trajectory 1 → 0 → 3 → 2 (strictly decreasing from pass 3). Component streaks: `split-plan-outcome` **2**, `plan-resume-entry` **2** — both at one below the cluster threshold, 2: one more HIGH/MEDIUM pass on either triggers the simplification card (this review is now exercising the gate it adds); `plan-fixture-02` 0. Loop mode → **Continue** to pass 5 (auto-continued passes used: 2 of 6).
+
+## Pass 5 — 2026-09-29 12:50 [IN PROGRESS]
+
+**Scope:** branch (Phase 1 focus) · **Diff size:** 3949 lines · **Scope class:** production · **Verdict:** (pending) until the lens retries complete · **Posture:** used docs/simplification-gate-2026-09-28.md · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+- (pending — no lens has returned)
+
+### Lens run summary
+
+- senior-dev: failed (exit 1, empty stderr) · security: failed · qa: failed. Direct probe: "You've hit your usage limit … try again at 5:20 PM." (the pass-4 retries consumed the refreshed quota). Each lens's one `run-lens` retry is **owed, not spent**. Resume: retry the three lenses against this pass's diff (head `8952a56`), merge into this block. Streak watch: `split-plan-outcome` and `plan-resume-entry` are at 2 — a HIGH/MEDIUM on either this pass triggers the simplification card.
+
+### Diff snapshot reference
+
+Diff captured at 2026-09-29 12:50; head SHA `8952a56`.
