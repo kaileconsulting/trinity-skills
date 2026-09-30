@@ -258,3 +258,34 @@ Diff captured at 2026-09-30 18:09; head SHA `dd43336a71bb694b6558255b30cc9b96a66
 ### Checkpoint
 
 Continue, one pass (Kyle, 2026-09-30). HIGH+MEDIUM 6 → 5 (Phase 1: 6, 3, 6, 5); 2 of 5 fold-caused (pass 6), 2 defense-in-depth against diffs git never writes. Streaks: governing-plan-spec 2, plain-path-rule 2 (each one below the cluster threshold, 2,), diff-section-parser 1, exclusion-class-rules 1, scope-tag-validation 0, exclusion-disclosure 0. Cost: ~2.4M input tokens, ~18% of the 5-hour window, ~3% weekly.
+
+## Pass 8 — 2026-09-30 18:27 [HISTORICAL]
+
+**Scope:** branch (excluded by hand, pre-feature: governing-plan docs/review-diff-exclusions-2026-09-29.md 390 lines; docs docs/review-diff-exclusions-2026-09-29.md.handoff-prompt.md 33 lines; pass-log docs/reviews/code-review-branch-kyle-review-diff-exclusions.md 260 lines) · **Diff size:** 2544 lines · **Scope class:** production · **Verdict:** APPROVE (worst-of; no FAILED lenses) · **Posture:** used docs/review-diff-exclusions-2026-09-29.md · **Lenses:** senior-dev, security, qa
+
+Cost: ~1.57M input tokens, ~12% of the 5-hour window, ~2% weekly.
+
+### Findings
+
+1. **A crossing-rename warning can reverse the endpoint direction** — LOW · lens: qa: `distinct` is sorted before the warning renders `old → new`, so a rename `z.lock → a.py` under `generated:z.lock` is reported as `'a.py' → 'z.lock'`; the section still stays reviewed.
+   → Editor: incorporated — the warning joins the endpoints in old-then-new order (`dict.fromkeys(ends)`). Fixture: `z.lock → a.py` warns `'z.lock' → 'a.py'`; a mutation back to sorted order fails it. Diagnostic text only: no exclusion decision changes. [introduced_by_pass: null] [component: exclusion-class-rules]
+
+### Code corrections applied
+
+- (none)
+
+### New questions Codex raised
+
+- (none)
+
+### Lens run summary
+
+- senior-dev: APPROVE · security: APPROVE · qa: APPROVE
+
+### Diff snapshot reference
+
+Diff captured at 2026-09-30 18:25; head SHA `0d688ffadd06117ffc46b509593266ead7510b16`.
+
+### Checkpoint
+
+**Converge** (Kyle, 2026-09-30): "Fold the LOW, converge". The shipped head differs from the approved head `0d688ff` only by this pass's LOW fold (warning text order plus its test), which changes no exclusion decision; no confirming pass was run, by Kyle's choice. Phase 1 (passes 4–8): HIGH+MEDIUM 6 → 3 → 6 → 5 → 0; 21 merged findings (20 HIGH/MEDIUM, 1 LOW), all incorporated — 3 by simplification — none disputed, accepted-risk or register-match; 6 fold-caused (3 by pass 4's folds, 1 by pass 5's, 2 by pass 6's). The gate fired twice at pass 6 (docs-eligibility → remove; exclusion-disclosure → narrow), after a checkpoint narrowing at pass 5 (plain paths). Whole branch review (passes 1–8): Phase 0 converged at 3, Phase 1 at 8. Phase 1's reviewer cost on gpt-5.6-sol: ~80% of 5-hour windows across passes 4–8, ~13% weekly.

@@ -147,7 +147,7 @@ Modified: `iterate-review/bin/review_runner.py` (diff sectioning + exclusion), `
 - A worked example in `examples/merge/` (a lockfile-bearing diff, with summary and disclosure), built from the ResearchLogix dependabot review.
 
 **Iterate-review:** YES (rationale: the trust-boundary half: rules that let the editor take files out of review; wrong rules silently suppress findings)
-**Status:** built 2026-09-30, iterate-review pending. `--exclude <class>:<path-or-glob>` on run-pass and run-lens (`apply_exclusions()` in review_runner.py, pass-log self-exclusion folded into the same engine); the heuristic's single implementation moved to `bin/path_classes.py` (tools/ imports it) with a SKILL.md-prose pin; worked example `examples/merge/06-lockfile-exclusion/`, run by check-runners and byte-compared. check-runners 209/209 (29 new: every refusal and valid case in the acceptance list, scenario 06, and the CLI refusal/summary/run-lens paths); a mutation pass over the engine's eight rules caught seven, and the eighth (an up-front governing-plan production check) was removed as redundant with the per-section rule.
+**Status:** reviewed 2026-09-30 — iterate-review converged at pass 8 (APPROVE ×3; passes 4–8, HIGH+MEDIUM 6 → 3 → 6 → 5 → 0; 21 findings, all incorporated, 3 by simplification, 6 fold-caused). Shape changes the review forced, all Kyle's calls: at the pass-5 checkpoint, classed exclusion narrowed to plain paths; at pass 6 two simplification cards fired — the `docs` class was removed and audit text narrowed to plain ASCII shown as code spans; the governing plan must be a regular non-executable `.md` blob. The final LOW (warning order) was folded after the APPROVE without a confirming pass, by Kyle's choice.
 
 ### Phase 2 — Closeout — CHANGELOG, README, close #10 (~1h)
 **Deliverables:**
@@ -267,7 +267,7 @@ where each phase stands in the review lifecycle.
 | Phase | Iterate-review | Status | Last pass | Pass log |
 |-------|----------------|--------|-----------|----------|
 | Phase 0 | YES | converged (APPROVE ×3) | 3 — 2026-09-30 | `docs/reviews/code-review-branch-kyle-review-diff-exclusions.md` |
-| Phase 1 | YES | not started | — | — |
+| Phase 1 | YES | converged (APPROVE ×3) | 8 — 2026-09-30 | `docs/reviews/code-review-branch-kyle-review-diff-exclusions.md` |
 | Phase 2 | NO | not started | — | — |
 
 ## Pre-flight review pass (the editor, YYYY-MM-DD) [HISTORICAL]

@@ -102,10 +102,12 @@ fold-caused; no card fired. The first review on the 2.5.1 pin: ~30% of one
   `tools/check-runners.py`. It also pins the §3 rule concretely: selecting
   on the reviewed diff would drop the `security` lens.
 
-### Hardened (Phase 1's review — passes 4–6+)
-<!-- FINALIZE-AT-MERGE: pass 7 onward, and the convergence line. -->
+### Hardened (Phase 1's 5-pass review — APPROVE×3 at pass 8)
 
-Passes 4–6: HIGH+MEDIUM 6 → 3 → 6, fifteen findings; the gate fired twice.
+HIGH+MEDIUM 6 → 3 → 6 → 5 → 0 (passes 4–8 of one branch review; passes 1–3
+were Phase 0). 21 findings, all incorporated, 3 of them by simplification;
+6 fold-caused. The gate fired twice, and the review ended smaller than it
+started: the fold after pass 6 removed more lines than it added.
 - **Filename tricks kept coming** (passes 4–5): a backslash read as a
   separator, non-UTF-8 bytes collapsing two files into one, `: ` letting
   one audit entry cover two paths, control and bidi characters forging the
@@ -132,6 +134,9 @@ Passes 4–6: HIGH+MEDIUM 6 → 3 → 6, fifteen findings; the gate fired twice.
   escapes are accepted (`\544` would have aliased `d`); a path component
   padded with spaces is not plain; a two-endpoint `generated` change with
   a missing audit is refused rather than kept as a "crossing".
+- Pass 8: APPROVE ×3 with one LOW (a crossing warning printed the rename
+  endpoints in sorted order), folded without a confirming pass: it changes
+  warning text only.
 
 ## 2.5.1 — 2026-09-30 — reviewer model pinned
 

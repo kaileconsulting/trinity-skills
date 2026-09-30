@@ -835,7 +835,8 @@ def apply_exclusions(diff: str, log_rel, specs: list, intent: str):
             # unmatched endpoint may be anything, so it is never shown raw.
             warnings.append(
                 f"--exclude {cls}:{pattern}: "
-                f"{' → '.join(repr(p) for p in distinct)} is a rename/copy "
+                f"{' → '.join(repr(p) for p in dict.fromkeys(ends))} is a "
+                f"rename/copy "
                 f"crossing out of the class; that section stays in review, "
                 f"whole")
             kept.append(sec["text"])

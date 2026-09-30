@@ -786,6 +786,15 @@ def test_classed_exclusions(rr, sel) -> None:
             spec("generated:**/yarn.lock"), summary_for("new/yarn.lock"),
             "old/yarn.lock has no non-empty audit entry")
 
+    # Pass-8 fold: a crossing warning reads old → new even when the
+    # alphabetical order is the reverse.
+    zrename = ("diff --git a/z.lock b/a.py\nsimilarity index 100%\n"
+               "rename from z.lock\nrename to a.py\n")
+    _r, _e, warns = rr.apply_exclusions(code + zrename, None, spec("generated:z.lock"),
+                                        summary_for("z.lock"))
+    record("exclude: a crossing warning shows the rename as old → new",
+           any("'z.lock' → 'a.py'" in w for w in warns), str(warns))
+
     # Scope tags end at the true end of the string (pass-6 fold).
     try:
         rr.validate_scope_tag("x\n")
