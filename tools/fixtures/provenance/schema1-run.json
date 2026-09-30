@@ -1,0 +1,53 @@
+{
+  "_comment": "Fixture: a schema-1 iterate-review state file (the pre-simplification-gate row shape), for the recipe mixed-schema check. Not a template; see iterate-review/state/example.json.",
+  "scope": "branch",
+  "scope_tag": "branch-feature-x",
+  "pass_log_path": "/path/to/your/project/docs/reviews/code-review-branch-feature-x.md",
+  "pass_count": 2,
+  "last_verdict": "APPROVE",
+  "final_action": "converged",
+  "started_at": "2026-05-10T14:00:00Z",
+  "completed_at": "2026-05-10T14:35:00Z",
+  "summary_schema": 1,
+  "scope_class": "production",
+  "passes": [
+    {
+      "pass": 1,
+      "verdict": "REVISE",
+      "high_medium_count": 4,
+      "findings_total": 6,
+      "fold_caused_count": 0,
+      "dispositions": {
+        "incorporated": 3,
+        "skipped": 1,
+        "disputed": 0,
+        "accepted-risk": 1,
+        "register-match": 1
+      }
+    },
+    {
+      "pass": 2,
+      "verdict": "APPROVE",
+      "high_medium_count": 0,
+      "findings_total": 1,
+      "fold_caused_count": 1,
+      "dispositions": {
+        "incorporated": 0,
+        "skipped": 1,
+        "disputed": 0,
+        "accepted-risk": 0,
+        "register-match": 0
+      }
+    }
+  ],
+  "confirmed_accepted_risks": [
+    {
+      "id": "AR-1",
+      "register_ref": null,
+      "dependency_descriptor": [
+        "PF-shipbar"
+      ],
+      "dependency_digest": "sha256:1234567890abcdef..."
+    }
+  ]
+}

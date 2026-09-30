@@ -1,5 +1,5 @@
 {
-  "_comment": "Example state file — illustrates the schema. Real state files are named by SHA1(absolute_plan_path) and live in this directory. This example is tracked in git (per .gitignore's !**/state/example*.json exception); real state files are gitignored. This one shows the Converge path — see example-aborted.json for the Abort path.",
+  "_comment": "Example state file — illustrates the schema. Real state files are named by SHA1(absolute_plan_path) and live in this directory. This example is tracked in git (per .gitignore's !**/state/example*.json exception); real state files are gitignored. This one shows the Converge path — see example-aborted.json for the Abort path. summary_schema 2 (simplification gate Phase 0): each row adds observation/components/streaks/retired/cards; no card fires in this example.",
   "plan_abs_path": "/path/to/your/project/docs/some-plan-2026-05-19.md",
   "plan_path_sha1": "abc123def456...",
   "plan_content_hash": "sha256:0123456789abcdef...",
@@ -7,7 +7,7 @@
   "last_verdict": "APPROVE",
   "started_at": "2026-04-29T12:38:00Z",
   "last_pass_at": "2026-04-29T13:15:00Z",
-  "summary_schema": 1,
+  "summary_schema": 2,
   "scope_class": null,
   "passes": [
     {
@@ -23,6 +23,31 @@
         "accepted-risk": 0,
         "register-match": 0
       },
+      "observation": true,
+      "components": {
+        "freeze-counter": {
+          "worst_severity": "HIGH",
+          "findings": 2,
+          "fold_caused": 0
+        },
+        "posture-source": {
+          "worst_severity": "MEDIUM",
+          "findings": 1,
+          "fold_caused": 0
+        },
+        "naming": {
+          "worst_severity": "LOW",
+          "findings": 2,
+          "fold_caused": 0
+        }
+      },
+      "streaks": {
+        "freeze-counter": 1,
+        "posture-source": 1,
+        "naming": 0
+      },
+      "retired": [],
+      "cards": [],
       "started_at": "2026-04-29T12:38:00Z",
       "completed_at": "2026-04-29T12:42:00Z"
     },
@@ -39,6 +64,21 @@
         "accepted-risk": 1,
         "register-match": 0
       },
+      "observation": true,
+      "components": {
+        "freeze-counter": {
+          "worst_severity": "MEDIUM",
+          "findings": 1,
+          "fold_caused": 1
+        }
+      },
+      "streaks": {
+        "freeze-counter": 2,
+        "posture-source": 0,
+        "naming": 0
+      },
+      "retired": [],
+      "cards": [],
       "started_at": "2026-04-29T12:55:00Z",
       "completed_at": "2026-04-29T12:58:00Z"
     },
@@ -55,6 +95,22 @@
         "accepted-risk": 0,
         "register-match": 0
       },
+      "observation": true,
+      "components": {
+        "naming": {
+          "worst_severity": "LOW",
+          "findings": 1,
+          "fold_caused": 0
+        }
+      },
+      "streaks": {
+        "freeze-counter": 0,
+        "naming": 0
+      },
+      "retired": [
+        "posture-source"
+      ],
+      "cards": [],
       "started_at": "2026-04-29T13:12:00Z",
       "completed_at": "2026-04-29T13:15:00Z"
     }
@@ -69,7 +125,9 @@
     {
       "id": "AR-1",
       "register_ref": null,
-      "dependency_descriptor": ["PF-shipbar"],
+      "dependency_descriptor": [
+        "PF-shipbar"
+      ],
       "dependency_digest": "sha256:1234567890abcdef..."
     }
   ]

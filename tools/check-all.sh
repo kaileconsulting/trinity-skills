@@ -45,6 +45,8 @@ run "scope classification (iterate-review §3)" \
     python3 tools/check-scope-classification.py
 run "open-question freeze counting (iterate-plan §4)" \
     python3 tools/check-question-freeze.py
+run "component streak counting (simplification gate §2)" \
+    python3 tools/check-cluster-streak.py
 run "checker self-tests" \
     python3 tools/test-checkers.py
 

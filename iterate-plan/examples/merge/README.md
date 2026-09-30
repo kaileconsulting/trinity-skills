@@ -10,6 +10,7 @@ applies identically here.
 | Scenario | Verdicts in | Aggregate | Pins |
 |---|---|---|---|
 | [`01-co-report-and-degraded-context`](01-co-report-and-degraded-context/) | REVISE, REVISE | REVISE | Co-report collapses while keeping **both** lenses' evidence; two findings on the same goal with different defects stay separate; degraded context is *flagged, not filled in* (R2); two lenses answering one `question_id` in opposition is escalated, not reconciled |
+| [`02-simplification-card`](02-simplification-card/) | REVISE, REVISE | REVISE | The simplification card on a plan mechanism: identity is the mechanism, not its D-number; two same-label findings are one observation; remove's accounting resolves one (→ `incorporated (by simplification)`) and not the other (→ ordinary fold); other labels fold meanwhile; *split the plan* in the escape-hatch slot; the stall/cap card's cluster section — built from a real review's passes 4–6 |
 
 ## What differs from the iterate-review side
 

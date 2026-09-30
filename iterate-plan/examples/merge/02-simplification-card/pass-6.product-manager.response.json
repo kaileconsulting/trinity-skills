@@ -1,0 +1,29 @@
+{
+  "verdict": "REVISE",
+  "findings": [
+    {
+      "title": "Compliance sentence overstates pre-authentication protections",
+      "severity": "HIGH",
+      "description": "Why / Context, the compliance sentence: \"inventoried with the secret it already requires\" is false for register and password-reset/request, and the manifest test proves membership, not the cited gates.",
+      "suggested_action": "Distinguish routes protected by an independent secret from routes safe because they carry no credential.",
+      "register_ref": null
+    },
+    {
+      "title": "G3 contradicts the intentional console failure-state change",
+      "severity": "HIGH",
+      "description": "G3 still promises no user-visible change, but the pass-3 qualification introduced a deliberate console failure state; the qualification reached the use case but not G3.",
+      "suggested_action": "Carry the qualification into G3.",
+      "register_ref": null
+    },
+    {
+      "title": "Mutation-proof gate lacks planned evidence for I4 and I6",
+      "severity": "MEDIUM",
+      "description": "Acceptance criteria: the mutation-proof gate requires a recorded mutation for every invariant, but the plan names no mutation for I4 or I6, so the gate cannot be satisfied as written.",
+      "suggested_action": "Name the mutation that proves each of I4 and I6, or exempt them with a reason.",
+      "register_ref": null
+    }
+  ],
+  "plan_corrections": [],
+  "open_question_answers": [],
+  "new_questions": []
+}

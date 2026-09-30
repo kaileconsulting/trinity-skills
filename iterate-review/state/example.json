@@ -1,5 +1,5 @@
 {
-  "_comment": "Example state file — illustrates the schema (SKILL.md step 16). Real state files are named by SHA1(<scope-tag>|<pass-log-path>) and live in this directory. This example is tracked in git (per .gitignore's !**/state/example*.json exception); real state files are gitignored. This one shows the Converge path, scope_class=production — see example-aborted.json for the Abort path and the non-production case.",
+  "_comment": "Example state file — illustrates the schema (SKILL.md step 16). Real state files are named by SHA1(<scope-tag>|<pass-log-path>) and live in this directory. This example is tracked in git (per .gitignore's !**/state/example*.json exception); real state files are gitignored. This one shows the Converge path, scope_class=production — see example-aborted.json for the Abort path and the non-production case. summary_schema 2 (simplification gate Phase 0): each row adds observation/components/streaks/retired/cards; no card fires in this example.",
   "scope": "branch",
   "scope_tag": "branch-feature-x",
   "pass_log_path": "/path/to/your/project/docs/reviews/code-review-branch-feature-x.md",
@@ -8,7 +8,7 @@
   "final_action": "converged",
   "started_at": "2026-05-10T14:00:00Z",
   "completed_at": "2026-05-10T14:35:00Z",
-  "summary_schema": 1,
+  "summary_schema": 2,
   "scope_class": "production",
   "passes": [
     {
@@ -23,7 +23,32 @@
         "disputed": 0,
         "accepted-risk": 1,
         "register-match": 1
-      }
+      },
+      "observation": true,
+      "components": {
+        "session-lock": {
+          "worst_severity": "HIGH",
+          "findings": 2,
+          "fold_caused": 0
+        },
+        "retry-backoff": {
+          "worst_severity": "MEDIUM",
+          "findings": 2,
+          "fold_caused": 0
+        },
+        "log-format": {
+          "worst_severity": "LOW",
+          "findings": 2,
+          "fold_caused": 0
+        }
+      },
+      "streaks": {
+        "session-lock": 1,
+        "retry-backoff": 1,
+        "log-format": 0
+      },
+      "retired": [],
+      "cards": []
     },
     {
       "pass": 2,
@@ -37,14 +62,31 @@
         "disputed": 0,
         "accepted-risk": 0,
         "register-match": 0
-      }
+      },
+      "observation": true,
+      "components": {
+        "log-format": {
+          "worst_severity": "LOW",
+          "findings": 1,
+          "fold_caused": 1
+        }
+      },
+      "streaks": {
+        "session-lock": 0,
+        "retry-backoff": 0,
+        "log-format": 0
+      },
+      "retired": [],
+      "cards": []
     }
   ],
   "confirmed_accepted_risks": [
     {
       "id": "AR-1",
       "register_ref": null,
-      "dependency_descriptor": ["PF-shipbar"],
+      "dependency_descriptor": [
+        "PF-shipbar"
+      ],
       "dependency_digest": "sha256:1234567890abcdef..."
     }
   ]

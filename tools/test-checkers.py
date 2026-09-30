@@ -401,6 +401,34 @@ def test_parity() -> None:
     record("parity: per-skill patterns are not satisfied by the sibling's text",
            rc == 1 and "PARITY GAP" in out and "absent from iterate-plan" in out)
 
+    # --- forbidden phrases (simplification gate Phase 1) -------------------
+    # The lifted v2.4 reservation must not linger in any copy, and the one
+    # deliberate asymmetry (split the plan) must be absent from the sibling.
+    cp.RULES = real_rules
+
+    def injector(target_skill, phrase):
+        def _load(skill):
+            norm, lines = real_load(skill)
+            if skill == target_skill:
+                norm = norm + " " + phrase
+            return norm, lines
+        return _load
+
+    cp.load = injector("iterate-plan",
+                       "no guardrail, checkpoint, or budget in this skill consults "
+                       "introduced_by_pass, and none may until that issue is resolved")
+    rc, out = loud(cp.main, [])
+    cp.load = real_load
+    record("parity: old 'none may consult' reservation wording is rejected",
+           rc == 1 and "FORBIDDEN PRESENT" in out
+           and "provenance-reservation-lifted" in out)
+
+    cp.load = injector("iterate-review", "alternatives: split the plan")
+    rc, out = loud(cp.main, [])
+    cp.load = real_load
+    record("parity: split-the-plan in iterate-review is rejected (sibling lacks it)",
+           rc == 1 and "split-plan-iterate-plan-only" in out)
+
     # A per-skill rule that forgets a skill is a config error, not a silent pass.
     cp.RULES = [("incomplete", "d", {"iterate-plan": [r"worst-of"]})]
     rc = quiet(cp.main, [])

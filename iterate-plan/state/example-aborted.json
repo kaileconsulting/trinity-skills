@@ -1,5 +1,5 @@
 {
-  "_comment": "Example state file — Abort path. Illustrates that Abort produces the passes array exactly as Converge does (Trinity v2.4 Phase 0 §5), covering every pass that completed before the human chose Abort. Tracked in git per .gitignore's !**/state/example*.json exception.",
+  "_comment": "Example state file — Abort path. Illustrates that Abort produces the passes array exactly as Converge does (Trinity v2.4 Phase 0 §5), covering every pass that completed before the human chose Abort. Tracked in git per .gitignore's !**/state/example*.json exception. summary_schema 2 (simplification gate Phase 0): each row adds observation/components/streaks/retired/cards; no card fires in this example.",
   "plan_abs_path": "/path/to/your/project/docs/another-plan-2026-06-02.md",
   "plan_path_sha1": "def456abc123...",
   "plan_content_hash": "sha256:fedcba9876543210...",
@@ -7,7 +7,7 @@
   "last_verdict": "REVISE",
   "started_at": "2026-06-02T09:00:00Z",
   "last_pass_at": "2026-06-02T09:20:00Z",
-  "summary_schema": 1,
+  "summary_schema": 2,
   "scope_class": null,
   "passes": [
     {
@@ -23,6 +23,31 @@
         "accepted-risk": 0,
         "register-match": 0
       },
+      "observation": true,
+      "components": {
+        "stale-lock-invariant": {
+          "worst_severity": "HIGH",
+          "findings": 2,
+          "fold_caused": 0
+        },
+        "handoff-ordering": {
+          "worst_severity": "MEDIUM",
+          "findings": 1,
+          "fold_caused": 0
+        },
+        "doc-wording": {
+          "worst_severity": "LOW",
+          "findings": 1,
+          "fold_caused": 0
+        }
+      },
+      "streaks": {
+        "stale-lock-invariant": 1,
+        "handoff-ordering": 1,
+        "doc-wording": 0
+      },
+      "retired": [],
+      "cards": [],
       "started_at": "2026-06-02T09:00:00Z",
       "completed_at": "2026-06-02T09:20:00Z"
     }
