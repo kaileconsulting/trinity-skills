@@ -93,7 +93,7 @@ Exclusion deletes reviewed content, so the parser has an exact contract rather t
 
 ### §2 Classed editor exclusions (runner-applied, Phase 1)
 
-The editor passes `--exclude <class>:<path-or-glob>` (repeatable) to `run-pass` / `run-lens`. Exclusions are applied by the runner, not by the editor editing the diff file (Q1, agreed by both lenses at pass 1): disclosure is mechanical (the summary records what was actually removed, with line counts) and the refusal is enforced in code. A section is excluded only if **both** of its endpoints satisfy the class's rule; a rename that crosses from an excludable path to a non-excludable one stays reviewed. Classes:
+The editor passes `--exclude <class>:<path-or-glob>` (repeatable) to `run-pass` / `run-lens`. Exclusions are applied by the runner, not by the editor editing the diff file (Q1, agreed by both lenses at pass 1): disclosure is mechanical (the summary records what was actually removed, with line counts) and the refusal is enforced in code. A section is excluded only if **every existing endpoint** satisfies the class's rule (`/dev/null`, the missing side of an addition or deletion, is not a repository path and is never checked), as in §1; a rename that crosses from an excludable path to a non-excludable one stays reviewed. Classes:
 
 | Class | May exclude | Requires | Refused when |
 |---|---|---|---|
@@ -124,7 +124,7 @@ Modified: `iterate-review/bin/review_runner.py` (diff sectioning + exclusion), `
 - The §0 parser and the §1 pass-log exclusion in `review_runner.py`, applied by both `run-pass` and `run-lens`; the original/reviewed split (§3), with selection and classification on the original.
 - `publish_summary()`'s optional extra-fields argument in both skills' `runner_shared.py`, byte-identical (§4); the `excluded` array in `pass-N.summary.json` and in `run-lens` output.
 - Composition golden: a diff containing the pass log composes byte-identically to the same diff without it. A pass-log-only diff follows the empty-diff contract (§4).
-- SKILL.md step 9's "unchanged" rule rewritten (§3); step 12's `Scope:` header shows the exclusion.
+- SKILL.md step 9's "unchanged" rule rewritten (§4); step 12's `Scope:` header shows the exclusion.
 
 **Acceptance:**
 - `tools/check-all.sh` green, including new `check-runners.py` cases: log section dropped when added, modified or deleted in place; **kept** when renamed or copied to or from another path, including with substantive new content; quoted paths and hunk-less (rename-only, mode-only, binary) sections parsed; an unparseable section skips self-exclusion with a warning; selection unchanged by exclusion; working-tree and committed logs alike; summary records both endpoints and line counts.
@@ -162,10 +162,10 @@ Modified: `iterate-review/bin/review_runner.py` (diff sectioning + exclusion), `
 
 ## Acceptance criteria
 
-- [ ] The runner drops the review's own pass log from every composed diff and records it in the summary; nothing else changes (golden-pinned).
+- [ ] The runner drops the review's own pass log from every composed diff it can parse and records it in the summary; nothing else changes (golden-pinned). An unparseable diff is left unchanged with a warning (§0).
 - [ ] Classed `--exclude` works for `governing-plan`, `docs` and `generated`, and fails closed on every refusal case.
 - [ ] Exclusion never changes lens selection or scope classification (both read the original diff), and never removes a section with an endpoint outside its class.
-- [ ] No path can leave the reviewed diff except through the runner, and every exclusion appears in both `pass-N.summary.json` and the pass header's `Scope:` line.
+- [ ] No path can leave the reviewed diff except through the runner, and every exclusion is disclosed: in `pass-N.summary.json` and the pass header's `Scope:` line for a pass, or on stderr, relayed by the editor, when exclusions leave nothing to review and no pass is created (§4).
 - [ ] The runner's heuristic copy and `tools/scope_classifier.py` are pinned to agree.
 - [ ] Issue #10 closed; CHANGELOG and README current.
 
@@ -313,6 +313,34 @@ REVISE (worst-of: architect REVISE, product-manager REVISE; no FAILED lens). Mer
 
 ### Checkpoint
 Loop mode (`--loop`). One plan-shaping card, answered; every finding incorporated; five new component labels, each at streak 1. Open questions Q1–Q4 answered in agreement with the recommendations by both lenses (freeze streak 1). → **Continue** to pass 2.
+
+## Codex review pass 2 — answers (2026-09-30) [HISTORICAL]
+
+### Verdict
+APPROVE (architect APPROVE, product-manager APPROVE; no FAILED lens). Merged HIGH+MEDIUM count: 0 (from 5).
+
+### Findings
+- (none)
+
+### Plan corrections applied
+- §2 both-endpoints rule (architect): did not exempt nonexistent endpoints as §1 does, so `/dev/null` on an addition or deletion could block a valid exclusion → now "every existing endpoint", with `/dev/null` named as never checked.
+- Acceptance criteria (architect): the "every composed diff" and "every exclusion in the summary" bullets omitted §0's parse-failure and §4's empty-result contracts → both bullets qualified.
+- Phase 0 deliverables (architect): step 9's rewrite cited §3 but is specified in §4 → points to §4.
+
+### Open-question answers
+1. Q1 — both lenses: runner-applied; the optional summary argument records removals at the existing atomic commit point. Equivalent to pass 1 (freeze streak 2).
+2. Q2 — both lenses: yes via `generated`, per-path audit entries; presence enforced, adequacy the editor's. Equivalent (streak 2).
+3. Q3 — both lenses: yes, same rule in both scopes, boundary-crossing renames preserved. Equivalent (streak 2).
+4. Q4 — both lenses: out of scope; a review base would need coordinated provenance and trust-boundary treatment. Equivalent (streak 2).
+
+### New questions Codex raised
+- (none)
+
+### Convergence reasoning
+Two passes. HIGH+MEDIUM per pass: 5 → 0. Five merged findings, all incorporated (one via Kyle's plan-shaping card), none fold-caused; six plan corrections, three per pass; 0 disputed, 0 accepted-risk, 0 register-match. Component streaks all at 0 after pass 2; no simplification card fired. Every open question answered in agreement with its recommendation on both passes (freeze streak 2, one short of freezing). No pending cards. The three pass-2 corrections are mechanical and unreviewed. Converge is Kyle's call.
+
+### Lens run summary
+- architect: APPROVE · product-manager: APPROVE
 
 ## Codex review pass N — answers (YYYY-MM-DD) [HISTORICAL]
 
