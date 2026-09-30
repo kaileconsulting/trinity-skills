@@ -173,7 +173,7 @@ Modified: `iterate-review/bin/review_runner.py` (diff sectioning + exclusion + s
 
 ## Sequencing decision
 
-After the simplification-gate PR merges: it touches the same SKILL.md step 9 and step 12 header and the runner's summary, so building in parallel means a rebase over freshly reviewed text. Drafted during that PR's review, while it was blocked on the reviewer's usage limit. Until this ships, reviews apply the exclusions by hand and record them in the `Scope:` line (never a production path without a summary).
+After the simplification-gate PR merges (done: PR #11, merged 2026-09-30; this branch is rebased onto it): it touches the same SKILL.md step 9 and step 12 header and the runner's summary, so building in parallel means a rebase over freshly reviewed text. Drafted during that PR's review, while it was blocked on the reviewer's usage limit. Until this ships, reviews apply the exclusions by hand and record them in the `Scope:` line (never a production path without a summary).
 
 ## Open questions
 
@@ -209,7 +209,7 @@ After the simplification-gate PR merges: it touches the same SKILL.md step 9 and
 - `iterate-review/SKILL.md` step 3 (the production/non-production heuristic), step 9 ("unchanged" diff), step 10 (summary contract), step 12 (pass header).
 - `iterate-review/bin/review_runner.py`: `compose_input()`, `resolve_log_path()`, `read_prior_passes()`.
 - `tools/scope_classifier.py`, `tools/check-scope-classification.py`: the heuristic and its fixtures.
-- `docs/simplification-gate-2026-09-28.md` (2.5.0): the literal-in-SKILL.md / dev-side-pin pattern reused for the heuristic copy; its review log (`docs/reviews/code-review-branch-kyle-simplification-gate.md`) is where the cost was measured.
+- `docs/archive/simplification-gate-2026-09-28.md` (2.5.0): the literal-in-SKILL.md / dev-side-pin pattern reused for the heuristic copy; its review log (`docs/archive/code-review-branch-kyle-simplification-gate.md`) is where the cost was measured.
 - ResearchLogix_v2 review logs with hand exclusions: the testing-suite batch 2 and 3 branches ("docs/ excluded"), `code-review-branch-fix-auth-csrf-hardening-2026-09-24.md`, `code-review-branch-chore-dependabot-cleanup-2026-09-10.md` (lockfiles, with the audit summary).
 - Memory: `codex-quota.md` (the measurements), `trinity-expansion.md`.
 
