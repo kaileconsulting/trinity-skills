@@ -122,15 +122,16 @@ The scope transfer's five writes, in order:
 
 The block stays `[IN PROGRESS]` throughout, and through the stall/cap
 checkpoint card that follows; it flips to `[HISTORICAL]` only after that
-card is answered. Resume, by interruption point (Setup step 4 finds the
-block `[IN PROGRESS]` in every case):
+card is answered. If the session is interrupted anywhere in between,
+Setup step 4 finds the block `[IN PROGRESS]`, **retags it `[ABORTED]` and
+reruns pass 6 as pass 7** — never resumes it:
 
-| Interrupted after | On disk | A resumed session |
+| Interrupted after | On disk | Pass 7 (the rerun) |
 |---|---|---|
-| the pending card, before an answer | `chosen: (pending)`, plans untouched | re-presents the card |
-| write 1 | resolution recorded, plans untouched | never re-presents; performs writes 2–5 |
-| write 3 | stub with carried findings; D4 gone from this plan | never re-presents; writes 4–5, copying nothing twice |
-| write 5 | every slot filled, no stall card yet | runs the checkpoint, writes and presents the stall card, then seals |
+| the pending card, before an answer | `chosen: (pending)`, plans untouched | reviews the unchanged plan; the classifier findings are re-reported, the candidate streak is again 3 (pass 6 skipped), and the card fires again |
+| write 1 | resolution recorded, plans untouched | the same: the aborted resolution is void, and the card fires again |
+| write 3 | stub with carried findings; D4 gone from this plan | reviews a plan without the classifier; nothing re-reports it, no card; the stub keeps its carried findings for its own review |
+| write 5 | every slot filled, no stall card yet | a fresh pass with its own checkpoint; pass 6's rows and answers are void, and the stall comparison skips it |
 
 ## What a wrong result looks like
 
@@ -145,7 +146,7 @@ block `[IN PROGRESS]` in every case):
 | On split, the findings left with empty slots, or `skipped` | A split is a scope transfer: carried to the stub first, then `incorporated (moved to …)` |
 | On split, the stub written before the resolution | The choice is recorded first, so no mutation sits under a `(pending)` card |
 | On split, the findings `incorporated (moved to …)` but absent from the stub | The carry is write 2; the disposition may only follow it |
-| After a split interrupted at write 3, the card re-presented | A resolved card is never re-presented; resume continues the recorded transfer |
-| Fresh fan-out after every slot is filled but before the stall card | The block is still `[IN PROGRESS]`; the tag, not the slots, marks the pass complete |
+| After an interruption, the open pass-6 block completed and sealed | `iterate-plan` never resumes: it retags the block `[ABORTED]` and reruns |
+| A rerun that counts the aborted pass 6 toward a streak or the stall | An aborted pass is skipped exactly like a FAILED-lens pass |
 | The cluster section still lists the classifier with a live streak of 3 | A removed label is retired; 3 is its streak at fire, shown on the card line |
 | The stall card's options changed by the cluster section | The section is information; it changes no guardrail's condition or outcome |

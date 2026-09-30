@@ -99,10 +99,15 @@ on the card resets it now.
   (phrases that must be absent) that pins the old wording's removal and
   the one deliberate asymmetry: split-the-plan exists only in
   `iterate-plan`.
-- **iterate-plan resumes an unfinished pass.** Pass blocks carry `[IN
-  PROGRESS]` until their last write (ported from `iterate-review`), and
-  Setup resumes such a block under its own number before any fan-out. This
-  gap predated the card for every card type; the card made it load-bearing.
+- **iterate-plan abandons and reruns an interrupted pass.** Pass blocks
+  carry `[IN PROGRESS]` until their last write (ported from
+  `iterate-review`); Setup retags such a block `[ABORTED]` and starts a
+  fresh pass, which is skipped for streak and stall accounting like a
+  `FAILED`-lens pass. The plan is the reviewed artifact, so the rerun
+  reviews whatever the interrupted folds left, and a pending card fires
+  again from re-reported findings. Before this, a restart could silently
+  bypass a pending card; every card type had quietly relied on a resume
+  path that did not exist.
 - Worked examples from two real reviews: the CSRF code review's sign-in
   bootstrap race, where the card fires at pass 3 recommending the removal
   the human actually chose (this release's dry read-through), and the CSRF
@@ -118,10 +123,15 @@ on the card resets it now.
   written first. Both came from folds (passes 3 and 4) and landed on the
   same label; `split-plan-outcome` reached a streak of 2, the gate
   measuring its own review.
-- **Plan-side resume detection** went from "only the exit-time state file"
-  to "any pending slot" to the `[IN PROGRESS]` tag, the last because slots
-  can all be filled while retirements or checkpoint cards are still
-  unwritten (`plan-resume-entry`, also at 2).
+- **The gate fired on its own review.** Plan-side resume drew HIGHs on
+  passes 3, 4 and 5, each fold closing one hole and opening a smaller one:
+  no resume path at all, then detection by pending slots (which miss a
+  pass whose slots are full but whose checkpoint isn't), then the `[IN
+  PROGRESS]` tag (which detects but can't recover corrections never
+  written as pending). At pass 5 the simplification card fired on
+  `plan-resume-entry` at streak 3, recommending **replace: abandon and
+  rerun**. Kyle chose it, and the mechanism went away instead of taking a
+  fourth patch.
 
 ## 2.4.0 — 2026-08-21 — fold-chaining fixes + proportionality parity
 

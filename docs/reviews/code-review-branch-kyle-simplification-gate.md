@@ -129,18 +129,18 @@ Diff captured at 2026-09-29 10:12; head SHA `79852d8`.
 
 Both HIGHs incorporated (one via Kyle's card); suite green. HIGH+MEDIUM trajectory 1 → 0 → 3 → 2 (strictly decreasing from pass 3). Component streaks: `split-plan-outcome` **2**, `plan-resume-entry` **2** — both at one below the cluster threshold, 2: one more HIGH/MEDIUM pass on either triggers the simplification card (this review is now exercising the gate it adds); `plan-fixture-02` 0. Loop mode → **Continue** to pass 5 (auto-continued passes used: 2 of 6).
 
-## Pass 5 — 2026-09-29 12:50 [IN PROGRESS]
+## Pass 5 — 2026-09-30 06:33 [HISTORICAL]
 
 **Scope:** branch (Phase 1 focus; excluded by hand, pending issue #10: governing plan `docs/simplification-gate-2026-09-28.md` + its `.handoff-prompt.md`, and this pass log — 672 lines, all non-production) · **Diff size:** 3277 lines (3949 before exclusions) · **Scope class:** production · **Verdict:** REVISE (worst-of: senior-dev REVISE, qa REVISE; no FAILED lens) · **Posture:** used docs/simplification-gate-2026-09-28.md · **Lenses:** senior-dev, qa (forced; security deselected for cost — selected only on prose keywords, approved every prior pass with no findings of its own)
 
 ### Findings
 
 1. **Plan resume relies on pending items that block creation does not persist** — HIGH · lens: senior-dev (HIGH), qa (MEDIUM; merged, same defect): iterate-plan's block opens with only the merged *findings* pre-populated; corrections and question answers appear only in completed form, yet Setup resumes them by `(pending)` slots — interrupted after the block opens, a resume finishes the findings, runs the checkpoint and seals while silently dropping outstanding corrections or answers. The `[IN PROGRESS]` tag detects the interruption but does not preserve the remaining work list.
-   →
+   → Editor: incorporated (by simplification) — replace's accounting resolves this finding: iterate-plan no longer resumes an interrupted pass, so nothing has to be persisted as pending for a resume to find. One implementation fold, no per-finding patch: Setup step 4 now retags an `[IN PROGRESS]` last block `[ABORTED]` and reruns; an aborted pass is skipped for streak and stall accounting like a FAILED-lens pass, contributes no state row, and its dispositions, AR proposals and card answers are void; every resume claim in iterate-plan (Setup, the pre-fan-out register card, the shared persistence contract, the fold-step tag rule, the block template, card identity, the split transfer) rewritten to match; the component-streak rules name the aborted skip. Fixture 02's interruption table now shows the rerun at each point; parity rules `interrupted-pass-handling` (deliberately asymmetric with iterate-review, which keeps resume) and `card-identity` replace the resume rules; CHANGELOG records the card. [introduced_by_pass: 4 — the pass-4 tag fold made slot-based resume the recovery path] [component: plan-resume-entry]
 
 ### Code corrections applied
 
-- `iterate-review/examples/merge/05-simplification-card/expected-merge.md` transition step 6 (senior-dev, qa; merged) — seals the pass before the accepted-risk checkpoint card it then describes; the block stays `[IN PROGRESS]` through checkpoint cards → (pending)
+- `iterate-review/examples/merge/05-simplification-card/expected-merge.md` transition step 6 (senior-dev, qa; merged) — seals the pass before the accepted-risk checkpoint card it then describes; the block stays `[IN PROGRESS]` through checkpoint cards → step 6 is now "Checkpoint, then seal": the block stays `[IN PROGRESS]` through `AR-1`'s confirmation card and seals after its outcome is recorded
 
 ### New questions Codex raised
 
@@ -152,7 +152,9 @@ Both HIGHs incorporated (one via Kyle's card); suite green. HIGH+MEDIUM trajecto
   recommendation — **simplify (replace)**: replace plan-side *resume* with **abandon-and-rerun**. Setup still detects an `[IN PROGRESS]` last block, but instead of completing it, tags it `[ABORTED]` ("interrupted; superseded by pass N+1") and starts pass N+1; an aborted pass is skipped for streak and stall accounting, like a FAILED pass, and its dispositions, `AR-<n>` proposals and card answers are void. Guarantee lost: the interrupted pass's recorded work (a human answer given before the crash is asked again; one extra Codex pass per interruption). Covering layer: the plan is the reviewed artifact, so the fresh pass reviews whatever the interrupted folds left in it; a card that was pending re-fires if the fresh pass re-reports its label (committed streak unchanged, aborted pass skipped). Per-finding: pass 3 #2 — resolves (no fresh pass can bypass a pending card silently: the card is voided with its pass and re-fires from re-reported findings); pass 4 #2 — resolves (the tag still detects; nothing needs completing); pass 5 #1 — resolves (nothing is resumed, so nothing needs persisting).
   alternatives — **simplify (remove)**: drop the plan-side resume promise and the tag, back to pre-Phase-1 Setup. Guarantee lost: interruption recovery. Covering layer: none. Per-finding: pass 3 #2 — does not (a fresh pass can again bypass a pending card); pass 4 #2 — resolves (no completeness claim left); pass 5 #1 — resolves (no claim left). · **fold once more**: port `iterate-review` step 12's rule that corrections and questions are pre-populated `(pending)` when the block opens. · *(accept the risk omitted: a bypassed pending card suppresses findings without a human decision — a PF-shipbar trust boundary)*
   discuss — always available (the harness's free-form response; never counted against the four options).
-  chosen: (pending)
+  chosen: simplify (replace) (Kyle, 2026-09-30) — plan-side resume replaced by abandon-and-rerun; replace's per-finding accounting applies (all three resolve).
+
+retired: plan-resume-entry (replaced by plan-abandon-rerun, simplification card pass 5)
 
 ### Lens run summary
 
@@ -161,3 +163,7 @@ Both HIGHs incorporated (one via Kyle's card); suite green. HIGH+MEDIUM trajecto
 ### Diff snapshot reference
 
 Diff captured at 2026-09-30 06:33 (slimmed, at head `8952a56`, the head the pass was opened against).
+
+### Checkpoint
+
+The simplification card fired on this review's own mechanism, `plan-resume-entry`, at streak 3 (passes 3, 4, 5; 2 of 3 fold-caused); Kyle chose **simplify (replace)**, and the resume procedure was removed rather than patched a fourth time. Suite green. HIGH+MEDIUM trajectory 1 → 0 → 3 → 2 → 1 (strictly decreasing). Streaks: `plan-resume-entry` retired (replaced by `plan-abandon-rerun`, fresh at 0); `split-plan-outcome` 0; `plan-fixture-02` 0. Loop mode → **Continue** to pass 6 (auto-continued passes used: 3 of 6), which reviews the simplified head.

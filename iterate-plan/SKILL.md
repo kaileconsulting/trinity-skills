@@ -55,16 +55,23 @@ Optional flags:
    **Then, before any fan-out, check the plan for an unfinished pass** —
    the state file is written only at exit, so it can never show one.
    If the plan's last `## Codex review pass N` block is still tagged `[IN
-   PROGRESS]` (step 8), pass N is unfinished. **Resume it under its own
-   pass number** instead of starting pass N+1: re-present each `(pending)`
-   card, complete any empty `→ Editor:` slot or `(pending)` correction or
-   question (reconciling against the plan text first, so a fold already
-   applied is recorded, not re-applied), finish any resolved card's
-   remaining writes (a scope transfer, a `retired:` line), run the
-   checkpoint and write its cards if they are not there yet, and only
-   then flip the tag to `[HISTORICAL]`. Every card type promises this resume; the simplification card
-   depends on it, since a fresh pass would bypass its pending card and
-   leave its findings undispositioned without a human decision.
+   PROGRESS]` (step 8), pass N was interrupted. **Abandon it and rerun;
+   never resume it.** Retag the block `[ABORTED]` with a one-line reason
+   beneath its header ("interrupted; superseded by pass N+1"), then start
+   pass N+1 normally. An aborted pass is **not a completed pass**: it is
+   skipped for streak and stall accounting exactly like a `FAILED`-lens
+   pass, contributes no state-summary row, and everything it recorded —
+   dispositions, `AR-<n>` proposals, card answers — is void. What it
+   *did* to the plan stays: the plan is the reviewed artifact, so pass
+   N+1 reviews whatever the interrupted folds left in it, and any finding
+   they didn't fix is simply re-reported. A card that was pending is not
+   bypassed by this: it is voided with its pass, and it fires again from
+   pass N+1's own count if its findings are re-reported (the committed
+   streak is unchanged, and the aborted pass is skipped). The cost is
+   deliberate and small: one extra Codex pass per interruption, and an
+   answer given just before the crash is asked again. (This replaced a
+   resume procedure whose every fold opened a smaller hole — the
+   simplification card fired on it during 2.5.0's own review.)
 
 ## Per-pass loop
 
@@ -173,9 +180,11 @@ performed by the runner, deterministically.
    reports this abort, the editor opens this pass's block (tagged `[IN
    PROGRESS]`, like every open block — step 8) containing *only* the card — no `### Findings`, `### Verdict`, or
    `### Lens run summary`, since none exist yet — with `chosen: (pending)`,
-   per the usual two-phase persistence discipline (step 8). This is what
-   makes the card resumable if the session is interrupted between the
-   abort and the human's answer. Once answered: *fix the source now* →
+   per the usual two-phase persistence discipline (step 8), so the
+   decision is on record. If the session is interrupted before the
+   human's answer, Setup step 4 abandons the pass, and the fresh pass's
+   `run-pass` meets the same register failure and presents the card
+   again. Once answered: *fix the source now* →
    the editor does not retry until the source is actually fixed, then
    re-invokes `run-pass` with the **same** pass number (nothing was
    consumed by the aborted attempt, so this *is* that pass's real
@@ -703,14 +712,14 @@ performed by the runner, deterministically.
    presented that pass):
    1. **Pending write, before presentation.** Append the card with
       `chosen: (pending)` — recommendation, alternatives, and the item id,
-      no outcome. This is what makes resume-after-interruption possible: a
-      session that reads the plan and finds a `(pending)` card
-      re-presents it, unanswered, exactly as if the interruption hadn't
-      happened.
+      no outcome. This records exactly what the human is being asked. If
+      the session is interrupted before the answer, the pass is abandoned
+      (Setup step 4) and the card is void with it; it is presented again
+      only if its trigger recurs in the fresh pass.
    2. **Resolution write, once answered.** Update that same entry in
       place — replace `(pending)` with the actual `<option> (<one-line
-      outcome>)`. A card still `(pending)` on read is the resume signal; a
-      card with a real `chosen:` value is settled and never re-presented.
+      outcome>)`. Within the live pass, a card with a real `chosen:`
+      value is settled and never re-presented.
 
    **The six named human-judgment moments and their outcome mappings**
    (plan-shaping-fold escalation specified above; malformed/unavailable
@@ -758,8 +767,9 @@ performed by the runner, deterministically.
      under the same pass number (step 5's runner-side mechanism — never
      automatic); *abort* → the plan's iteration ends per the abort path;
      *discuss* → paused. Persisted before presentation (step 5's pre-fan-out
-     block-opening exception) so an interrupted session re-presents it on
-     resume, and the choice made is recorded.
+     block-opening exception), so the decision and the choice made are on
+     record; an interrupted session abandons the pass and meets the same
+     failure again on the rerun.
 
    Fold `plan_corrections` mechanically; incorporate HIGH/MEDIUM
    findings (skip/dispute only with explicit reasoning); LOW is informational.
@@ -772,8 +782,9 @@ performed by the runner, deterministically.
    after step 10's checkpoint cards are written and answered. The tag, not
    any single slot, is the pass-completion marker: a block still `[IN
    PROGRESS]` is unfinished work however complete its slots look (the
-   same rule `iterate-review` step 12 uses). Within an open block, the
-   pending slots and `(pending)` cards say *where* to resume.
+   same rule `iterate-review` step 12 uses). Unlike `iterate-review`,
+   this skill never resumes an open block: Setup step 4 abandons it and
+   reruns.
 
    ```markdown
    ## Codex review pass N — answers (YYYY-MM-DD) [HISTORICAL]
@@ -781,8 +792,8 @@ performed by the runner, deterministically.
    <!-- Tagged `[IN PROGRESS]` from the moment the block opens (right after
    the merge) until the pass's last write — dispositions, `retired:` lines,
    and the checkpoint's cards all recorded — then flipped to `[HISTORICAL]`.
-   A block still `[IN PROGRESS]` is an unfinished pass; Setup step 4
-   resumes it. -->
+   A block still `[IN PROGRESS]` at Setup is an interrupted pass; Setup
+   step 4 retags it `[ABORTED]` and reruns. -->
 
    ### Verdict
    APPROVE / REVISE / BLOCK   (worst-of; note any FAILED lenses)
@@ -889,7 +900,7 @@ performed by the runner, deterministically.
    - **Retirement is explicit and persisted; absence is only a reset.**
      When a component leaves the plan's scope (a fold deletes it, it moves
      to another plan), write `retired: <label> (<why>)` in that pass's
-     HISTORICAL block; a resumed session reconstructs identity from that
+     HISTORICAL block; a later session reconstructs identity from that
      record. A retired label is never reused. A pass on which a label
      merely draws no HIGH/MEDIUM finding resets its streak and nothing
      more.
@@ -909,7 +920,8 @@ performed by the runner, deterministically.
    purposes — it neither counts nor resets (a lens that didn't run says
    nothing about the component) — though its findings are still
    dispositioned normally and any retirement recorded on it still
-   persists. The committed record is the plan's own HISTORICAL blocks,
+   persists. An `[ABORTED]` pass (Setup step 4) is skipped the same way,
+   and nothing recorded on it persists. The committed record is the plan's own HISTORICAL blocks,
    never the state file. A streak reaching **the cluster threshold, 3,**
    triggers the simplification card below. This threshold is stated
    here as a literal because a copied install of this skill has no
@@ -995,10 +1007,11 @@ performed by the runner, deterministically.
       a **scope transfer** (outcome mapping below).
    6. The sealed block is what the next pass's candidate streak reads.
 
-   A card is identified by `(pass, component)`. A resumed session that
-   finds a `(pending)` card re-presents that one card and never recounts;
-   one that finds a resolved card with un-dispositioned same-label
-   findings completes step 5 without re-presenting it.
+   A card is identified by `(pass, component)`. Within the live pass, a
+   `(pending)` card is presented once and the streak is never recounted.
+   Across an interruption the whole pass is abandoned (Setup step 4): the
+   card is void with it and fires again only from the rerun pass's own
+   count, which reads the committed record with the aborted pass skipped.
 
    **Required content — a card missing any of it is malformed and is not
    presented:**
@@ -1074,13 +1087,13 @@ performed by the runner, deterministically.
         this plan's scope; the new plan tracks it from 0) and the loop
         resumes on what remains.
 
-     A resumed session that finds a resolved split card in an `[IN
-     PROGRESS]` block **never re-presents it**: it continues the recorded
-     transfer from the first missing write — creates the stub if absent,
-     adds a finding to `## Carried findings` only if its text is not
-     already there, drops the decisions and adds the Out-of-scope entry if
-     this plan still carries them, then writes the missing dispositions and
-     the `retired:` line. This is the shape every
+     If the session is interrupted mid-transfer, the pass is abandoned
+     like any other (Setup step 4); writes already made stay. The rerun
+     reviews the plan as it stands, the stub keeps whatever carried
+     findings reached it, and any mechanism decision still in this plan
+     is reviewed afresh. Recording the resolution first (write 1) keeps
+     the record honest: no plan edit ever sits under a card that still
+     reads `(pending)`. This is the shape every
      split-off in the evidence took (a remainder named at a durable new
      home, the originating finding `incorporated`), with a plan stub as
      the home.

@@ -95,8 +95,11 @@ retired: csrf-bootstrap-mount-fetch (removed by simplification card, pass 3)
    posture explicitly logs as accepted. `AR-1` then follows its own
    lifecycle — confirmation at the checkpoint, Converge-blocking until then.
 
-6. **Seal.** Pass 4 reads the label as retired; nothing on it can count
-   again, and a replacement mechanism would need a new label.
+6. **Checkpoint, then seal.** The block stays `[IN PROGRESS]` through the
+   checkpoint below, including `AR-1`'s confirmation card, and flips to
+   `[HISTORICAL]` only once that card's outcome is recorded. Pass 4 then
+   reads the label as retired; nothing on it can count again, and a
+   replacement mechanism would need a new label.
 
 **State-summary row for pass 3** (derived at exit):
 
