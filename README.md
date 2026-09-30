@@ -88,6 +88,29 @@ The stall guardrail counts findings, and that misses the most expensive failure:
 
 The rule came from a downstream repo's playbook, where it ended two long loops in 4 and 5 passes. Replayed against the history, it presents the card at pass 3 of a code review whose human made the same call at pass 3, and at pass 6 of a plan review that ground on to pass 10 before removing the mechanism. Both are worked examples under `examples/merge/`.
 
+## Review cost & diff exclusions
+
+Every lens gets the whole diff, and Codex re-sends it across its file-reading turns, so input volume is what a review spends against your ChatGPT usage limit. Reasoning effort barely registers (under 1% of tokens). Two things keep that cost down.
+
+**The reviewer model is pinned** (2.5.1). Both runners pass `-m gpt-5.6-sol` to every call instead of taking Codex's default, which a Codex release can change. When Codex 0.157.0 silently moved its default to `gpt-6-astra`, reviews started draining the shared 5-hour window at roughly 9× the rate. If quota behavior ever shifts suddenly, check which model your recent sessions ran: `grep -o '"model":"[^"]*"'` in the newest file under `~/.codex/sessions/`. The pin itself is one constant, `CODEX_MODEL` in `bin/runner_shared.py`.
+
+**Content the reviewer doesn't need leaves the diff, through the runner, and is always disclosed** (2.6.0). Review practice was already excluding it by hand, silently, with nothing to stop a production file going with it. Now:
+
+- **The review's own pass log is dropped automatically.** It already reaches every lens as `=== PRIOR PASSES ===`, so sending it inside the diff was pure duplication. Only the literal default log path (`docs/reviews/code-review-<scope-tag>.md`) is trusted, so a `--log-path` override or a symlinked log slot excludes nothing. A rename or copy between the log and another path always stays reviewed.
+- **Anything else is the editor's call, by class:** `--exclude <class>:<path-or-glob>` on `run-pass` / `run-lens`.
+
+  | Class | For | Must hold, or the runner refuses before any Codex call |
+  |---|---|---|
+  | `governing-plan` | the converged plan the review treats as its spec | the intent names it on exactly one `Governing-plan:` line; it's a documentation file |
+  | `docs` | documentation | a documentation file type under `docs/`, or a root README/CHANGELOG/…; nothing test-shaped, so tests and fixtures stay reviewed |
+  | `generated` | lockfiles, generated files (production allowed) | each path has an audit entry in the intent's `=== EXCLUDED SUMMARY ===` block saying what the editor checked |
+
+  Only plain paths qualify (printable ASCII, no backtick, backslash, double quote or `: `); anything unusual stays in review.
+- **Every exclusion is visible.** The runner records it in `pass-N.summary.json` (`excluded`, with line counts and each `generated` audit), and the pass header's `Scope:` line copies it from there, for example ``branch (excluded: pass-log `docs/reviews/code-review-branch-x.md` 136 lines; generated `composer.lock` 17 lines — every dist.url is an api.github.com zipball)``. A diff that exclusions empty entirely creates no pass, and the runner lists what it removed.
+- **Exclusion never changes which lenses run.** Selection reads the original diff, so an excluded lockfile still triggers `security`.
+
+The worked example, `iterate-review/examples/merge/06-lockfile-exclusion/`, is a real Dependabot review done this way, and `tools/check-runners.py` runs it byte for byte. Expect roughly 10–20% less input per lens on plan-driven branches; the pass summary's `diff_lines` shows what was removed each pass. The check on actual savings is the `used_percent` Codex logs per call.
+
 ## Risk posture & proportionality
 
 Every version before this one made the reviewer **find more**. That has a cost the loop couldn't see: a finding can be entirely correct and still be disproportionate to what you're actually building — hardening for a scale you'll never reach, an auth boundary your deployment topology already provides, an edge case whose worst outcome is mild inconvenience. Folding those anyway is how review cost ends up 2–3× build cost, and how a phase takes ten passes instead of four.
@@ -253,7 +276,8 @@ Its output is the live count of what's covered — deliberately not restated her
 | `tools/check-parity.py` | Every shared-machinery rule is present in **both** skills' per-pass loops (semantic parity, not byte-identity: prose may differ, rules may not); phrases that must be **absent** stay absent (a lifted rule's old wording, the sibling side of a deliberate asymmetry); and the designated shared runner files (`runner_shared.py`, `prune-state`) are **byte-identical** across both `bin/` directories, by content hash. |
 | `tools/check-cluster-streak.py` | The simplification gate's streak counting (`cluster_tracker.py`), boundary case by boundary case, including a real 11-pass review end to end — and that the threshold written into each SKILL.md matches the development constant. |
 | `tools/check-provenance-recipe.py` | The shared `jq` analytics recipe reproduces its tallies from sample state files, reading schema 1 and 2 side by side, including the simplification-card measures. |
-| `tools/check-runners.py` | The iterate-review runner scripts' promised behavior: byte-deterministic composition, exit contracts, lock lifecycle, pass-log resolution, prune safety — against a copied install with a fake `codex`. |
+| `tools/check-runners.py` | The iterate-review runner scripts' promised behavior: byte-deterministic composition, strict diff sectioning and every exclusion rule (each refusal, the crossing-rename keep, the disclosure format, scenario 06 run byte for byte), exit contracts, lock lifecycle, pass-log resolution, prune safety — against a copied install with a fake `codex`. |
+| `tools/check-scope-classification.py` | The production/non-production path heuristic (one implementation, `iterate-review/bin/path_classes.py`, shared by scope classification and the exclusion refusals), boundary case by boundary case, and that SKILL.md's prose lists exactly the segments, root doc names and documentation file types the code uses. |
 | `tools/check-plan-runners.py` | The iterate-plan port's adapted behavior: section extraction, always-all selection, `--plan`/`--note` boundaries, plus a wiring smoke over the shared contracts. |
 | `tools/test-checkers.py` | Tests that the checkers above actually fail when they should. |
 

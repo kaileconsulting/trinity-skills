@@ -158,7 +158,7 @@ Modified: `iterate-review/bin/review_runner.py` (diff sectioning + exclusion), `
 - Closeout checklist fully checked; plan archived.
 
 **Iterate-review:** NO (rationale: docs-only; no code surface to review)
-**Status:** not started
+**Status:** drafted 2026-09-30 while Phase 1's pass 6 waited on the usage window: CHANGELOG 2.6.0 (unreleased, FINALIZE-AT-MERGE markers for pass 6+), README "Review cost & diff exclusions" section and dev-check rows, tools/README rows, pre-merge doc sweep (no stale exclusive language found), issue #10 closing comment drafted below. Finalize after Phase 1 converges.
 
 ## Acceptance criteria
 
@@ -217,6 +217,22 @@ After the simplification-gate PR merges (done: PR #11, merged 2026-09-30; this b
 - [ ] Move plan to archive: `git mv docs/<plan>.md docs/archive/<plan>.md`.
 - [ ] Final commit with a "shipped" message referencing this plan.
 - [ ] Close issue #10 with a comment linking the archived plan and stating what was and was not built.
+  <!-- DRAFT closing comment (finalize the pass counts at merge):
+  Shipped in 2.6.0 (PR #<n>). The runner now drops the review's own pass log
+  from every composed diff (only the literal default log slot is trusted;
+  renames crossing it stay reviewed), and the editor can exclude further
+  paths by class with `--exclude governing-plan|docs|generated:<path-or-glob>`:
+  refused before any Codex call unless the class's rule holds, plain paths
+  only, and every exclusion recorded in `pass-N.summary.json` and the pass
+  header's Scope line. Lens selection still reads the original diff.
+  Not built, as planned: automatic exclusion beyond the pass log, lens
+  trimming, reading Codex's usage state, and a per-phase `--base` for branch
+  reviews (Q4, still the largest remaining lever). Also learned on the way:
+  the cost measured when this issue was opened was mostly the model (Codex
+  0.157 had defaulted to gpt-6-astra, ~9x gpt-5.6-sol's burn), fixed
+  separately in 2.5.1; this release removes the duplicated and settled
+  content on top, roughly 10-20% of per-lens input on plan-driven branches.
+  Plan: docs/archive/review-diff-exclusions-2026-09-29.md. -->
 - [ ] ResearchLogix_v2 (in that repo): replace hand exclusions in review practice with the classed flags.
 
 ## References
