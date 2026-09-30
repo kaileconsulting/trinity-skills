@@ -651,13 +651,8 @@ def _excluded_summary(intent: str) -> list:
 
 def _audit_entry(entries: list, path: str):
     """The non-empty audited property recorded for exactly `path`, or None.
-    A path containing the entry delimiter ": " is refused outright: entry
-    `a: b: x` would otherwise satisfy both `a` and `a: b`."""
-    if ": " in path:
-        raise ExclusionError(
-            f"--exclude generated: {path!r} contains ': ', which the "
-            f"{EXCLUDED_SUMMARY_HEADER} format can't bind to one entry; "
-            f"leave it in review")
+    `path` is plain (_PLAIN_PATH), so it never contains the ": " delimiter
+    and entry `a: b: x` can bind only to `a`."""
     found = [e[len(path) + 2:].strip() for e in entries
              if e.startswith(path + ": ")]
     if len(found) != 1 or not found[0]:
@@ -665,14 +660,23 @@ def _audit_entry(entries: list, path: str):
     return found[0]
 
 
-def _undisplayable(text: str, path: bool):
-    """The first character that would let `text` corrupt a human-facing
-    disclosure (a control, format/bidi or line/paragraph separator — or,
-    in a path, a backtick, which would break the code span it's shown in),
-    as a repr; None when it's safe to show verbatim."""
+# Classed exclusions take PLAIN paths only: printable ASCII, no backtick
+# (it would break the code span the path is disclosed in), backslash or
+# double quote (C-quoting territory), and no ": " (the EXCLUDED SUMMARY
+# entry delimiter). Anything else is refused and stays in review. One rule
+# instead of a patch per filename trick (Phase 1 review, pass-5
+# checkpoint): decoding, control and bidi characters, markdown-breaking
+# and delimiter-bearing names can't reach an exclusion at all.
+_PLAIN_PATH = re.compile(r"^(?:(?!: )[ !#-\[\]-_a-~])+\Z")  # \Z, not $: no trailing newline
+
+
+def _undisplayable(text: str):
+    """The first character that would let editor-written audit text corrupt
+    a one-line disclosure (a control, format/bidi or line/paragraph
+    separator), as a repr; None when it's safe to show verbatim. Paths
+    never get here unless they are plain (_PLAIN_PATH)."""
     for ch in text:
-        if unicodedata.category(ch) in ("Cc", "Cf", "Zl", "Zp") or (
-                path and ch == "`"):
+        if unicodedata.category(ch) in ("Cc", "Cf", "Zl", "Zp"):
             return repr(ch)
     return None
 
@@ -762,6 +766,13 @@ def apply_exclusions(diff: str, log_rel, specs: list, intent: str):
             continue
         cls, pattern, _rx = matchers[decided[0]]
         hits = decided[1]
+        odd = [p for p in distinct if not _PLAIN_PATH.match(p)]
+        if odd:
+            raise ExclusionError(
+                f"--exclude {cls}:{pattern}: {odd[0]!r} is not a plain path "
+                f"(printable ASCII without backtick, backslash, double quote "
+                f"or ': '); classed exclusion takes plain paths only, so it "
+                f"stays in review — drop or narrow the spec")
         if len(distinct) == 1:
             if not rule_holds(cls, distinct[0]):
                 why = ("has no non-empty audit entry in the intent's "
@@ -787,14 +798,14 @@ def apply_exclusions(diff: str, log_rel, specs: list, intent: str):
                               for p in dict.fromkeys(ends)}  # old, then new
         # The disclosure is the trust boundary: nothing excluded may be
         # able to forge or hide its own line in the pass header or stderr.
-        for text, is_path in ([(p, True) for p in distinct]
-                              + [(v, False) for v in
-                                 (entry.get("audit") or {}).values()]):
-            bad = _undisplayable(text, is_path)
+        # Paths are already plain; the editor's audit text is checked here.
+        for text in (entry.get("audit") or {}).values():
+            bad = _undisplayable(text)
             if bad:
                 raise ExclusionError(
-                    f"--exclude {cls}:{pattern}: {text!r} contains {bad}, "
-                    f"which can't be disclosed safely on one line; refused")
+                    f"--exclude {cls}:{pattern}: audit property {text!r} "
+                    f"contains {bad}, which can't be disclosed safely on one "
+                    f"line; refused")
         excluded.append(entry)
     unused = [f"{cls}:{pattern}" for idx, (cls, pattern, _rx)
               in enumerate(matchers) if idx not in used]
@@ -841,8 +852,8 @@ def disclosure(entry: dict) -> str:
     `<path>` <N> lines[ — <audit>]`, the path in backticks (a code span, so
     markdown in a filename renders literally), a rename/copy as
     `` `old` → `new` ``, and a two-endpoint `generated` entry with each
-    endpoint's own audit. apply_exclusions() has already refused any text
-    that could not be shown this way on one line."""
+    endpoint's own audit. apply_exclusions() admits only plain paths and
+    refuses audit text that could not be shown this way on one line."""
     old, new = entry["old_path"], entry["new_path"]
     where = (f"`{old}` → `{new}`" if old and new and old != new
              else f"`{new or old}`")

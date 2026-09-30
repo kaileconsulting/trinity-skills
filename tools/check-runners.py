@@ -592,7 +592,7 @@ def test_classed_exclusions(rr, sel) -> None:
     record("parser: C-quoted literal backslashes decode to one root-level filename",
            [x["new_path"] for x in rr.parse_diff_sections(bs)] == ["src\\docs\\billing.py"])
     refused("docs on a root file literally named src\\docs\\billing.py",
-            code + bs, spec("docs:src*"), "", "src\\docs\\billing.py is not a documentation path")
+            code + bs, spec("docs:src*"), "", "is not a plain path")
     # Non-UTF-8 path bytes can't be represented exactly: fail closed.
     nonutf = ('diff --git "a/docs/\\200.lock" "b/docs/\\200.lock"\nindex 1..2 100644\n'
               '--- "a/docs/\\200.lock"\n+++ "b/docs/\\200.lock"\n@@ -1 +1 @@\n-a\n+b\n')
@@ -608,7 +608,7 @@ def test_classed_exclusions(rr, sel) -> None:
     colon = _mod("a: b.lock")
     refused("generated path containing ': ' (entry can't bind uniquely)",
             code + _mod("a") + colon, spec("generated:a*"),
-            "=== EXCLUDED SUMMARY ===\n- a: b.lock: audited\n", "contains ': '")
+            "=== EXCLUDED SUMMARY ===\n- a: b.lock: audited\n", "is not a plain path")
     # A generated rename discloses BOTH endpoints and both audits, in the
     # summary, the Scope rendering and the all-excluded stderr alike.
     gen_rename = ("diff --git a/old/yarn.lock b/new/yarn.lock\nsimilarity index 100%\n"
@@ -644,14 +644,27 @@ def test_classed_exclusions(rr, sel) -> None:
                        ("bidi override", "x\\342\\200\\256dm.exe")):
         refused(f"docs on a path containing a {label}",
                 code + quoted_mod(esc), spec("docs:docs/*.md"), "",
-                "can't be disclosed safely")
+                "is not a plain path")
     refused("docs on a path containing a backtick",
             code + _mod("docs/a`b.md"), spec("docs:docs/*.md"), "",
-            "can't be disclosed safely")
+            "is not a plain path")
     refused("generated with a control character in the audit property",
             code + _mod("a/yarn.lock"), spec("generated:a/yarn.lock"),
             "=== EXCLUDED SUMMARY ===\n- a/yarn.lock: fine\x1b[2K forged\n",
             "can't be disclosed safely")
+    # The plain-path rule (pass-5 checkpoint narrowing): non-ASCII and a
+    # trailing newline refuse; spaces, brackets and ordinary punctuation pass.
+    refused("docs on an accented (non-ASCII) path", code + quoted_mod("caf\303\251"),
+            spec("docs:docs/*.md"), "", "is not a plain path")
+    record("plain-path rule: a trailing newline is not plain (\\Z, not $)",
+           rr._PLAIN_PATH.match("docs/x.md\n") is None
+           and rr._PLAIN_PATH.match("docs/x.md") is not None)
+    reviewed, excl, _w = rr.apply_exclusions(
+        code + _mod("docs/My Guide [draft] v1~2.md") + _mod("a:b.lock"), None,
+        spec("docs:docs/*.md", "generated:a:b.lock"),
+        "=== EXCLUDED SUMMARY ===\n- a:b.lock: audited\n")
+    record("exclude: plain paths with spaces, brackets and a bare ':' still exclude",
+           reviewed == code and len(excl) == 2, str(excl))
     reviewed, excl, _w = rr.apply_exclusions(
         code + _mod("docs/**bold** and | pipe.md"), None, spec("docs:docs/*.md"), "")
     record("disclosure: markdown in a filename renders inside a code span",

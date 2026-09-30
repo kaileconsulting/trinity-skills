@@ -137,7 +137,7 @@ Diff captured at 2026-09-30 11:14; head SHA `d4e1e820cc118b66e2e5d8715b3ea968061
 
 Continue, one pass (Kyle, 2026-09-30). HIGH+MEDIUM 6 (first Phase 1 pass). Streaks: exclusion-class-rules 1, path-heuristic 1, diff-section-parser 1, exclusion-disclosure 1, path-heuristic-prose-pin 1. Cost: ~1.53M input tokens, ~20% of the 5-hour window, ~3% weekly (query-iq was running reviews on the same quota).
 
-## Pass 5 — 2026-09-30 11:48 [IN PROGRESS]
+## Pass 5 — 2026-09-30 11:48 [HISTORICAL]
 
 **Scope:** branch (excluded by hand, pre-feature: governing-plan docs/review-diff-exclusions-2026-09-29.md 374 lines; docs docs/review-diff-exclusions-2026-09-29.md.handoff-prompt.md 33 lines; pass-log docs/reviews/code-review-branch-kyle-review-diff-exclusions.md 138 lines) · **Diff size:** 2228 lines · **Scope class:** production · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** used docs/review-diff-exclusions-2026-09-29.md · **Lenses:** senior-dev, security, qa
 
@@ -168,3 +168,7 @@ Continue, one pass (Kyle, 2026-09-30). HIGH+MEDIUM 6 (first Phase 1 pass). Strea
 ### Diff snapshot reference
 
 Diff captured at 2026-09-30 11:38; head SHA `a2be51146af4efb5529498ec8f3a4872d09a3214`.
+
+### Checkpoint
+
+Continue after a narrowing (Kyle, 2026-09-30): "Narrow to plain paths, pass 6 after 15:18". HIGH+MEDIUM 6 → 3; 2 of 3 fold-caused (pass 4). Streaks: exclusion-disclosure 2, path-heuristic 2, diff-section-parser 2 (each one below the cluster threshold, 2,); exclusion-class-rules 0, path-heuristic-prose-pin 0. Passes 4–5 kept finding filename edge cases (backslash, non-UTF-8, control/bidi, `: `), so before pass 6 the editor proposed, and Kyle chose, narrowing classed `--exclude` to plain paths (printable ASCII, no backtick, backslash, double quote or `: `); anything else is refused and stays in review. Not a simplification card (no label reached 3); recorded here as the checkpoint decision, and pass 6 reviews the narrowed head. Cost: ~1.55M input tokens (one lens 1.46M), ~17% of the 5-hour window, ~2% weekly.
