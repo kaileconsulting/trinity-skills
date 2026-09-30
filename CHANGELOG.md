@@ -2,9 +2,7 @@
 
 ## 2.5.0 — unreleased — the simplification gate
 
-<!-- FINALIZE AT MERGE: the date, the Phase 1 review's trajectory and
-closing pass count, and any pass-5+ changes. Kept as a comment so the
-pre-merge doc sweep cannot miss it. -->
+<!-- FINALIZE AT MERGE: replace "unreleased" with the merge date. -->
 
 Plan: `docs/simplification-gate-2026-09-28.md` (design converged after 5
 `iterate-plan` passes, 5 → 3 → 3 → 2 → 0 HIGH+MEDIUM, 13 findings, 7 of
@@ -114,9 +112,14 @@ on the card resets it now.
   plan review's SQL classifier, where the card fires at pass 6 against the
   real pass-10 removal, with a *split the plan* variant.
 
-### Hardened (Phase 1's review — in progress)
+### Hardened (Phase 1's 4-pass review — APPROVE×3 at pass 6)
 
-<!-- FINALIZE AT MERGE -->
+HIGH+MEDIUM 3 → 2 → 1 → 0 (passes 3–6 of one branch review; passes 1–2
+were Phase 0). Of the 6 findings, 3 were fold-caused, all by this phase's
+own earlier folds. Passes 5–6 ran with the plan doc, the review log and the
+Phase 2 docs excluded from the diff by hand (the practice
+[issue #10](https://github.com/kaileconsulting/trinity-skills/issues/10)
+will build in), after two passes were lost to the reviewer's usage limit.
 - **The split-the-plan outcome had no disposition** that let the loop
   resume, and then, once given one, **mutated both plans before recording
   the human's choice**. Now it is a scope transfer with the resolution

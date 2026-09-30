@@ -189,7 +189,7 @@ New: `tools/cluster_tracker.py`, `tools/check-cluster-streak.py` (wired into `to
 - A dry read-through of the CSRF code review's passes 1–3 against the new SKILL.md text produces the card at pass 3 with the same recommendation Kyle actually chose.
 
 **Iterate-review:** YES (rationale: this is the trust boundary — the card is the only new human decision point, and both skills' Converge/checkpoint logic changes; parity-pinned across skills)
-**Status:** in progress — built 2026-09-29 (`f97134a`, `2098f35`); `check-all.sh` green; iterate-review pending
+**Status:** reviewed — built 2026-09-29 (`f97134a`, `2098f35`); iterate-review converged 2026-09-30 at pass 6 (APPROVE ×3 on the final head) after 4 Phase 1 passes, HIGH+MEDIUM 3 → 2 → 1 → 0. Kyle's cards: split-the-plan as a scope transfer (pass 3), iterate-plan block tag (pass 4), and the **simplification card itself fired at pass 5** on `plan-resume-entry` (streak 3) → replace: iterate-plan abandons and reruns an interrupted pass (`e83bc37`). Passes 5–6 ran with hand-applied diff exclusions (issue #10) at about 12–15% of the Codex window per lens.
 
 ### Phase 2 — Closeout — issue #6, CHANGELOG, README, doc sweep (~1h)
 **Deliverables:**
@@ -318,7 +318,7 @@ workflows"). Single-page view of where each phase stands. -->
 | Phase | Iterate-review | Status | Last pass | Pass log |
 |-------|----------------|--------|-----------|----------|
 | Phase 0 | YES | reviewed — converged 2026-09-29 | pass 2 (APPROVE ×3) | `docs/reviews/code-review-branch-kyle-simplification-gate.md` |
-| Phase 1 | YES | built, review pending | — | — |
+| Phase 1 | YES | reviewed — converged 2026-09-30 | pass 6 (APPROVE ×3) | `docs/reviews/code-review-branch-kyle-simplification-gate.md` |
 | Phase 2 | NO | not started | — | — |
 
 ## Pre-flight review pass (the editor, YYYY-MM-DD) [HISTORICAL]
