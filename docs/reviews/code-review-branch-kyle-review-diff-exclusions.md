@@ -36,3 +36,28 @@ Continue (Kyle, 2026-09-30; he used his full usage reset, so the window is back 
 ### Diff snapshot reference
 
 Diff captured at 2026-09-30 10:01; head SHA `f1e769e0c7fcd8eb29f25448d734770f53a4988b`.
+
+## Pass 2 — 2026-09-30 10:25 [IN PROGRESS]
+
+**Scope:** branch (excluded by hand, pre-feature: governing-plan docs/review-diff-exclusions-2026-09-29.md 373 lines; docs docs/review-diff-exclusions-2026-09-29.md.handoff-prompt.md 33 lines; pass-log docs/reviews/code-review-branch-kyle-review-diff-exclusions.md 38 lines) · **Diff size:** 1072 lines · **Scope class:** production · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** used docs/review-diff-exclusions-2026-09-29.md · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+1. **A symlinked default log slot redirects self-exclusion to another file** — HIGH · lens: senior-dev, security, qa (co-reported): run-pass/run-lens resolve the default log path through `realpath()` before `self_exclusion_target()`, which trusts it only because no `--log-path` was given; if `docs/reviews/code-review-<tag>.md` or its parent is an in-repo symlink to a production markdown file, that target's section is excluded as `pass-log` (and a deleted target needs no header at all).
+   → Editor: incorporated — `self_exclusion_target()` now binds identity to the **lexical** slot `docs/reviews/code-review-<tag>.md`: the excluded path is always that literal string, and it is used only when the resolved log equals `realpath(repo_root)/<slot>`; any symlink on the way (file or parent) means no self-exclusion, with a warning. The now-unused `log_path_in_diff()` (which derived identity from the resolved target) is removed. CLI fixtures through both run-pass and run-lens: a file symlink, a parent-directory symlink, and a dangling symlink to a file the diff deletes all keep the target in every composed input; a baseline confirms the real slot is still excluded. A mutation restoring the old resolved-target identity fails all three. SKILL.md step 9 and plan §1 updated. [introduced_by_pass: null — realpath-derived identity was in the original Phase 0 commit; pass 1's override guard narrowed the surface but didn't create this] [component: pass-log-identity]
+
+### Code corrections applied
+
+- (none)
+
+### New questions Codex raised
+
+- (none)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: REVISE · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-09-30 10:18; head SHA `1ddbbfaadc1267f7e61163e3a13c6a0655a8b808`.

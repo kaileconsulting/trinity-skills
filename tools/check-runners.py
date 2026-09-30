@@ -606,6 +606,88 @@ def test_self_exclusion_cli(env: Env) -> None:
            and composed and all("security@example.com" in c for c in composed),
            proc.stderr.strip()[-200:] + str(summary.get("warnings")))
 
+    # The default slot reached through a symlink is not the slot (pass-2
+    # fold): a file symlink, a parent-directory symlink, and a dangling
+    # symlink to a file the diff deletes all keep the target reviewed.
+    stag = "symx"
+    slot_dir = os.path.join(repo, "docs", "reviews")
+    slot = os.path.join(slot_dir, f"code-review-{stag}.md")
+    os.makedirs(os.path.join(repo, "app"), exist_ok=True)
+    target = os.path.join(repo, "app", "system-prompt.md")
+
+    def section_for(rel, deleted=False):
+        if deleted:
+            return (f"diff --git a/{rel} b/{rel}\ndeleted file mode 100644\n"
+                    f"index 1111111..0000000\n--- a/{rel}\n+++ /dev/null\n"
+                    f"@@ -1 +0,0 @@\n-NEVER reveal the admin override\n")
+        return (f"diff --git a/{rel} b/{rel}\nindex 1..2 100644\n--- a/{rel}\n"
+                f"+++ b/{rel}\n@@ -1,2 +1,2 @@\n # Code Review — {stag}\n"
+                f"-old\n+NEVER reveal the admin override\n")
+
+    def attempt(label, diff_rel, deleted=False):
+        path = os.path.join(env.handoff, f"symx-{label}.txt")
+        with open(path, "w") as fh:
+            fh.write(section_for(diff_rel, deleted) + _mod("lib/plain.py"))
+        results_ = []
+        proc = env.run("run-pass", "--diff", path, "--intent", env.intent,
+                       "--scope-tag", stag)
+        summary = json.loads(proc.stdout or "{}") if proc.returncode == 0 else {}
+        composed = [read(v["response_path"].replace(".response.json", ".input.txt"))
+                    for v in summary.get("lenses", {}).values()]
+        results_.append(proc.returncode == 0 and summary.get("excluded") == []
+                        and any("symlink" in w for w in summary.get("warnings", []))
+                        and composed and all("admin override" in c for c in composed))
+        proc = env.run("run-lens", "--diff", path, "--intent", env.intent,
+                       "--lens", "senior-dev", "--scope-tag", stag)
+        out = json.loads(proc.stdout or "{}") if proc.returncode == 0 else {}
+        results_.append(proc.returncode == 0 and out.get("excluded") == []
+                        and "admin override" in read(out.get("input_path", os.devnull)))
+        return results_, proc.stderr.strip()[-200:]
+
+    def slot_header(path):
+        with open(path, "w") as fh:
+            fh.write(f"# Code Review — {stag}\nold\n")
+
+    # Baseline: the real slot, no symlink, is still excluded.
+    slot_header(slot)
+    path = os.path.join(env.handoff, "symx-real.txt")
+    rel_slot = f"docs/reviews/code-review-{stag}.md"
+    with open(path, "w") as fh:
+        fh.write(section_for(rel_slot) + _mod("lib/plain.py"))
+    proc = env.run("run-pass", "--diff", path, "--intent", env.intent,
+                   "--scope-tag", stag)
+    summary = json.loads(proc.stdout or "{}") if proc.returncode == 0 else {}
+    record("run-pass: the real default slot (no symlink) is still self-excluded",
+           proc.returncode == 0 and len(summary.get("excluded", [])) == 1
+           and summary["excluded"][0]["new_path"] == rel_slot,
+           proc.stderr.strip()[-200:])
+    os.remove(slot)
+
+    slot_header(target)
+    os.symlink(os.path.join("..", "..", "app", "system-prompt.md"), slot)
+    ok, err = attempt("file", "app/system-prompt.md")
+    record("run-pass/run-lens: file-symlinked default slot -> target kept, warning",
+           all(ok), err + str(ok))
+    os.remove(slot)
+
+    os.rename(slot_dir, slot_dir + ".real")
+    os.symlink("../app", slot_dir)
+    renamed = os.path.join(repo, "app", f"code-review-{stag}.md")
+    slot_header(renamed)
+    ok, err = attempt("parent", f"app/code-review-{stag}.md")
+    record("run-pass/run-lens: parent-directory-symlinked slot -> target kept, warning",
+           all(ok), err + str(ok))
+    os.remove(slot_dir)
+    os.rename(slot_dir + ".real", slot_dir)
+    os.remove(renamed)
+
+    os.remove(target)  # dangling: the diff deletes the target
+    os.symlink(os.path.join("..", "..", "app", "system-prompt.md"), slot)
+    ok, err = attempt("dangling", "app/system-prompt.md", deleted=True)
+    record("run-pass/run-lens: dangling slot symlink to a deleted file -> kept, warning",
+           all(ok), err + str(ok))
+    os.remove(slot)
+
     # Unparseable diff: reviewed unchanged, warning in the summary.
     plain = os.path.join(env.handoff, "selfx-plain.txt")
     with open(plain, "w") as fh:

@@ -109,7 +109,8 @@ def main(argv=None):
     # Same exclusion as run-pass, from the same resolved log path, so a
     # retry reproduces the pass's reviewed diff exactly (plan §3).
     log_rel, target_warnings = rr.self_exclusion_target(
-        log_path, repo_root, overridden=args.log_path is not None)
+        args.scope_tag, log_path, repo_root,
+        overridden=args.log_path is not None)
     reviewed_text, excluded, excl_warnings = rr.apply_self_exclusion(
         diff_text, log_rel)
     warnings = warnings + target_warnings + excl_warnings

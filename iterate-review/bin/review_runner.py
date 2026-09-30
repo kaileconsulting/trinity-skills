@@ -597,30 +597,31 @@ def apply_self_exclusion(diff: str, log_rel):
     return "".join(kept), excluded, warnings
 
 
-def log_path_in_diff(log_path: Path, repo_root: Path):
-    """The pass log's path as `git diff` writes it (repo-relative, POSIX),
-    or None if it isn't inside the repo root."""
-    try:
-        rel = Path(os.path.realpath(str(log_path))).relative_to(
-            os.path.realpath(str(repo_root)))
-    except ValueError:
-        return None
-    return rel.as_posix()
-
-
-def self_exclusion_target(log_path: Path, repo_root: Path, overridden: bool):
+def self_exclusion_target(scope_tag: str, log_path: Path, repo_root: Path,
+                          overridden: bool):
     """(log_rel, warnings) for apply_self_exclusion. Only the DEFAULT slot,
     docs/reviews/code-review-<scope-tag>.md, is trusted to be this review's
-    own log: an override merely has to be an in-repo .md file, so honoring
-    it here would let --log-path name any markdown path — including one
-    the diff deletes, which no header check can see — and drop its section
-    as "pass-log". An override therefore excludes nothing."""
+    own log, and only LEXICALLY: an override merely has to be an in-repo .md
+    file, and a default slot reached through a symlink (the file or any
+    parent) can point anywhere in the repo — either would let a production
+    markdown path, even one the diff deletes, be dropped as "pass-log".
+    So the excluded path is always the literal slot, and it is used only
+    when the resolved log (`log_path`, already realpath'd by the caller) is
+    that very slot. Anything else excludes nothing."""
     if overridden:
         return None, [
             "pass-log self-exclusion is off for a --log-path override (only "
             "the default docs/reviews/code-review-<scope-tag>.md is trusted "
             "as this review's own log); the diff is reviewed unchanged"]
-    return log_path_in_diff(log_path, repo_root), []
+    slot = f"{Path(PASS_LOG_DIRNAME).as_posix()}/code-review-{scope_tag}.md"
+    real_slot = os.path.join(os.path.realpath(str(repo_root)), *slot.split("/"))
+    if os.path.realpath(str(log_path)) != real_slot:
+        return None, [
+            f"pass-log self-exclusion is off: the default log slot {slot} "
+            f"resolves through a symlink to {log_path}; only the slot itself "
+            f"is trusted as this review's own log, so the diff is reviewed "
+            f"unchanged"]
+    return slot, []
 
 
 def excluded_stderr(prog: str, excluded: list) -> str:

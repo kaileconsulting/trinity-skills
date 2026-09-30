@@ -141,7 +141,8 @@ def main(argv=None):
     # the REVIEWED one (original minus runner-applied exclusions) feeds
     # composition only — an exclusion can never trim a lens.
     log_rel, target_warnings = rr.self_exclusion_target(
-        log_path, repo_root, overridden=args.log_path is not None)
+        args.scope_tag, log_path, repo_root,
+        overridden=args.log_path is not None)
     reviewed_text, excluded, excl_warnings = rr.apply_self_exclusion(
         diff_text, log_rel)
     warnings = warnings + target_warnings + excl_warnings
