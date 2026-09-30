@@ -132,7 +132,7 @@ Modified: `iterate-review/bin/review_runner.py` (diff sectioning + exclusion), `
 - Replaying the simplification-gate branch's pass-4 diff through the new runner drops exactly the 130-line log section.
 
 **Iterate-review:** YES (rationale: changes the runner's input composition, whose byte-determinism is golden-pinned; a bug here drops or duplicates reviewed content)
-**Status:** not started
+**Status:** built 2026-09-30, iterate-review pending. `tools/check-all.sh` green (check-runners 163/163, 37 new: exclusion cases plus the summary-clash guard; check-plan-runners adds an exact-summary-fields case; a mutation pass confirmed the fail-closed, rename-kept, newline-only-split and original/reviewed-split cases each catch their mutant). The strict parser round-trips all 456 non-merge commit diffs in this repo's history byte for byte and refuses the one `diff --cc`. Replay: the simplification-gate branch diff at `8952a56` (the 130-line log) drops exactly one section, the log's 136 lines (130 content + 6 header), and the reviewed diff is byte-identical to `git diff … -- . ':!<log>'`; same at `8bdb0ae` (111-line log, 117-line section). The old pass-4 state was pruned, so the replay is from git history rather than a committed fixture. `lines` in `excluded` is the removed section's length, so `diff_lines.original − reviewed = Σ lines`.
 
 ### Phase 1 — Editor-side excludable classes, disclosed (~4h)
 **Deliverables:**
