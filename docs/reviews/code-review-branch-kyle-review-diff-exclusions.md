@@ -221,7 +221,7 @@ Diff captured at 2026-09-30 15:20; head SHA `ac44dc7cff710a0c9b12efa64da8115750d
 
 Continue, one pass (Kyle, 2026-09-30). HIGH+MEDIUM 6 (from 3); two simplification cards answered (docs-eligibility: remove → retired; exclusion-disclosure: narrow → streak 0). Streaks after the pass: path-heuristic 0, diff-section-parser 0, exclusion-disclosure 0 (card reset), plain-path-rule 1, scope-tag-validation 1, governing-plan-spec 1. Fold ecc571f net-shrank the diff (+468/−433). ResearchLogix was running reviews on the same quota.
 
-## Pass 7 — 2026-09-30 18:12 [IN PROGRESS]
+## Pass 7 — 2026-09-30 18:12 [HISTORICAL]
 
 **Scope:** branch (excluded by hand, pre-feature: governing-plan docs/review-diff-exclusions-2026-09-29.md 390 lines; docs docs/review-diff-exclusions-2026-09-29.md.handoff-prompt.md 33 lines; pass-log docs/reviews/code-review-branch-kyle-review-diff-exclusions.md 222 lines) · **Diff size:** 2443 lines · **Scope class:** production · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** used docs/review-diff-exclusions-2026-09-29.md · **Lenses:** senior-dev, security, qa
 
@@ -254,3 +254,7 @@ Continue, one pass (Kyle, 2026-09-30). HIGH+MEDIUM 6 (from 3); two simplificatio
 ### Diff snapshot reference
 
 Diff captured at 2026-09-30 18:09; head SHA `dd43336a71bb694b6558255b30cc9b96a66c50ef`.
+
+### Checkpoint
+
+Continue, one pass (Kyle, 2026-09-30). HIGH+MEDIUM 6 → 5 (Phase 1: 6, 3, 6, 5); 2 of 5 fold-caused (pass 6), 2 defense-in-depth against diffs git never writes. Streaks: governing-plan-spec 2, plain-path-rule 2 (each one below the cluster threshold, 2,), diff-section-parser 1, exclusion-class-rules 1, scope-tag-validation 0, exclusion-disclosure 0. Cost: ~2.4M input tokens, ~18% of the 5-hour window, ~3% weekly.
