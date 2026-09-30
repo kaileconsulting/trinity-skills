@@ -497,8 +497,11 @@ EXAMPLE_06 = os.path.join(SKILL, "examples", "merge", "06-lockfile-exclusion")
 
 
 def test_classed_exclusions(rr, sel) -> None:
-    """Phase 1 (plan §2): --exclude <class>:<path-or-glob> — every refusal
-    case, the crossing-rename keep, the valid cases, and scenario 06."""
+    """Phase 1 (plan §2): --exclude <class>:<path-or-glob> for the two
+    classes that survived the review (governing-plan, generated) — every
+    refusal, the crossing-rename keep, the valid cases, the review-won
+    rules (plain paths and plain audit text, strict decoding, git modes,
+    endpoint-aware disclosure), and scenario 06."""
     plan = "docs/plans/x-plan.md"
     intent_plan = f"Some intent.\nGoverning-plan: {plan}\n"
     audit_intent = ("intent\n\n=== EXCLUDED SUMMARY ===\n"
@@ -508,6 +511,10 @@ def test_classed_exclusions(rr, sel) -> None:
 
     def spec(*items):
         return rr.parse_exclude_specs(list(items))
+
+    def summary_for(*paths, prop="audited"):
+        return "=== EXCLUDED SUMMARY ===\n" + "".join(
+            f"- {p}: {prop}\n" for p in paths)
 
     def refused(label, diff, specs_, intent, needle):
         try:
@@ -525,13 +532,23 @@ def test_classed_exclusions(rr, sel) -> None:
             return
         record(f"exclude refused: {label}", False, "no ExclusionError")
 
-    # Refusals.
-    refused("production path under docs",
-            code + _mod("docs/a.md"), spec("docs:**/*.py"), "", "not a documentation path")
+    def quoted_mod(esc, stem="docs/"):
+        q = f'"a/{stem}{esc}.md"'
+        return (f'diff --git {q} "b/{stem}{esc}.md"\nindex 1..2 100644\n'
+                f'--- {q}\n+++ "b/{stem}{esc}.md"\n@@ -1 +1 @@\n-a\n+b\n')
+
+    # Class syntax. The `docs` class was removed at the pass-6
+    # simplification card, so it is now an unknown class.
     refused_parse("unknown class", ["vendor:x"], "unknown class")
-    refused_parse("missing pattern", ["docs:"], "expected <class>:<path-or-glob>")
-    refused("glob matching nothing", code + _mod("docs/a.md"),
-            spec("docs:guides/**"), "", "matches no path")
+    refused_parse("the removed docs class is unknown", ["docs:docs/**"], "unknown class")
+    refused_parse("missing pattern", ["generated:"], "expected <class>:<path-or-glob>")
+    refused("glob matching nothing", code + _mod("a/yarn.lock"),
+            spec("generated:guides/**"), audit_intent, "matches no path")
+    refused("an unparseable diff aborts an explicit request",
+            _hunk("a/a/yarn.lock", "b/a/yarn.lock"), spec("generated:a/yarn.lock"),
+            audit_intent, "can't be")
+
+    # governing-plan: the intent's one line, exactly; a regular .md blob.
     refused("governing-plan with no Governing-plan: line",
             code + _mod(plan), spec(f"governing-plan:{plan}"), "intent\n", "found 0")
     refused("duplicated Governing-plan: line",
@@ -543,9 +560,38 @@ def test_classed_exclusions(rr, sel) -> None:
     refused("governing-plan given as a glob",
             code + _mod(plan), spec("governing-plan:docs/plans/*.md"),
             "Governing-plan: docs/plans/*.md\n", "must name exactly")
-    refused("governing-plan that is production under the heuristic",
-            code + _mod("PLAN.md"), spec("governing-plan:PLAN.md"),
-            "Governing-plan: PLAN.md\n", "not a documentation path")
+    refused("governing-plan that is not a .md file",
+            code + _mod("docs/plan.py"), spec("governing-plan:docs/plan.py"),
+            "Governing-plan: docs/plan.py\n", "not a regular, non-executable .md")
+    refused("governing-plan made executable (mode change)",
+            code + _mod(plan).replace("index 1..2 100644\n",
+                                      "old mode 100644\nnew mode 100755\nindex 1..2\n"),
+            spec(f"governing-plan:{plan}"), intent_plan, "not a regular, non-executable .md")
+    refused("governing-plan that is a symlink",
+            code + f"diff --git a/{plan} b/{plan}\nnew file mode 120000\n"
+            f"index 0000000..1111111\n--- /dev/null\n+++ b/{plan}\n"
+            f"@@ -0,0 +1 @@\n+../../src/app.py\n\\ No newline at end of file\n",
+            spec(f"governing-plan:{plan}"), intent_plan, "not a regular, non-executable .md")
+    reviewed, excl, _w = rr.apply_exclusions(
+        code + _mod(plan), None, spec(f"governing-plan:{plan}"), intent_plan)
+    record("exclude: governing-plan naming the intent's line is excluded",
+           reviewed == code and [e["class"] for e in excl] == ["governing-plan"])
+    bracket = "docs/Plan [draft].md"
+    try:
+        reviewed, excl, _w = rr.apply_exclusions(
+            code + _mod(bracket), None, spec(f"governing-plan:{bracket}"),
+            f"Governing-plan: {bracket}\n")
+    except rr.ExclusionError as exc:
+        reviewed, excl = None, [f"refused: {exc}"]
+    record("exclude: a governing-plan path with [brackets] is exact, not a glob",
+           reviewed == code and len(excl) == 1, str(excl))
+    record("parser: modes are read from index, new file and mode-change lines",
+           [x["modes"] for x in rr.parse_diff_sections(
+               _mod("a.md") + f"diff --git a/b.sh b/b.sh\nold mode 100644\n"
+               f"new mode 100755\n")] ==
+           [{"old": "100644", "new": "100644"}, {"old": "100644", "new": "100755"}])
+
+    # generated: a plain-text audit entry per path.
     refused("generated path with no audit entry",
             code + _mod("a/yarn.lock") + _mod("c/Cargo.lock"),
             spec("generated:**/*.lock"), audit_intent, "c/Cargo.lock has no non-empty audit entry")
@@ -557,60 +603,113 @@ def test_classed_exclusions(rr, sel) -> None:
     refused("generated with two EXCLUDED SUMMARY blocks",
             code + _mod("a/yarn.lock"), spec("generated:a/yarn.lock"),
             audit_intent + "\n" + audit_intent, "found 2")
-    refused("an unparseable diff aborts an explicit request",
-            _hunk("a/docs/a.md", "b/docs/a.md"), spec("docs:docs/**"), "",
-            "can't be")
     refused("audit entry for a different path does not count",
             code + _mod("a/yarn.lock.bak"), spec("generated:a/yarn.lock.bak"),
             audit_intent, "no non-empty audit entry")
-
-    # Pass-4 folds (docs/reviews/code-review-branch-kyle-review-diff-
-    # exclusions.md). `docs` means documentation, not "non-production":
-    # tests, specs, fixtures, goldens, examples and test-named files — the
-    # QA evidence — are refused, even under a docs/ segment.
-    for label, path in (("tests/ directory", "tests/test_auth.py"),
-                        ("spec/ directory", "spec/auth_spec.rb"),
-                        ("fixtures/ directory", "fixtures/users.json"),
-                        ("goldens/ directory", "goldens/out.txt"),
-                        ("examples/ directory", "examples/demo.md"),
-                        ("test-named file", "lib/auth.test.js"),
-                        ("test file under docs/", "docs/tests/test_x.py")):
-        refused(f"docs on a {label} (non-production, but not documentation)",
-                code + _mod(path), spec(f"docs:{path}"), "", "not a documentation path")
+    refused("an audit property with a backtick (not plain text)",
+            code + _mod("a/yarn.lock"), spec("generated:a/yarn.lock"),
+            "=== EXCLUDED SUMMARY ===\n- a/yarn.lock: every `resolved` URL\n",
+            "not plain text")
+    refused("an audit property with a control character",
+            code + _mod("a/yarn.lock"), spec("generated:a/yarn.lock"),
+            "=== EXCLUDED SUMMARY ===\n- a/yarn.lock: fine\x1b[2K forged\n",
+            "not plain text")
+    refused("an audit property with non-ASCII text",
+            code + _mod("a/yarn.lock"), spec("generated:a/yarn.lock"),
+            "=== EXCLUDED SUMMARY ===\n- a/yarn.lock: registry → npm\n",
+            "not plain text")
     reviewed, excl, _w = rr.apply_exclusions(
-        code + _mod("docs/guide.md") + _mod("README.md"), None,
-        spec("docs:docs/**", "docs:README.md"), "")
-    record("exclude: docs accepts docs/ paths and root-level README",
-           reviewed == code and len(excl) == 2)
-    refused("governing-plan under examples/ (non-production, not documentation)",
-            code + _mod("examples/plan.md"), spec("governing-plan:examples/plan.md"),
-            "Governing-plan: examples/plan.md\n", "not a documentation path")
-    # A literal backslash is a filename character, never a separator.
-    bs = ('diff --git "a/src\\\\docs\\\\billing.py" "b/src\\\\docs\\\\billing.py"\n'
-          'index 1..2 100644\n--- "a/src\\\\docs\\\\billing.py"\n'
-          '+++ "b/src\\\\docs\\\\billing.py"\n@@ -1 +1 @@\n-a\n+b\n')
+        code + _mod("a/yarn.lock") + _mod("b/Gemfile.lock"), None,
+        spec("generated:**/*.lock"), audit_intent)
+    record("exclude: several generated paths, each with its own audit entry",
+           reviewed == code and [e["audit"] for e in excl] == [
+               {"a/yarn.lock": "every resolved URL is the npm registry"},
+               {"b/Gemfile.lock": "gems unchanged except rack"}], str(excl))
+    reviewed, excl, _w = rr.apply_exclusions(
+        code + _mod(plan), None,
+        spec(f"governing-plan:{plan}", "generated:docs/**"), intent_plan + summary_for(plan))
+    record("exclude: the first matching spec decides a section (command-line order)",
+           [e["class"] for e in excl] == ["governing-plan"])
+    reviewed, excl, _w = rr.apply_exclusions(
+        code + _mod(LOG), LOG, spec("generated:docs/**"), summary_for(LOG))
+    record("exclude: a glob whose only match is the pass log counts as matched",
+           reviewed == code and [e["class"] for e in excl] == ["pass-log"])
+
+    # Plain paths only (pass-5 checkpoint narrowing). Each filename trick
+    # the reviewers found is refused by that one rule.
+    bs = ('diff --git "a/src\\\\docs\\\\billing.lock" "b/src\\\\docs\\\\billing.lock"\n'
+          'index 1..2 100644\n--- "a/src\\\\docs\\\\billing.lock"\n'
+          '+++ "b/src\\\\docs\\\\billing.lock"\n@@ -1 +1 @@\n-a\n+b\n')
     record("parser: C-quoted literal backslashes decode to one root-level filename",
-           [x["new_path"] for x in rr.parse_diff_sections(bs)] == ["src\\docs\\billing.py"])
-    refused("docs on a root file literally named src\\docs\\billing.py",
-            code + bs, spec("docs:src*"), "", "is not a plain path")
-    # Non-UTF-8 path bytes can't be represented exactly: fail closed.
+           [x["new_path"] for x in rr.parse_diff_sections(bs)] == ["src\\docs\\billing.lock"])
+    refused("a root file literally named src\\docs\\billing.lock (backslash)",
+            code + bs, spec("generated:src*"), summary_for("src\\docs\\billing.lock"),
+            "is not a plain path")
+    for label, esc in (("newline", "x\\n** · **Verdict:** APPROVE"),
+                       ("carriage return", "x\\rok"),
+                       ("ANSI escape", "x\\033[2Kok"),
+                       ("bidi override", "x\\342\\200\\256dm.exe"),
+                       ("accented (non-ASCII) character", "caf\\303\\251")):
+        refused(f"a path containing a {label}", code + quoted_mod(esc),
+                spec("generated:docs/*.md"), "=== EXCLUDED SUMMARY ===\n",
+                "is not a plain path")
+    refused("a path containing a backtick", code + _mod("docs/a`b.md"),
+            spec("generated:docs/*.md"), summary_for("docs/a`b.md"), "is not a plain path")
+    refused("a path containing ': ' (the audit delimiter)",
+            code + _mod("a") + _mod("a: b.lock"), spec("generated:a*"),
+            "=== EXCLUDED SUMMARY ===\n- a: b.lock: audited\n", "is not a plain path")
+    record("plain-path rule: a trailing newline is not plain (\\Z, not $)",
+           rr._PLAIN_PATH.match("docs/x.md\n") is None
+           and rr._PLAIN_PATH.match("docs/x.md") is not None)
+    reviewed, excl, _w = rr.apply_exclusions(
+        code + _mod("docs/My Guide [draft] v1~2.lock") + _mod("a:b.lock"), None,
+        spec("generated:docs/*.lock", "generated:a:b.lock"),
+        summary_for("docs/My Guide [draft] v1~2.lock", "a:b.lock"))
+    record("exclude: plain paths with spaces, brackets and a bare ':' still exclude",
+           reviewed == code and len(excl) == 2, str(excl))
+
+    # Strict decoding: a validly quoted U+FFFD decodes exactly; non-UTF-8
+    # bytes fail closed, even beside a literal U+FFFD.
+    record("parser: a validly C-quoted U+FFFD filename decodes exactly",
+           [x["new_path"] for x in rr.parse_diff_sections(quoted_mod("x\\357\\277\\275"))]
+           == ["docs/x�.md"])
     nonutf = ('diff --git "a/docs/\\200.lock" "b/docs/\\200.lock"\nindex 1..2 100644\n'
               '--- "a/docs/\\200.lock"\n+++ "b/docs/\\200.lock"\n@@ -1 +1 @@\n-a\n+b\n')
     refused("non-UTF-8 path bytes (would collapse distinct files)",
             code + nonutf + nonutf.replace("\\200", "\\201"),
-            spec("generated:docs/*.lock"), "=== EXCLUDED SUMMARY ===\n- docs/�.lock: x\n",
-            "non-UTF-8")
+            spec("generated:docs/*.lock"), summary_for("docs/�.lock"), "non-UTF-8")
     reviewed, excl, warns = rr.apply_self_exclusion(code + nonutf, LOG)
     record("self-exclusion: non-UTF-8 path bytes -> skipped with a warning",
            reviewed == code + nonutf and excl == []
            and any("non-UTF-8" in w for w in warns), str(warns))
-    # A path containing the audit delimiter ": " is refused, not guessed.
-    colon = _mod("a: b.lock")
-    refused("generated path containing ': ' (entry can't bind uniquely)",
-            code + _mod("a") + colon, spec("generated:a*"),
-            "=== EXCLUDED SUMMARY ===\n- a: b.lock: audited\n", "is not a plain path")
-    # A generated rename discloses BOTH endpoints and both audits, in the
-    # summary, the Scope rendering and the all-excluded stderr alike.
+    mixed = ('diff --git "a/docs/�\\200.lock" "b/docs/�\\201.lock"\n'
+             'similarity index 100%\nrename from "docs/�\\200.lock"\n'
+             'rename to "docs/�\\201.lock"\n')
+    reviewed, excl, warns = rr.apply_self_exclusion(code + mixed, LOG)
+    record("parser: invalid bytes beside a literal U+FFFD still fail closed",
+           excl == [] and any("non-UTF-8" in w for w in warns), str(warns))
+
+    # Renames and copies.
+    crossing = ("diff --git a/lib/a.lock b/src/a.py\nsimilarity index 90%\n"
+                "rename from lib/a.lock\nrename to src/a.py\nindex 1..2 100644\n"
+                + _hunk("a/lib/a.lock", "b/src/a.py", "-x\n", "+import os\n"))
+    reviewed, excl, warns = rr.apply_exclusions(
+        code + crossing + _mod("a/yarn.lock"), None, spec("generated:**/*.lock"), audit_intent)
+    record("exclude: a rename crossing out of the class is kept, whole, with a warning",
+           reviewed == code + crossing and len(excl) == 1
+           and excl[0]["new_path"] == "a/yarn.lock"
+           and any("crossing out of the class" in w for w in warns), f"{excl} {warns}")
+    odd_rename = ('diff --git "a/lib/a.lock" "b/lib/caf\\303\\251.py"\nsimilarity index 100%\n'
+                  'rename from lib/a.lock\nrename to "lib/caf\\303\\251.py"\n')
+    try:
+        reviewed, excl, warns = rr.apply_exclusions(
+            code + odd_rename, None, spec("generated:lib/a.lock"), summary_for("lib/a.lock"))
+    except rr.ExclusionError as exc:
+        reviewed, excl, warns = None, None, [f"refused: {exc}"]
+    record("exclude: a crossing rename to a non-plain unmatched path is kept, not refused",
+           reviewed == code + odd_rename and excl == []
+           and any("crossing out of the class" in w and "'lib/café.py'" in w
+                   for w in warns), str(warns))
     gen_rename = ("diff --git a/old/yarn.lock b/new/yarn.lock\nsimilarity index 100%\n"
                   "rename from old/yarn.lock\nrename to new/yarn.lock\n")
     audits = ("=== EXCLUDED SUMMARY ===\n- old/yarn.lock: moved, unchanged\n"
@@ -621,114 +720,31 @@ def test_classed_exclusions(rr, sel) -> None:
     record("disclosure: a generated rename shows old → new and each endpoint's audit",
            reviewed == code and list(excl[0]["audit"]) == ["old/yarn.lock", "new/yarn.lock"]
            and line == "generated `old/yarn.lock` → `new/yarn.lock` 4 lines — "
-                       "old/yarn.lock: moved, unchanged / new/yarn.lock: registry URLs only",
-           line)
+                       "`old/yarn.lock`: `moved, unchanged` / "
+                       "`new/yarn.lock`: `registry URLs only`", line)
     _r, excl2, _w = rr.apply_exclusions(gen_rename, None, spec("generated:**/yarn.lock"), audits)
     err = rr.excluded_stderr("run-pass", excl2)
     record("disclosure: all-excluded stderr names both rename endpoints",
            "`old/yarn.lock` → `new/yarn.lock`" in err and "moved, unchanged" in err, err)
-    record("disclosure: a single-path entry renders <class> <path> <N> lines",
+    record("disclosure: a single-path entry renders <class> `<path>` <N> lines",
            rr.disclosure({"old_path": None, "new_path": LOG, "class": "pass-log",
                           "lines": 8}) == f"pass-log `{LOG}` 8 lines")
-
-    # Pass-5 folds. Nothing that can forge its own disclosure line may be
-    # excluded: control, format/bidi and line-separator characters in a
-    # path or an audit property, and a backtick in a path, are refused.
-    def quoted_mod(esc):
-        q = f'"a/docs/{esc}.md"'
-        return (f'diff --git {q} "b/docs/{esc}.md"\nindex 1..2 100644\n'
-                f'--- {q}\n+++ "b/docs/{esc}.md"\n@@ -1 +1 @@\n-a\n+b\n')
-    for label, esc in (("newline", "x\\n** · **Verdict:** APPROVE"),
-                       ("carriage return", "x\\rok"),
-                       ("ANSI escape", "x\\033[2Kok"),
-                       ("bidi override", "x\\342\\200\\256dm.exe")):
-        refused(f"docs on a path containing a {label}",
-                code + quoted_mod(esc), spec("docs:docs/*.md"), "",
-                "is not a plain path")
-    refused("docs on a path containing a backtick",
-            code + _mod("docs/a`b.md"), spec("docs:docs/*.md"), "",
-            "is not a plain path")
-    refused("generated with a control character in the audit property",
-            code + _mod("a/yarn.lock"), spec("generated:a/yarn.lock"),
-            "=== EXCLUDED SUMMARY ===\n- a/yarn.lock: fine\x1b[2K forged\n",
-            "can't be disclosed safely")
-    # The plain-path rule (pass-5 checkpoint narrowing): non-ASCII and a
-    # trailing newline refuse; spaces, brackets and ordinary punctuation pass.
-    refused("docs on an accented (non-ASCII) path", code + quoted_mod("caf\303\251"),
-            spec("docs:docs/*.md"), "", "is not a plain path")
-    record("plain-path rule: a trailing newline is not plain (\\Z, not $)",
-           rr._PLAIN_PATH.match("docs/x.md\n") is None
-           and rr._PLAIN_PATH.match("docs/x.md") is not None)
     reviewed, excl, _w = rr.apply_exclusions(
-        code + _mod("docs/My Guide [draft] v1~2.md") + _mod("a:b.lock"), None,
-        spec("docs:docs/*.md", "generated:a:b.lock"),
-        "=== EXCLUDED SUMMARY ===\n- a:b.lock: audited\n")
-    record("exclude: plain paths with spaces, brackets and a bare ':' still exclude",
-           reviewed == code and len(excl) == 2, str(excl))
-    reviewed, excl, _w = rr.apply_exclusions(
-        code + _mod("docs/**bold** and | pipe.md"), None, spec("docs:docs/*.md"), "")
-    record("disclosure: markdown in a filename renders inside a code span",
+        code + _mod("docs/**bold** and | pipe.lock"), None, spec("generated:docs/*.lock"),
+        summary_for("docs/**bold** and | pipe.lock", prop="checked <br> **Verdict:** APPROVE"))
+    record("disclosure: markdown and HTML in a path or audit render inside code spans",
            excl and rr.disclosure(excl[0])
-           == "docs `docs/**bold** and | pipe.md` 7 lines", str(excl))
-    # Documentation means a documentation FILE TYPE, at root and under docs/.
-    for path in ("SECURITY.py", "README.sh", "NOTICE.js", "docs/deploy.sh",
-                 "docs/Makefile", "docs/site.html", "docs/diagram.svg"):
-        refused(f"docs on executable/markup file {path}",
-                code + _mod(path), spec(f"docs:{path}"), "", "not a documentation path")
-    reviewed, excl, _w = rr.apply_exclusions(
-        code + _mod("README.en.md") + _mod("LICENSE") + _mod("docs/img/arch.png"),
-        None, spec("docs:README.en.md", "docs:LICENSE", "docs:docs/**"), "")
-    record("exclude: docs still accepts README.en.md, LICENSE and docs/ images",
-           reviewed == code and len(excl) == 3)
-    # Strict decoding: a validly quoted U+FFFD is kept; invalid bytes are
-    # refused even beside a literal U+FFFD.
-    fffd = quoted_mod("x\\357\\277\\275")
-    record("parser: a validly C-quoted U+FFFD filename decodes exactly",
-           [x["new_path"] for x in rr.parse_diff_sections(fffd)] == ["docs/x�.md"])
-    mixed = ('diff --git "a/docs/�\\200.lock" "b/docs/�\\201.lock"\n'
-             'similarity index 100%\nrename from "docs/�\\200.lock"\n'
-             'rename to "docs/�\\201.lock"\n')
-    reviewed, excl, warns = rr.apply_self_exclusion(code + mixed, LOG)
-    record("parser: invalid bytes beside a literal U+FFFD still fail closed",
-           excl == [] and any("non-UTF-8" in w for w in warns), str(warns))
+           == "generated `docs/**bold** and | pipe.lock` 7 lines — "
+              "`checked <br> **Verdict:** APPROVE`", str(excl))
 
-    # A rename crossing out of the class is kept, whole, never refused.
-    crossing = ("diff --git a/docs/a.md b/src/a.py\nsimilarity index 90%\n"
-                "rename from docs/a.md\nrename to src/a.py\nindex 1..2 100644\n"
-                + _hunk("a/docs/a.md", "b/src/a.py", "-x\n", "+import os\n"))
-    reviewed, excl, warns = rr.apply_exclusions(
-        code + crossing + _mod("docs/b.md"), None, spec("docs:docs/**"), "")
-    record("exclude: a rename crossing into a production path is kept, whole, with a warning",
-           reviewed == code + crossing and len(excl) == 1
-           and excl[0]["new_path"] == "docs/b.md"
-           and any("crossing out of the class" in w for w in warns), f"{excl} {warns}")
-    inside = ("diff --git a/docs/a.md b/docs/guide/a.md\nsimilarity index 100%\n"
-              "rename from docs/a.md\nrename to docs/guide/a.md\n")
-    reviewed, excl, _w = rr.apply_exclusions(code + inside, None, spec("docs:docs/**"), "")
-    record("exclude: a rename with both endpoints in the class is excluded",
-           reviewed == code and excl[0]["old_path"] == "docs/a.md")
-
-    # Valid cases.
-    reviewed, excl, _w = rr.apply_exclusions(
-        code + _mod(plan), None, spec(f"governing-plan:{plan}"), intent_plan)
-    record("exclude: governing-plan naming the intent's line is excluded",
-           reviewed == code and [e["class"] for e in excl] == ["governing-plan"])
-    reviewed, excl, _w = rr.apply_exclusions(
-        code + _mod("a/yarn.lock") + _mod("b/Gemfile.lock"), None,
-        spec("generated:**/*.lock"), audit_intent)
-    record("exclude: several generated paths, each with its own audit entry",
-           reviewed == code and [e["audit"] for e in excl] == [
-               {"a/yarn.lock": "every resolved URL is the npm registry"},
-               {"b/Gemfile.lock": "gems unchanged except rack"}], str(excl))
-    reviewed, excl, _w = rr.apply_exclusions(
-        code + _mod(plan), None,
-        spec(f"governing-plan:{plan}", "docs:docs/**"), intent_plan)
-    record("exclude: the first matching spec decides a section (command-line order)",
-           [e["class"] for e in excl] == ["governing-plan"])
-    reviewed, excl, _w = rr.apply_exclusions(
-        code + _mod(LOG), LOG, spec("docs:docs/**"), "")
-    record("exclude: a glob whose only match is the pass log counts as matched",
-           reviewed == code and [e["class"] for e in excl] == ["pass-log"])
+    # Scope tags end at the true end of the string (pass-6 fold).
+    try:
+        rr.validate_scope_tag("x\n")
+        ok = False
+    except rr.CompositionError:
+        ok = True
+    record("scope tag: a trailing newline is refused (\\Z, not $)",
+           ok and rr.validate_scope_tag("branch-x") == "branch-x")
 
     # Scenario 06, run: byte-identical to its goldens, and selection reads
     # the ORIGINAL diff (security survives the excluded lockfile).
@@ -749,8 +765,7 @@ def test_classed_exclusions(rr, sel) -> None:
     record("scenario 06: selection on the original keeps security; on the reviewed it wouldn't",
            sel.select(diff, lenses, cfg)[0] == ["security", "senior-dev"]
            and sel.select(reviewed, lenses, cfg)[0] == ["senior-dev"])
-    broken = intent.replace("- composer.lock: every", "- composer.lock:")
-    broken = broken.split("- composer.lock:")[0] + "\n"
+    broken = intent.split("- composer.lock:")[0] + "\n"
     try:
         rr.apply_exclusions(diff, None, rr.parse_exclude_specs(raw), broken)
         ok = False

@@ -1,3 +1,2 @@
 --exclude generated:**/*.lock
 --exclude generated:frontend/package-lock.json
---exclude docs:docs/**

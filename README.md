@@ -101,12 +101,11 @@ Every lens gets the whole diff, and Codex re-sends it across its file-reading tu
 
   | Class | For | Must hold, or the runner refuses before any Codex call |
   |---|---|---|
-  | `governing-plan` | the converged plan the review treats as its spec | the intent names it on exactly one `Governing-plan:` line; it's a documentation file |
-  | `docs` | documentation | a documentation file type under `docs/`, or a root README/CHANGELOG/…; nothing test-shaped, so tests and fixtures stay reviewed |
-  | `generated` | lockfiles, generated files (production allowed) | each path has an audit entry in the intent's `=== EXCLUDED SUMMARY ===` block saying what the editor checked |
+  | `governing-plan` | the converged plan the review treats as its spec | the intent names it on exactly one `Governing-plan:` line; it's a regular, non-executable `.md` file |
+  | `generated` | lockfiles, generated files (production allowed) | each path has a plain-text audit entry in the intent's `=== EXCLUDED SUMMARY ===` block saying what the editor checked |
 
-  Only plain paths qualify (printable ASCII, no backtick, backslash, double quote or `: `); anything unusual stays in review.
-- **Every exclusion is visible.** The runner records it in `pass-N.summary.json` (`excluded`, with line counts and each `generated` audit), and the pass header's `Scope:` line copies it from there, for example ``branch (excluded: pass-log `docs/reviews/code-review-branch-x.md` 136 lines; generated `composer.lock` 17 lines — every dist.url is an api.github.com zipball)``. A diff that exclusions empty entirely creates no pass, and the runner lists what it removed.
+  Only plain paths qualify (printable ASCII, no backtick, backslash, double quote or `: `), and audit text is plain too; anything unusual stays in review. There is deliberately no `docs` class: "is this documentation?" kept admitting code during this feature's own review, so other docs are reviewed like code.
+- **Every exclusion is visible.** The runner records it in `pass-N.summary.json` (`excluded`, with line counts and each `generated` audit), and the pass header's `Scope:` line copies it from there, for example ``branch (excluded: pass-log `docs/reviews/code-review-branch-x.md` 136 lines; generated `composer.lock` 17 lines — `every dist.url is an api.github.com zipball`)``. A diff that exclusions empty entirely creates no pass, and the runner lists what it removed.
 - **Exclusion never changes which lenses run.** Selection reads the original diff, so an excluded lockfile still triggers `security`.
 
 The worked example, `iterate-review/examples/merge/06-lockfile-exclusion/`, is a real Dependabot review done this way, and `tools/check-runners.py` runs it byte for byte. Expect roughly 10–20% less input per lens on plan-driven branches; the pass summary's `diff_lines` shows what was removed each pass. The check on actual savings is the `used_percent` Codex logs per call.
@@ -277,7 +276,7 @@ Its output is the live count of what's covered — deliberately not restated her
 | `tools/check-cluster-streak.py` | The simplification gate's streak counting (`cluster_tracker.py`), boundary case by boundary case, including a real 11-pass review end to end — and that the threshold written into each SKILL.md matches the development constant. |
 | `tools/check-provenance-recipe.py` | The shared `jq` analytics recipe reproduces its tallies from sample state files, reading schema 1 and 2 side by side, including the simplification-card measures. |
 | `tools/check-runners.py` | The iterate-review runner scripts' promised behavior: byte-deterministic composition, strict diff sectioning and every exclusion rule (each refusal, the crossing-rename keep, the disclosure format, scenario 06 run byte for byte), exit contracts, lock lifecycle, pass-log resolution, prune safety — against a copied install with a fake `codex`. |
-| `tools/check-scope-classification.py` | The production/non-production path heuristic (one implementation, `iterate-review/bin/path_classes.py`, shared by scope classification and the exclusion refusals), boundary case by boundary case, and that SKILL.md's prose lists exactly the segments, root doc names and documentation file types the code uses. |
+| `tools/check-scope-classification.py` | The production/non-production path heuristic (`scope_classifier.py`), boundary case by boundary case, and that SKILL.md step 3's prose lists exactly the segments and root doc names the code uses. |
 | `tools/check-plan-runners.py` | The iterate-plan port's adapted behavior: section extraction, always-all selection, `--plan`/`--note` boundaries, plus a wiring smoke over the shared contracts. |
 | `tools/test-checkers.py` | Tests that the checkers above actually fail when they should. |
 

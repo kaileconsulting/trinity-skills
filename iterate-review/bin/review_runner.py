@@ -37,7 +37,6 @@ import os
 import re
 import secrets
 import sys
-import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -47,7 +46,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import runner_shared as shared  # noqa: E402
 import selection_engine as sel  # noqa: E402
-import path_classes  # noqa: E402
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 STATE_ROOT = SKILL_ROOT / "state"
@@ -63,7 +61,7 @@ class CompositionError(Exception):
     """A composition input could not be read/parsed. Message is user-facing."""
 
 
-SCOPE_TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+SCOPE_TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\Z")  # \Z: no trailing newline
 
 
 def validate_scope_tag(scope_tag: str) -> str:
@@ -418,14 +416,18 @@ def _agree(current, value, what: str):
 
 
 def _parse_section(lines: list) -> dict:
-    """Identity of one section: {old_path, new_path, text, lines}, where a
-    None endpoint is /dev/null (the missing side of an add or delete)."""
+    """Identity of one section: {old_path, new_path, modes, text, lines},
+    where a None endpoint is /dev/null (the missing side of an add or
+    delete) and `modes` is {"old", "new"} — each endpoint's git object
+    mode (100644, 100755, 120000 symlink, 160000 gitlink) where the header
+    states it, else None."""
     head = lines[0]
     git_pair = _parse_git_line(head)
     old = new = _UNSET
     moved_old = moved_new = _UNSET
     created = deleted = False
     minus = plus = _UNSET
+    old_mode = new_mode = None
     i = 1
     n = len(lines)
     # Extended header.
@@ -439,8 +441,19 @@ def _parse_section(lines: list) -> dict:
                                "rename/copy target")
         elif ln.startswith("new file mode "):
             created = True
+            new_mode = ln.rsplit(" ", 1)[1]
         elif ln.startswith("deleted file mode "):
             deleted = True
+            old_mode = ln.rsplit(" ", 1)[1]
+        elif ln.startswith("old mode "):
+            old_mode = ln.rsplit(" ", 1)[1]
+        elif ln.startswith("new mode "):
+            new_mode = ln.rsplit(" ", 1)[1]
+        elif ln.startswith("index "):
+            parts = ln.split(" ")
+            if len(parts) == 3:  # `index a..b <mode>`: mode unchanged
+                old_mode = old_mode or parts[2]
+                new_mode = new_mode or parts[2]
         elif ln.startswith(_HEADER_PREFIXES):
             pass
         else:
@@ -544,7 +557,12 @@ def _parse_section(lines: list) -> dict:
             binary_marker, old, new):
         raise DiffParseError(
             f"'Binary files' paths disagree with the section in {head.rstrip()!r}")
+    if created:
+        old_mode = None
+    if deleted:
+        new_mode = None
     return {"old_path": old, "new_path": new,
+            "modes": {"old": old_mode, "new": new_mode},
             "text": "".join(lines), "lines": len(lines)}
 
 
@@ -593,10 +611,10 @@ class ExclusionError(Exception):
     user-facing."""
 
 
-EXCLUDE_CLASSES = ("governing-plan", "docs", "generated")
+EXCLUDE_CLASSES = ("governing-plan", "generated")
 GOVERNING_PLAN_RE = re.compile(r"^Governing-plan: (\S(?:.*\S)?)$", re.MULTILINE)
 EXCLUDED_SUMMARY_HEADER = "=== EXCLUDED SUMMARY ==="
-_GLOB_CHARS = set("*?[")
+_GLOB_CHARS = set("*?")  # the runner's globs have no character classes
 
 
 def parse_exclude_specs(raw: list) -> list:
@@ -670,15 +688,10 @@ def _audit_entry(entries: list, path: str):
 _PLAIN_PATH = re.compile(r"^(?:(?!: )[ !#-\[\]-_a-~])+\Z")  # \Z, not $: no trailing newline
 
 
-def _undisplayable(text: str):
-    """The first character that would let editor-written audit text corrupt
-    a one-line disclosure (a control, format/bidi or line/paragraph
-    separator), as a repr; None when it's safe to show verbatim. Paths
-    never get here unless they are plain (_PLAIN_PATH)."""
-    for ch in text:
-        if unicodedata.category(ch) in ("Cc", "Cf", "Zl", "Zp"):
-            return repr(ch)
-    return None
+# Audit properties are plain text too: printable ASCII without a backtick,
+# shown inside a code span, so nothing in them can render as markdown or
+# HTML in the pass header (Phase 1 review, pass-6 simplification card).
+_PLAIN_TEXT = re.compile(r"^[ -_a-~]+\Z")
 
 
 def apply_exclusions(diff: str, log_rel, specs: list, intent: str):
@@ -697,14 +710,14 @@ def apply_exclusions(diff: str, log_rel, specs: list, intent: str):
     - two distinct endpoints (rename/copy): excluded only if both match the
       pattern and satisfy the rule; otherwise it stays in review, whole,
       with a warning — a crossing rename is kept, never refused.
-    Class rules: `docs` and `governing-plan` accept only documentation
-    (path_classes.is_documentation: a doc file type under a `docs` segment
-    or a root doc name, nothing test-shaped — generic non-production paths
-    such as tests and fixtures are NOT eligible); `governing-plan` additionally matches
-    only the one path on the intent's `Governing-plan:` line; `generated`
-    needs a non-empty `- <path>: <property>` audit entry per endpoint in
-    the intent's EXCLUDED SUMMARY block. A spec matching no section at all
-    is refused."""
+    Class rules: `governing-plan` matches only the one path on the intent's
+    `Governing-plan:` line, and it must be a regular, non-executable `.md`
+    blob (mode 100644 at every existing endpoint); `generated` needs a
+    non-empty plain-text `- <path>: <property>` audit entry per endpoint in
+    the intent's EXCLUDED SUMMARY block. Matched paths must be plain
+    (_PLAIN_PATH). A spec matching no section at all is refused. (A `docs`
+    class existed during Phase 1's review and was removed at its pass-6
+    simplification card: "is this documentation?" kept drawing findings.)"""
     if log_rel is None and not specs:
         return diff, [], []
     try:
@@ -727,7 +740,6 @@ def apply_exclusions(diff: str, log_rel, specs: list, intent: str):
                 raise ExclusionError(
                     f"--exclude governing-plan:{pattern}: must name exactly "
                     f"the intent's Governing-plan: path ({plan_path})")
-            # The documentation rule is checked per section below, like `docs`.
             rx = re.compile(re.escape(pattern) + r"\Z")
         else:
             if cls == "generated" and audit is None:
@@ -735,10 +747,10 @@ def apply_exclusions(diff: str, log_rel, specs: list, intent: str):
             rx = sel.glob_to_regex(pattern)
         matchers.append((cls, pattern, rx))
 
-    def rule_holds(cls, path):
+    def rule_holds(cls, path, mode):
         if cls == "generated":
             return _audit_entry(audit, path) is not None
-        return path_classes.is_documentation(path)
+        return path.lower().endswith(".md") and mode == "100644"
 
     used = set()
     kept, excluded, warnings = [], [], []
@@ -766,7 +778,9 @@ def apply_exclusions(diff: str, log_rel, specs: list, intent: str):
             continue
         cls, pattern, _rx = matchers[decided[0]]
         hits = decided[1]
-        odd = [p for p in distinct if not _PLAIN_PATH.match(p)]
+        mode_of = {sec["old_path"]: sec["modes"]["old"],
+                   sec["new_path"]: sec["modes"]["new"]}
+        odd = [p for p in hits if not _PLAIN_PATH.match(p)]
         if odd:
             raise ExclusionError(
                 f"--exclude {cls}:{pattern}: {odd[0]!r} is not a plain path "
@@ -774,21 +788,24 @@ def apply_exclusions(diff: str, log_rel, specs: list, intent: str):
                 f"or ': '); classed exclusion takes plain paths only, so it "
                 f"stays in review — drop or narrow the spec")
         if len(distinct) == 1:
-            if not rule_holds(cls, distinct[0]):
+            if not rule_holds(cls, distinct[0], mode_of.get(distinct[0])):
                 why = ("has no non-empty audit entry in the intent's "
                        f"{EXCLUDED_SUMMARY_HEADER} block"
                        if cls == "generated" else
-                       "is not a documentation path (under a `docs` "
-                       "segment, or a root-level README/CHANGELOG/…, and not "
-                       "test-shaped) per step 3's heuristic")
+                       "is not a regular, non-executable .md file (mode "
+                       "100644)")
                 raise ExclusionError(
                     f"--exclude {cls}:{pattern}: {distinct[0]} {why}; refused")
         elif len(hits) != len(distinct) or not all(
-                rule_holds(cls, p) for p in distinct):
+                _PLAIN_PATH.match(p) and rule_holds(cls, p, mode_of.get(p))
+                for p in distinct):
+            # repr: an unmatched endpoint may be anything, so it is never
+            # shown raw, even in a warning.
             warnings.append(
-                f"--exclude {cls}:{pattern}: {' → '.join(distinct)} is a "
-                f"rename/copy crossing out of the class; that section stays "
-                f"in review, whole")
+                f"--exclude {cls}:{pattern}: "
+                f"{' → '.join(repr(p) for p in distinct)} is a rename/copy "
+                f"crossing out of the class; that section stays in review, "
+                f"whole")
             kept.append(sec["text"])
             continue
         entry = {"old_path": sec["old_path"], "new_path": sec["new_path"],
@@ -798,14 +815,14 @@ def apply_exclusions(diff: str, log_rel, specs: list, intent: str):
                               for p in dict.fromkeys(ends)}  # old, then new
         # The disclosure is the trust boundary: nothing excluded may be
         # able to forge or hide its own line in the pass header or stderr.
-        # Paths are already plain; the editor's audit text is checked here.
+        # Paths are already plain; the editor's audit text must be too.
         for text in (entry.get("audit") or {}).values():
-            bad = _undisplayable(text)
-            if bad:
+            if not _PLAIN_TEXT.match(text):
                 raise ExclusionError(
-                    f"--exclude {cls}:{pattern}: audit property {text!r} "
-                    f"contains {bad}, which can't be disclosed safely on one "
-                    f"line; refused")
+                    f"--exclude {cls}:{pattern}: audit property {text!r} is "
+                    f"not plain text (printable ASCII without a backtick), "
+                    f"so it can't be shown safely in the pass header; "
+                    f"refused")
         excluded.append(entry)
     unused = [f"{cls}:{pattern}" for idx, (cls, pattern, _rx)
               in enumerate(matchers) if idx not in used]
@@ -852,17 +869,18 @@ def disclosure(entry: dict) -> str:
     `<path>` <N> lines[ — <audit>]`, the path in backticks (a code span, so
     markdown in a filename renders literally), a rename/copy as
     `` `old` → `new` ``, and a two-endpoint `generated` entry with each
-    endpoint's own audit. apply_exclusions() admits only plain paths and
-    refuses audit text that could not be shown this way on one line."""
+    endpoint's own audit, each in a code span too. apply_exclusions()
+    admits only plain paths and plain audit text, so no code span can be
+    broken out of."""
     old, new = entry["old_path"], entry["new_path"]
     where = (f"`{old}` → `{new}`" if old and new and old != new
              else f"`{new or old}`")
     text = f"{entry['class']} {where} {entry['lines']} lines"
     audit = entry.get("audit") or {}
     if len(audit) == 1:
-        text += f" — {next(iter(audit.values()))}"
+        text += f" — `{next(iter(audit.values()))}`"
     elif audit:
-        text += " — " + " / ".join(f"{p}: {v}" for p, v in audit.items())
+        text += " — " + " / ".join(f"`{p}`: `{v}`" for p, v in audit.items())
     return text
 
 

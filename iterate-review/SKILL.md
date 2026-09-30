@@ -83,15 +83,15 @@ If the user invokes without a `--scope` flag, ask them which scope they want bef
    | `.github/workflows/ci.yml` (a path that isn't clearly source *or* clearly test/docs) | production (ambiguity biases toward the full budget) |
    | `README.md`, `CHANGELOG.md` (root-level, no `docs` segment) | non-production — root-level documentation-file convention, not just a `docs/` segment |
 
-   These worked examples aren't only prose: `bin/path_classes.py` is the
-   single implementation of this exact heuristic — the runner's `--exclude`
-   refusals (step 9) use it too — boundary-case-tested
+   These worked examples aren't only prose: `tools/scope_classifier.py` is a
+   reference implementation of this exact heuristic, boundary-case-tested
    (case-insensitivity, filename conventions, empty input, mixed paths) by
    `tools/check-scope-classification.py`, which also checks that this
    paragraph names exactly the segments and root doc names the code uses —
-   since this heuristic gates review depth and exclusion, it gets the same
+   since this heuristic gates review depth, it gets the same
    executable-fixture treatment every other control-flow rule in this repo
-   does, not prose alone.
+   does, not prose alone. Paths use git's `/` separator only: a backslash
+   is a filename character.
 
    Record the classification in-session — it sets the loop-mode pass-budget
    default (step 14) and is echoed in every pass's log-header `Scope class:`
@@ -131,23 +131,24 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
 
    - the **diff file** — the captured diff content from step 3, **unchanged except for runner-applied exclusions, each recorded in the summary and the pass header.** Never edit the diff file to leave something out. The runner itself drops **this review's own pass log** from what the lenses see — that content already reaches them as `=== PRIOR PASSES ===`. It drops a section only when every endpoint that exists is the resolved pass log (the log added, modified, mode-changed or deleted in place); a rename or copy between the log and any other path stays reviewed, whole, with a warning. Only the **default** log slot (`docs/reviews/code-review-<scope-tag>.md`) is trusted as this review's own log, and only as that literal path: with a `--log-path` override, or when the slot (or a parent directory) is a symlink, nothing is self-excluded, and the summary's `warnings` says so. The diff must carry git's default root-relative paths (as every step-3 command produces; never `git diff --relative`), and it is sectioned strictly: if any section's identity can't be established exactly (not `git diff` output, custom `--src-prefix`/`--no-prefix`, a combined `diff --cc`, a malformed hunk or binary payload, a `Binary files` line naming other paths), **nothing** is excluded and the summary's `warnings` says so. Lens selection reads the original diff; only composition reads the reviewed one, so an exclusion never trims a lens;
 
-     **Further exclusions are the editor's, by class, and the runner applies them:** pass `--exclude <class>:<path-or-glob>` (repeatable) to `run-pass`, and the same flags to any `run-lens` retry. Globs use the lens-selection glob semantics (`**` spans directories) and match the paths *in the diff*, both endpoints, deleted paths included. Three classes:
+     **Further exclusions are the editor's, by class, and the runner applies them:** pass `--exclude <class>:<path-or-glob>` (repeatable) to `run-pass`, and the same flags to any `run-lens` retry. Globs use the lens-selection glob semantics (`**` spans directories) and match the paths *in the diff*, both endpoints, deleted paths included. Two classes:
 
      | Class | Use it for | The runner refuses it when |
      |---|---|---|
-     | `governing-plan` | the converged plan this review treats as its spec | the intent lacks exactly one `Governing-plan: <repo-relative path>` line, the flag names any other path (no globs), or the plan is not a documentation path (below) |
-     | `docs` | documentation the review doesn't need line by line | a matched path is not a documentation path: a documentation file type — `.md` `.markdown` `.mdx` `.txt` `.text` `.rst` `.adoc` `.asciidoc` `.org` `.png` `.jpg` `.jpeg` `.gif` `.webp` `.pdf`, by final extension; nothing executable, no HTML/SVG — under a `docs` segment, or a root-level README/CHANGELOG/… per step 3 that is extensionless or of such a type (so `SECURITY.py` never qualifies); **and** nothing test-shaped (no `test`/`spec`/`fixture`/`golden`/`example` segment, no test-named file). Non-production is not enough: tests, fixtures and goldens are the QA evidence a review keeps |
-     | `generated` | lockfiles and generated files — production paths allowed, but only with an audit | a matched path has no non-empty entry in the intent's `=== EXCLUDED SUMMARY ===` block |
+     | `governing-plan` | the converged plan this review treats as its spec | the intent lacks exactly one `Governing-plan: <repo-relative path>` line, the flag names any other path (exactly, no `*`/`?` globs), or the plan isn't a regular, non-executable `.md` file (git mode 100644 at every endpoint: no symlink, gitlink or executable bit) |
+     | `generated` | lockfiles and generated files — production paths allowed, but only with an audit | a matched path has no non-empty, plain-text entry in the intent's `=== EXCLUDED SUMMARY ===` block |
+
+     There is no `docs` class: it existed during this feature's own review and was removed at a simplification card, because "is this file documentation?" kept admitting code (tests, `SECURITY.py`, executable `.mdx`, symlinks). Documentation other than the governing plan is reviewed like code.
 
      The `generated` audit block is part of the intent file, one entry per excluded path, exactly one block:
 
      ```
      === EXCLUDED SUMMARY ===
-     - frontend/package-lock.json: every npm `resolved` URL points at https://registry.npmjs.org/
-     - composer.lock: every composer `dist.url` is an api.github.com zipball for the named package
+     - frontend/package-lock.json: every npm resolved URL points at https://registry.npmjs.org/
+     - composer.lock: every composer dist.url is an api.github.com zipball for the named package
      ```
 
-     **Classed exclusion takes plain paths only** — printable ASCII (spaces allowed) with no backtick, backslash, double quote or `: `; a matched path outside that set is refused and stays in review, and an audit property containing a control, format/bidi or line-separator character is refused too. Nothing excluded may be able to forge or hide its own disclosure line, and an unusual filename is exactly where that risk lives. These are **presence checks**: the runner confirms each excluded path has a non-empty entry naming what you audited; whether the audit happened and was adequate is yours, and it is visible because every entry is copied into the pass header (step 12). Do the audit before writing the entry. A refused request — unknown class, a spec matching nothing, a rule failing, or a diff that can't be sectioned exactly — exits non-zero **before any Codex call**, and no pass is created; fix the request or drop the flag. Each section is decided by the **first** spec that matches it, so put `governing-plan` before a broad `docs:docs/**`. A rename or copy with only one endpoint inside a class stays reviewed, whole, with a warning. `examples/merge/06-lockfile-exclusion/` is a worked example (built from a real Dependabot review);
+     **Classed exclusion takes plain paths only** — printable ASCII (spaces allowed) with no backtick, backslash, double quote or `: `; a matched path outside that set is refused and stays in review. **Audit properties are plain text** — printable ASCII with no backtick — and are shown in a code span, so nothing in them renders as markdown or HTML. Nothing excluded may be able to forge or hide its own disclosure line, and unusual filenames and audit text are exactly where that risk lives. These are **presence checks**: the runner confirms each excluded path has a non-empty entry naming what you audited; whether the audit happened and was adequate is yours, and it is visible because every entry is copied into the pass header (step 12). Do the audit before writing the entry. A refused request — unknown class, a spec matching nothing, a rule failing, or a diff that can't be sectioned exactly — exits non-zero **before any Codex call**, and no pass is created; fix the request or drop the flag. Each section is decided by the **first** spec that matches it, so put `governing-plan` before a broad `generated` glob. A rename or copy with only one endpoint inside a class stays reviewed, whole, with a warning. `examples/merge/06-lockfile-exclusion/` is a worked example (built from a real Dependabot review);
    - the **intent file** — best-effort intent context, per scope:
      - `--scope=working` → "Standalone code review of working-tree changes; no commit message yet."
      - `--scope=branch` → output of `git log $(git merge-base HEAD main)..HEAD --pretty=format:"%h %s%n%b%n---"` (commit messages on the branch)
@@ -364,11 +365,11 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     the path in backticks (a code span, so markdown in a filename renders
     literally), where `<path>` is the one endpoint that exists, or
     `` `old` → `new` `` for a rename/copy — both endpoints, always; a
-    `generated` entry adds
-    ` — <audit property>`, or ` — <old>: <property> / <new>: <property>`
+    `generated` entry adds its audit property as a code span too,
+    ` — `<property>``, or ` — `<old>`: `<property>` / `<new>`: `<property>``
     when it has two endpoints. E.g.
     `branch (excluded: pass-log `docs/reviews/code-review-branch-x.md` 136 lines;
-    generated `composer.lock` 17 lines — every dist.url is an api.github.com zipball)`;
+    generated `composer.lock` 17 lines — `every dist.url is an api.github.com zipball`)`;
     omit the suffix when the array is empty. Diff size is the diff as
     captured (the summary's diff_lines.original). -->
 
@@ -915,11 +916,9 @@ In v2, steps 2 and 4 collapse to a single `iterate-review --plan=<path> --phase=
   reproduces per-pass tallies — pass counts, fold-caused share, disposition mix, and
   §3's rollback-cohort query — from the `passes` rows above; fixture-pinned by
   `tools/check-provenance-recipe.py`.
-- `bin/path_classes.py` — the single implementation of the §3 path heuristic above:
-  the editor's scope classification (loop control, never decided by the runner) and
-  the runner's `--exclude` refusals both use it; boundary-case-tested, and pinned to
-  the step-3 prose, by `tools/check-scope-classification.py` (`tools/scope_classifier.py`
-  is a shim re-exporting it).
+- `../tools/scope_classifier.py` — reference implementation of the §3 path heuristic
+  above (editor-side judgment, not runner code); boundary-case-tested, and pinned to
+  the step-3 prose, by `tools/check-scope-classification.py`.
 - `bin/` — the runner scripts steps 9–11 invoke: `run-pass` (selection + composition +
   concurrent fan-out + summary), `run-lens` (one lens, standalone/debug), `prune-state`
   (state-dir cleanup: `--scope` at Converge, `--older-than` for abandoned runs,

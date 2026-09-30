@@ -55,7 +55,7 @@ def build_parser():
     p.add_argument("--exclude", action="append", default=[],
                    metavar="CLASS:PATH-OR-GLOB",
                    help="leave a path out of the reviewed diff, by class "
-                        "(governing-plan | docs | generated); repeatable. "
+                        "(governing-plan | generated); repeatable. "
                         "Refused, before any Codex call, unless the class's "
                         "rule holds — see SKILL.md step 9")
     return p

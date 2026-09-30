@@ -20,18 +20,16 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from scope_classifier import (  # noqa: E402
-    DOC_EXTENSIONS, NON_PRODUCTION_SEGMENTS, _ROOT_DOC_BASENAMES, classify)
+    NON_PRODUCTION_SEGMENTS, _ROOT_DOC_BASENAMES, classify)
 
 SKILL_MD = os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "iterate-review", "SKILL.md")
 
 
 def prose_agreement() -> list:
-    """The heuristic has ONE implementation (iterate-review/bin/
-    path_classes.py, shared with the runner's --exclude refusals), so code
-    can't drift from code; this pins the remaining copy, SKILL.md Setup
-    step 3's prose, to it: every segment and root doc name the code uses
-    is named there, in backticks, and vice versa for segments."""
+    """Pins SKILL.md Setup step 3's prose to scope_classifier.py: the
+    prose names, in backticks, exactly the segments and root doc names the
+    code uses — both directions."""
     with open(SKILL_MD, encoding="utf-8") as fh:
         text = fh.read()
     start = text.index("**Classify the diff")
@@ -50,13 +48,6 @@ def prose_agreement() -> list:
     if named_roots != _ROOT_DOC_BASENAMES:
         problems.append(f"root doc names: prose {sorted(named_roots)} vs code "
                         f"{sorted(_ROOT_DOC_BASENAMES)}")
-    # The docs class's file types (path_classes.DOC_EXTENSIONS) are listed
-    # in step 9's class table; pin that list both ways too.
-    row = next(ln for ln in text.split("\n") if ln.startswith("     | `docs` |"))
-    named_exts = set(re.findall(r"`\.([a-z]+)`", row))
-    if named_exts != DOC_EXTENSIONS:
-        problems.append(f"docs file types: step 9 {sorted(named_exts)} vs code "
-                        f"{sorted(DOC_EXTENSIONS)}")
     return problems
 
 
@@ -123,10 +114,10 @@ def main() -> int:
             failures.append(f"{label}: got {got!r}, want {want!r} (paths={paths})")
 
     for problem in prose_agreement():
-        failures.append(f"SKILL.md step 3 prose disagrees with path_classes.py — {problem}")
+        failures.append(f"SKILL.md step 3 prose disagrees with scope_classifier.py — {problem}")
         print(f"  FAIL  prose agreement: {problem}")
     if not any("prose" in f for f in failures):
-        print("  ok    SKILL.md prose names exactly the code's segments, root doc names and doc file types")
+        print("  ok    SKILL.md step 3 prose names exactly the code's segments and root doc names")
 
     print()
     if failures:

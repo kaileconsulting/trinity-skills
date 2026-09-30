@@ -1,16 +1,80 @@
-"""Shim: the §3 path heuristic lives in iterate-review/bin/path_classes.py
-(one implementation, shared with the runner's --exclude refusals). Kept so
-tools/ keeps its historical import path."""
+"""Reference implementation of iterate-review's §3 diff-scope classifier
+(Trinity v2.4 Phase 0, `iterate-review/SKILL.md` Setup step 3).
+
+Classification is **editor-side, deliberate loop-control judgment** — the
+runner never decides it, and nothing in `bin/` calls this module at
+runtime. It exists purely so the written path heuristic has an
+executable, fixture-pinned form instead of living only in prose; see
+`check-scope-classification.py`, which also checks that SKILL.md step 3
+names exactly the segments and root doc names below. If you change the
+heuristic here, update `iterate-review/SKILL.md`'s Setup step 3 in the
+same commit (and vice versa) — this module is a mirror of that prose, not
+its source of truth.
+"""
 
 from __future__ import annotations
 
-import os
-import sys
+import re
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__))), "iterate-review", "bin"))
+NON_PRODUCTION_SEGMENTS = {
+    "test", "tests", "spec", "specs",
+    "fixture", "fixtures", "golden", "goldens",
+    "example", "examples", "docs",
+}
 
-from path_classes import (  # noqa: E402,F401
-    DOC_EXTENSIONS, NON_PRODUCTION_SEGMENTS, classify, is_documentation,
-    is_non_production)
-from path_classes import _ROOT_DOC_BASENAMES  # noqa: E402,F401
+_TEST_FILENAME_PATTERNS = [
+    re.compile(r"^test_.+\..+$", re.IGNORECASE),
+    re.compile(r"^.+_test\..+$", re.IGNORECASE),
+    re.compile(r"^.+\.test\..+$", re.IGNORECASE),
+    re.compile(r"^.+\.spec\..+$", re.IGNORECASE),
+]
+
+# Well-known root-level documentation filenames (the GitHub community-file
+# conventions) count as non-production regardless of extension or absence
+# of one -- a diff touching only README.md doesn't gain a `docs/` segment
+# just because it's obviously documentation. Matched by basename with any
+# extension stripped, case-insensitive.
+_ROOT_DOC_BASENAMES = {
+    "readme", "changelog", "contributing", "license", "licence",
+    "code_of_conduct", "security", "authors", "notice", "governance",
+}
+
+
+def _split(path: str):
+    """Git's separator is `/` and only `/`: a backslash in a diff path is a
+    literal filename character (git C-quotes it), never a directory break,
+    so `src\\docs\\billing.py` is one root-level file with no `docs` segment."""
+    parts = path.split("/")
+    return parts[:-1], parts[-1] if parts else ""
+
+
+def is_non_production(path: str) -> bool:
+    segments, filename = _split(path)
+    if any(seg.lower() in NON_PRODUCTION_SEGMENTS for seg in segments):
+        return True
+    if any(p.match(filename) for p in _TEST_FILENAME_PATTERNS):
+        return True
+    if not segments:  # root-level exception only applies with NO directory
+        # Split on the FIRST dot, not the last -- "any extension" must cover
+        # multi-suffix variants like README.en.md or CHANGELOG.generated.md,
+        # not just a single trailing extension.
+        basename = filename.split(".", 1)[0]
+        if basename.lower() in _ROOT_DOC_BASENAMES:
+            return True
+    return False
+
+
+def classify(paths) -> str:
+    """`paths`: iterable of touched file paths. Returns 'production' or
+    'non-production'. Every touched path must match the non-production
+    heuristic for the whole diff to classify non-production; one
+    production-looking path is enough to classify the whole diff
+    production. An empty path list (nothing touched) is the degenerate
+    ambiguous case and classifies production, same as any other
+    ambiguity -- biases toward the full budget."""
+    paths = list(paths)
+    if not paths:
+        return "production"
+    if all(is_non_production(p) for p in paths):
+        return "non-production"
+    return "production"

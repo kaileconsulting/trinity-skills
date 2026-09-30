@@ -71,51 +71,61 @@ fold-caused; no card fired. The first review on the 2.5.1 pin: ~30% of one
 ### Added (Phase 1 — classed exclusions, by the editor)
 
 - **`--exclude <class>:<path-or-glob>`** (repeatable) on `run-pass` and
-  `run-lens`, applied by `apply_exclusions()`. Three classes:
+  `run-lens`, applied by `apply_exclusions()`. Two classes:
   `governing-plan` (exactly the path on the intent's single
-  `Governing-plan:` line), `docs` (documentation: a documentation file type
-  under a `docs` segment, or a root README/CHANGELOG/…, nothing
-  test-shaped), and `generated` (production allowed, but every path needs a
-  non-empty `- <path>: <audited property>` entry in the intent's single
-  `=== EXCLUDED SUMMARY ===` block, copied into `excluded[].audit` and the
-  pass header). The checks are presence checks: whether the audit happened
-  is the editor's responsibility, made visible.
+  `Governing-plan:` line, and a regular non-executable `.md` file, git mode
+  100644) and `generated` (production allowed, but every path needs a
+  non-empty plain-text `- <path>: <audited property>` entry in the intent's
+  single `=== EXCLUDED SUMMARY ===` block, copied into `excluded[].audit`
+  and the pass header). The checks are presence checks: whether the audit
+  happened is the editor's responsibility, made visible.
 - **Refusal is fail-closed and happens before any Codex call**: an unknown
   class, a spec matching nothing, a failed class rule, or a diff that can't
   be sectioned exactly exits non-zero and creates no pass. The first
   matching spec decides a section; a rename/copy with only one endpoint in
   a class is kept with a warning, never refused.
-- **Plain paths only**: a classed exclusion takes printable-ASCII paths
-  without backtick, backslash, double quote or `: `; anything else stays
-  in review.
+- **Plain paths and plain audit text only**: printable ASCII without
+  backtick (paths also without backslash, double quote or `: `); anything
+  else stays in review.
 - **`review_runner.disclosure()`** renders each exclusion one way for the
-  pass header and stderr: paths in backticks, renames as `` `old` →
-  `new` ``, and each `generated` endpoint's own audit.
-- **One implementation of the §3 path heuristic**, now
-  `iterate-review/bin/path_classes.py`, shared by scope classification and
-  the refusals; `tools/scope_classifier.py` is a shim. The plan had called
-  for a copy plus a pin, and one implementation can't drift at all.
-  `tools/check-scope-classification.py` pins SKILL.md's prose (segments,
-  root doc names, documentation file types) to the code in both directions.
+  pass header and stderr: path and audit as code spans (so nothing renders
+  as markdown or HTML), renames as `` `old` → `new` ``, and each
+  `generated` endpoint's own audit.
+- **The parser records git object modes** per endpoint (from `index`,
+  `new file mode`, `old mode`/`new mode` lines), so a symlink, gitlink or
+  executable file can't pass as a governing plan.
+- **`tools/check-scope-classification.py` now pins SKILL.md step 3's
+  prose** (segments and root doc names) to `tools/scope_classifier.py` in
+  both directions, and the heuristic splits on git's `/` only.
 - **Worked example** `examples/merge/06-lockfile-exclusion/`, from a real
   ResearchLogix Dependabot review, run and byte-compared by
   `tools/check-runners.py`. It also pins the §3 rule concretely: selecting
   on the reviewed diff would drop the `security` lens.
 
 ### Hardened (Phase 1's review — passes 4–6+)
-<!-- FINALIZE-AT-MERGE: pass 6 onward, and the convergence line. -->
+<!-- FINALIZE-AT-MERGE: pass 7 onward, and the convergence line. -->
 
-Passes 4–5: HIGH+MEDIUM 6 → 3, nine findings, two fold-caused (by pass 4).
-- **`docs` meant "non-production"**, which admitted tests and fixtures, the
-  QA evidence a review keeps; it now means documentation, with a file-type
-  rule so `SECURITY.py` and `docs/deploy.sh` never qualify.
-- **Renames disclosed one endpoint**, and **decoded filenames could forge
-  the disclosure** (newlines, control and bidi characters, markdown).
-- **Filename tricks kept coming**: a backslash read as a separator,
-  non-UTF-8 bytes collapsing two files into one, `: ` letting one audit
-  entry cover two paths. At the pass-5 checkpoint, with three components one
-  pass short of a simplification card, Kyle chose to **narrow** rather than
-  patch once more: classed exclusion takes plain paths only.
+Passes 4–6: HIGH+MEDIUM 6 → 3 → 6, fifteen findings; the gate fired twice.
+- **Filename tricks kept coming** (passes 4–5): a backslash read as a
+  separator, non-UTF-8 bytes collapsing two files into one, `: ` letting
+  one audit entry cover two paths, control and bidi characters forging the
+  disclosure. At the pass-5 checkpoint, with three components one pass
+  short of a simplification card, Kyle chose to **narrow**: classed
+  exclusion takes plain paths only. Path decoding is strict regardless.
+- **The simplification card fired twice at pass 6.** A `docs` class had
+  drawn HIGH findings on passes 4, 5 and 6, as "is this file
+  documentation?" admitted tests, then `SECURITY.py`, then executable
+  `.mdx` and symlinks (2 of 4 caused by earlier folds). Kyle chose
+  **remove**: the class is gone, the governing plan is the one
+  documentation file that can leave by name, and the path heuristic moved
+  back to `tools/` since the runner no longer needs it. Audit text in the
+  header had drawn HIGHs on the same three passes, most recently markdown
+  forging a fake verdict; Kyle chose **narrow**: plain-text audits shown as
+  code spans.
+- Smaller folds: renames disclose both endpoints and both audits; a
+  non-plain *unmatched* rename endpoint keeps the section instead of
+  aborting; scope tags and paths end at `\Z`, not `$`; a governing plan
+  named with `[brackets]` is exact, not a glob.
 
 ## 2.5.1 — 2026-09-30 — reviewer model pinned
 
