@@ -1,6 +1,6 @@
 # Code Review — branch-kyle-review-diff-exclusions
 
-## Pass 1 — 2026-09-30 10:08 [IN PROGRESS]
+## Pass 1 — 2026-09-30 10:08 [HISTORICAL]
 
 **Scope:** branch (excluded by hand, pre-feature: governing-plan docs/review-diff-exclusions-2026-09-29.md 373 lines; docs docs/review-diff-exclusions-2026-09-29.md.handoff-prompt.md 33 lines) · **Diff size:** 883 lines · **Scope class:** production · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** used docs/review-diff-exclusions-2026-09-29.md · **Lenses:** senior-dev, security, qa
 
@@ -28,6 +28,10 @@ Reviewer model: gpt-5.6-sol (first pass on the 2.5.1 pin). Cost: 5-hour window 8
 ### Lens run summary
 
 - senior-dev: REVISE · security: REVISE · qa: REVISE
+
+### Checkpoint
+
+Continue (Kyle, 2026-09-30; he used his full usage reset, so the window is back at 100%). Streaks: diff-section-parser 1, pass-log-identity 1.
 
 ### Diff snapshot reference
 
