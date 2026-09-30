@@ -96,7 +96,7 @@ Diff captured at 2026-09-30 10:33; head SHA `1c1a6d7e97acb7c6db40496de261fc14d7d
 
 **Converge** (Kyle, 2026-09-30). Three passes, HIGH+MEDIUM 4 → 1 → 0; five merged findings (all HIGH), all incorporated, none fold-caused, 0 disputed / accepted-risk / register-match; one correction. No decision card fired: pass-log-identity peaked at streak 2, diff-section-parser at 1, both 0 after pass 3. Total reviewer cost on gpt-5.6-sol: ~30% of one 5-hour window, ~5% weekly.
 
-## Pass 4 — 2026-09-30 11:25 [IN PROGRESS]
+## Pass 4 — 2026-09-30 11:25 [HISTORICAL]
 
 Phase 1 (classed `--exclude`) review, same branch; the diff still carries Phase 0.
 
@@ -132,3 +132,7 @@ Phase 1 (classed `--exclude`) review, same branch; the diff still carries Phase 
 ### Diff snapshot reference
 
 Diff captured at 2026-09-30 11:14; head SHA `d4e1e820cc118b66e2e5d8715b3ea968061bb01f`.
+
+### Checkpoint
+
+Continue, one pass (Kyle, 2026-09-30). HIGH+MEDIUM 6 (first Phase 1 pass). Streaks: exclusion-class-rules 1, path-heuristic 1, diff-section-parser 1, exclusion-disclosure 1, path-heuristic-prose-pin 1. Cost: ~1.53M input tokens, ~20% of the 5-hour window, ~3% weekly (query-iq was running reviews on the same quota).
