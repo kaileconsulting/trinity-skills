@@ -527,7 +527,7 @@ def test_classed_exclusions(rr, sel) -> None:
 
     # Refusals.
     refused("production path under docs",
-            code + _mod("docs/a.md"), spec("docs:**/*.py"), "", "production path")
+            code + _mod("docs/a.md"), spec("docs:**/*.py"), "", "not a documentation path")
     refused_parse("unknown class", ["vendor:x"], "unknown class")
     refused_parse("missing pattern", ["docs:"], "expected <class>:<path-or-glob>")
     refused("glob matching nothing", code + _mod("docs/a.md"),
@@ -545,7 +545,7 @@ def test_classed_exclusions(rr, sel) -> None:
             "Governing-plan: docs/plans/*.md\n", "must name exactly")
     refused("governing-plan that is production under the heuristic",
             code + _mod("PLAN.md"), spec("governing-plan:PLAN.md"),
-            "Governing-plan: PLAN.md\n", "production path")
+            "Governing-plan: PLAN.md\n", "not a documentation path")
     refused("generated path with no audit entry",
             code + _mod("a/yarn.lock") + _mod("c/Cargo.lock"),
             spec("generated:**/*.lock"), audit_intent, "c/Cargo.lock has no non-empty audit entry")
@@ -564,7 +564,74 @@ def test_classed_exclusions(rr, sel) -> None:
             code + _mod("a/yarn.lock.bak"), spec("generated:a/yarn.lock.bak"),
             audit_intent, "no non-empty audit entry")
 
-    # A rename crossing out of the class is kept, whole, never refused.
+    # Pass-4 folds (docs/reviews/code-review-branch-kyle-review-diff-
+    # exclusions.md). `docs` means documentation, not "non-production":
+    # tests, specs, fixtures, goldens, examples and test-named files — the
+    # QA evidence — are refused, even under a docs/ segment.
+    for label, path in (("tests/ directory", "tests/test_auth.py"),
+                        ("spec/ directory", "spec/auth_spec.rb"),
+                        ("fixtures/ directory", "fixtures/users.json"),
+                        ("goldens/ directory", "goldens/out.txt"),
+                        ("examples/ directory", "examples/demo.md"),
+                        ("test-named file", "lib/auth.test.js"),
+                        ("test file under docs/", "docs/tests/test_x.py")):
+        refused(f"docs on a {label} (non-production, but not documentation)",
+                code + _mod(path), spec(f"docs:{path}"), "", "not a documentation path")
+    reviewed, excl, _w = rr.apply_exclusions(
+        code + _mod("docs/guide.md") + _mod("README.md"), None,
+        spec("docs:docs/**", "docs:README.md"), "")
+    record("exclude: docs accepts docs/ paths and root-level README",
+           reviewed == code and len(excl) == 2)
+    refused("governing-plan under examples/ (non-production, not documentation)",
+            code + _mod("examples/plan.md"), spec("governing-plan:examples/plan.md"),
+            "Governing-plan: examples/plan.md\n", "not a documentation path")
+    # A literal backslash is a filename character, never a separator.
+    bs = ('diff --git "a/src\\\\docs\\\\billing.py" "b/src\\\\docs\\\\billing.py"\n'
+          'index 1..2 100644\n--- "a/src\\\\docs\\\\billing.py"\n'
+          '+++ "b/src\\\\docs\\\\billing.py"\n@@ -1 +1 @@\n-a\n+b\n')
+    record("parser: C-quoted literal backslashes decode to one root-level filename",
+           [x["new_path"] for x in rr.parse_diff_sections(bs)] == ["src\\docs\\billing.py"])
+    refused("docs on a root file literally named src\\docs\\billing.py",
+            code + bs, spec("docs:src*"), "", "src\\docs\\billing.py is not a documentation path")
+    # Non-UTF-8 path bytes can't be represented exactly: fail closed.
+    nonutf = ('diff --git "a/docs/\\200.lock" "b/docs/\\200.lock"\nindex 1..2 100644\n'
+              '--- "a/docs/\\200.lock"\n+++ "b/docs/\\200.lock"\n@@ -1 +1 @@\n-a\n+b\n')
+    refused("non-UTF-8 path bytes (would collapse distinct files)",
+            code + nonutf + nonutf.replace("\\200", "\\201"),
+            spec("generated:docs/*.lock"), "=== EXCLUDED SUMMARY ===\n- docs/�.lock: x\n",
+            "non-UTF-8")
+    reviewed, excl, warns = rr.apply_self_exclusion(code + nonutf, LOG)
+    record("self-exclusion: non-UTF-8 path bytes -> skipped with a warning",
+           reviewed == code + nonutf and excl == []
+           and any("non-UTF-8" in w for w in warns), str(warns))
+    # A path containing the audit delimiter ": " is refused, not guessed.
+    colon = _mod("a: b.lock")
+    refused("generated path containing ': ' (entry can't bind uniquely)",
+            code + _mod("a") + colon, spec("generated:a*"),
+            "=== EXCLUDED SUMMARY ===\n- a: b.lock: audited\n", "contains ': '")
+    # A generated rename discloses BOTH endpoints and both audits, in the
+    # summary, the Scope rendering and the all-excluded stderr alike.
+    gen_rename = ("diff --git a/old/yarn.lock b/new/yarn.lock\nsimilarity index 100%\n"
+                  "rename from old/yarn.lock\nrename to new/yarn.lock\n")
+    audits = ("=== EXCLUDED SUMMARY ===\n- old/yarn.lock: moved, unchanged\n"
+              "- new/yarn.lock: registry URLs only\n")
+    reviewed, excl, _w = rr.apply_exclusions(
+        code + gen_rename, None, spec("generated:**/yarn.lock"), audits)
+    line = rr.disclosure(excl[0]) if excl else ""
+    record("disclosure: a generated rename shows old → new and each endpoint's audit",
+           reviewed == code and list(excl[0]["audit"]) == ["old/yarn.lock", "new/yarn.lock"]
+           and line == "generated old/yarn.lock → new/yarn.lock 4 lines — "
+                       "old/yarn.lock: moved, unchanged / new/yarn.lock: registry URLs only",
+           line)
+    _r, excl2, _w = rr.apply_exclusions(gen_rename, None, spec("generated:**/yarn.lock"), audits)
+    err = rr.excluded_stderr("run-pass", excl2)
+    record("disclosure: all-excluded stderr names both rename endpoints",
+           "old/yarn.lock → new/yarn.lock" in err and "moved, unchanged" in err, err)
+    record("disclosure: a single-path entry renders <class> <path> <N> lines",
+           rr.disclosure({"old_path": None, "new_path": LOG, "class": "pass-log",
+                          "lines": 8}) == f"pass-log {LOG} 8 lines")
+
+    # A rename crossing out of the class is kept, whole, never refused.    # A rename crossing out of the class is kept, whole, never refused.
     crossing = ("diff --git a/docs/a.md b/src/a.py\nsimilarity index 90%\n"
                 "rename from docs/a.md\nrename to src/a.py\nindex 1..2 100644\n"
                 + _hunk("a/docs/a.md", "b/src/a.py", "-x\n", "+import os\n"))

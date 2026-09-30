@@ -42,9 +42,16 @@ _ROOT_DOC_BASENAMES = {
 }
 
 
+def _split(path: str):
+    """Git's separator is `/` and only `/`: a backslash in a diff path is a
+    literal filename character (git C-quotes it), never a directory break,
+    so `src\\docs\\billing.py` is one root-level file with no `docs` segment."""
+    parts = path.split("/")
+    return parts[:-1], parts[-1] if parts else ""
+
+
 def is_non_production(path: str) -> bool:
-    parts = path.replace("\\", "/").split("/")
-    segments, filename = parts[:-1], parts[-1] if parts else ""
+    segments, filename = _split(path)
     if any(seg.lower() in NON_PRODUCTION_SEGMENTS for seg in segments):
         return True
     if any(p.match(filename) for p in _TEST_FILENAME_PATTERNS):
@@ -57,6 +64,23 @@ def is_non_production(path: str) -> bool:
         if basename.lower() in _ROOT_DOC_BASENAMES:
             return True
     return False
+
+
+def is_documentation(path: str) -> bool:
+    """The `docs` / `governing-plan` exclusion classes' positive rule —
+    narrower than is_non_production, which also admits tests, specs,
+    fixtures, goldens and examples (the QA evidence a review must keep):
+    a path under a `docs` segment, or a root-level documentation file,
+    and nothing test-shaped anywhere in it."""
+    segments, filename = _split(path)
+    lowered = [seg.lower() for seg in segments]
+    if any(seg in NON_PRODUCTION_SEGMENTS - {"docs"} for seg in lowered):
+        return False
+    if any(p.match(filename) for p in _TEST_FILENAME_PATTERNS):
+        return False
+    if "docs" in lowered:
+        return True
+    return not segments and filename.split(".", 1)[0].lower() in _ROOT_DOC_BASENAMES
 
 
 def classify(paths) -> str:

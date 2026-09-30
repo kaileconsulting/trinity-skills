@@ -304,7 +304,14 @@ def _split_lines(text: str) -> list:
 
 def _decode_path(token: str) -> str:
     if len(token) >= 2 and token.startswith('"') and token.endswith('"'):
-        return sel._unquote_c(token[1:-1])
+        decoded = sel._unquote_c(token[1:-1])
+        if "\ufffd" in decoded and "\ufffd" not in token:
+            # Octal escapes that aren't valid UTF-8 decode lossily, so two
+            # distinct files could collapse to one identity: refuse.
+            raise DiffParseError(
+                f"path {token!r} carries non-UTF-8 bytes; its identity can't "
+                f"be represented exactly")
+        return decoded
     return token
 
 
@@ -642,7 +649,14 @@ def _excluded_summary(intent: str) -> list:
 
 
 def _audit_entry(entries: list, path: str):
-    """The non-empty audited property recorded for exactly `path`, or None."""
+    """The non-empty audited property recorded for exactly `path`, or None.
+    A path containing the entry delimiter ": " is refused outright: entry
+    `a: b: x` would otherwise satisfy both `a` and `a: b`."""
+    if ": " in path:
+        raise ExclusionError(
+            f"--exclude generated: {path!r} contains ': ', which the "
+            f"{EXCLUDED_SUMMARY_HEADER} format can't bind to one entry; "
+            f"leave it in review")
     found = [e[len(path) + 2:].strip() for e in entries
              if e.startswith(path + ": ")]
     if len(found) != 1 or not found[0]:
@@ -694,7 +708,7 @@ def apply_exclusions(diff: str, log_rel, specs: list, intent: str):
                 raise ExclusionError(
                     f"--exclude governing-plan:{pattern}: must name exactly "
                     f"the intent's Governing-plan: path ({plan_path})")
-            # Production-ness is checked per section below, like `docs`.
+            # The documentation rule is checked per section below, like `docs`.
             rx = re.compile(re.escape(pattern) + r"\Z")
         else:
             if cls == "generated" and audit is None:
@@ -705,7 +719,7 @@ def apply_exclusions(diff: str, log_rel, specs: list, intent: str):
     def rule_holds(cls, path):
         if cls == "generated":
             return _audit_entry(audit, path) is not None
-        return path_classes.is_non_production(path)
+        return path_classes.is_documentation(path)
 
     used = set()
     kept, excluded, warnings = [], [], []
@@ -736,7 +750,9 @@ def apply_exclusions(diff: str, log_rel, specs: list, intent: str):
                 why = ("has no non-empty audit entry in the intent's "
                        f"{EXCLUDED_SUMMARY_HEADER} block"
                        if cls == "generated" else
-                       "is a production path under the §3 heuristic")
+                       "is not a documentation path (under a `docs` "
+                       "segment, or a root-level README/CHANGELOG/…, and not "
+                       "test-shaped) per step 3's heuristic")
                 raise ExclusionError(
                     f"--exclude {cls}:{pattern}: {distinct[0]} {why}; refused")
         elif len(hits) != len(distinct) or not all(
@@ -750,7 +766,8 @@ def apply_exclusions(diff: str, log_rel, specs: list, intent: str):
         entry = {"old_path": sec["old_path"], "new_path": sec["new_path"],
                  "class": cls, "lines": sec["lines"]}
         if cls == "generated":
-            entry["audit"] = {p: _audit_entry(audit, p) for p in distinct}
+            entry["audit"] = {p: _audit_entry(audit, p)
+                              for p in dict.fromkeys(ends)}  # old, then new
         excluded.append(entry)
     unused = [f"{cls}:{pattern}" for idx, (cls, pattern, _rx)
               in enumerate(matchers) if idx not in used]
@@ -778,16 +795,33 @@ def self_exclusion_target(scope_tag: str, log_path: Path, repo_root: Path,
         return None, [
             "pass-log self-exclusion is off for a --log-path override (only "
             "the default docs/reviews/code-review-<scope-tag>.md is trusted "
-            "as this review's own log); the diff is reviewed unchanged"]
+            "as this review's own log); the pass log's own sections stay "
+            "in review"]
     slot = f"{Path(PASS_LOG_DIRNAME).as_posix()}/code-review-{scope_tag}.md"
     real_slot = os.path.join(os.path.realpath(str(repo_root)), *slot.split("/"))
     if os.path.realpath(str(log_path)) != real_slot:
         return None, [
             f"pass-log self-exclusion is off: the default log slot {slot} "
             f"resolves through a symlink to {log_path}; only the slot itself "
-            f"is trusted as this review's own log, so the diff is reviewed "
-            f"unchanged"]
+            f"is trusted as this review's own log, so the pass log's own "
+            f"sections stay in review"]
     return slot, []
+
+
+def disclosure(entry: dict) -> str:
+    """One `excluded` entry as the human reads it — the pass header's Scope
+    suffix (SKILL.md step 12) and the all-excluded stderr alike: `<class>
+    <path> <N> lines[ — <audit>]`, where a rename/copy shows `old → new` and
+    a two-endpoint `generated` entry shows each endpoint's own audit."""
+    old, new = entry["old_path"], entry["new_path"]
+    where = f"{old} → {new}" if old and new and old != new else (new or old)
+    text = f"{entry['class']} {where} {entry['lines']} lines"
+    audit = entry.get("audit") or {}
+    if len(audit) == 1:
+        text += f" — {next(iter(audit.values()))}"
+    elif audit:
+        text += " — " + " / ".join(f"{p}: {v}" for p, v in audit.items())
+    return text
 
 
 def excluded_stderr(prog: str, excluded: list) -> str:
@@ -795,8 +829,7 @@ def excluded_stderr(prog: str, excluded: list) -> str:
     no pass is created, so stderr is where it lives."""
     lines = [f"{prog}: nothing left to review after exclusions — removed:"]
     for e in excluded:
-        path = e["new_path"] or e["old_path"]
-        lines.append(f"{prog}:   {e['class']} {path} ({e['lines']} lines)")
+        lines.append(f"{prog}:   {disclosure(e)}")
     return "\n".join(lines) + "\n"
 
 

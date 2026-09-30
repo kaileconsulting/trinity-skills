@@ -135,8 +135,8 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
 
      | Class | Use it for | The runner refuses it when |
      |---|---|---|
-     | `governing-plan` | the converged plan this review treats as its spec | the intent lacks exactly one `Governing-plan: <repo-relative path>` line, the flag names any other path (no globs), or the plan is production under step 3's heuristic |
-     | `docs` | documentation the review doesn't need line by line | a matched path is production under step 3's heuristic |
+     | `governing-plan` | the converged plan this review treats as its spec | the intent lacks exactly one `Governing-plan: <repo-relative path>` line, the flag names any other path (no globs), or the plan is not a documentation path (below) |
+     | `docs` | documentation the review doesn't need line by line | a matched path is not a documentation path: one under a `docs` segment, or a root-level README/CHANGELOG/… per step 3, **and** nothing test-shaped (no `test`/`spec`/`fixture`/`golden`/`example` segment, no test-named file). Non-production is not enough: tests, fixtures and goldens are the QA evidence a review keeps |
      | `generated` | lockfiles and generated files — production paths allowed, but only with an audit | a matched path has no non-empty entry in the intent's `=== EXCLUDED SUMMARY ===` block |
 
      The `generated` audit block is part of the intent file, one entry per excluded path, exactly one block:
@@ -358,9 +358,13 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     `[ABORTED]` pre-fan-out block, for which no summary will ever exist, is
     stamped with the abort time and says so inline.
     The `(excluded: …)` suffix on Scope is copied from the summary's
-    `excluded` array, one `<class> <path> <lines> lines` entry per item
-    (`<path>` is new_path, or old_path for a deletion; a `generated` entry
-    adds ` — <audit property>`), e.g.
+    `excluded` array, one entry per item, `;`-separated, each rendered
+    exactly as the runner's own disclosure (`review_runner.disclosure()`,
+    also used for the all-excluded stderr): `<class> <path> <N> lines`,
+    where `<path>` is the one endpoint that exists, or `old → new` for a
+    rename/copy — both endpoints, always; a `generated` entry adds
+    ` — <audit property>`, or ` — <old>: <property> / <new>: <property>`
+    when it has two endpoints. E.g.
     `branch (excluded: pass-log docs/reviews/code-review-branch-x.md 136 lines;
     generated composer.lock 17 lines — every dist.url is an api.github.com zipball)`;
     omit the suffix when the array is empty. Diff size is the diff as

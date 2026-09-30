@@ -41,9 +41,15 @@ def prose_agreement() -> list:
     if named_segments != NON_PRODUCTION_SEGMENTS:
         problems.append(f"segments: prose {sorted(named_segments)} vs code "
                         f"{sorted(NON_PRODUCTION_SEGMENTS)}")
-    for name in sorted(_ROOT_DOC_BASENAMES):
-        if f"`{name.upper()}`" not in step and f"{name.upper()}`" not in step:
-            problems.append(f"root doc name {name.upper()} missing from the prose")
+    # The root doc list runs from "documentation filename" to its
+    # "(case-insensitive" qualifier; names are backticked, upper-case, and
+    # LICENSE/LICENCE is written `LICENSE`/`LICENCE`.
+    lo = step.index("documentation filename")
+    root_list = step[lo:step.index("(case-insensitive", lo)]
+    named_roots = {n.lower() for n in re.findall(r"`([A-Z][A-Z_]*)`", root_list)}
+    if named_roots != _ROOT_DOC_BASENAMES:
+        problems.append(f"root doc names: prose {sorted(named_roots)} vs code "
+                        f"{sorted(_ROOT_DOC_BASENAMES)}")
     return problems
 
 CASES: list[tuple[str, list[str], str]] = [
@@ -94,6 +100,8 @@ CASES: list[tuple[str, list[str], str]] = [
      ["README.en.md"], "non-production"),
     ("multi-extension root doc filename (generated variant)",
      ["CHANGELOG.generated.md"], "non-production"),
+    ("a literal backslash is a filename character, not a separator (git paths)",
+     ["src\\docs\\billing.py"], "production"),
 ]
 
 
