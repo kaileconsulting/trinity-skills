@@ -106,13 +106,22 @@ def main(argv=None):
     shash = rr.scope_hash(args.scope_tag, log_path)
     state_dir = rr.STATE_ROOT / shash
 
+    # Same exclusion as run-pass, from the same resolved log path, so a
+    # retry reproduces the pass's reviewed diff exactly (plan §3).
+    reviewed_text, excluded, excl_warnings = rr.apply_self_exclusion(
+        diff_text, rr.log_path_in_diff(log_path, repo_root))
+    warnings = warnings + excl_warnings
+    if not reviewed_text.strip():
+        sys.stderr.write(rr.excluded_stderr("run-lens", excluded))
+        return EXIT_ERROR
+
     try:
         prior = rr.read_prior_passes(log_path, args.scope_tag,
                                      boundaries=[repo_root])
         prior_passes = rr.summarize_prior_passes(prior)
         input_path, response_path = rr.debug_paths(state_dir, args.lens)
         input_path.parent.mkdir(parents=True, exist_ok=True)
-        entry = rr.run_one_lens(args.lens, intent_text, diff_text, prior,
+        entry = rr.run_one_lens(args.lens, intent_text, reviewed_text, prior,
                                 input_path, response_path)
     except (rr.CompositionError, OSError) as exc:
         # OSError covers orchestration failures the standalone contract owes
@@ -127,6 +136,9 @@ def main(argv=None):
         "log_path": str(log_path),
         "warnings": warnings,
         "prior_passes": prior_passes,
+        "excluded": excluded,
+        "diff_lines": {"original": rr.count_lines(diff_text),
+                       "reviewed": rr.count_lines(reviewed_text)},
         "input_path": str(input_path),
         **entry,
     }

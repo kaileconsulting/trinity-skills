@@ -6,6 +6,9 @@ Pins the behavior the runner-scripts plan promises
 
   composition   — byte-deterministic assembly (goldens in
                   iterate-review/examples/composition/)
+  exclusion     — strict diff sectioning (fail closed), pass-log
+                  self-exclusion, the original/reviewed split
+                  (docs/review-diff-exclusions-2026-09-29.md §0-§4)
   exit contracts— run-lens 0/2/1 at its boundary; run-pass exit 0 iff a
                   summary was published (per-lens failure/rejection is data)
   lifecycle     — exclusive scope lock, fail-fast on concurrent runs, lock
@@ -269,6 +272,260 @@ def test_composition(rr) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Diff sectioning + pass-log self-exclusion (module-level, pure)
+# docs/review-diff-exclusions-2026-09-29.md §0-§1
+# ---------------------------------------------------------------------------
+
+LOG = "docs/reviews/code-review-x.md"
+
+
+def _hunk(path_a, path_b, minus="-a\n", plus="+b\n"):
+    return (f"--- {path_a}\n+++ {path_b}\n@@ -1 +1 @@\n{minus}{plus}")
+
+
+def _mod(path):
+    return f"diff --git a/{path} b/{path}\nindex 1..2 100644\n" + \
+        _hunk(f"a/{path}", f"b/{path}")
+
+
+def test_sectioning(rr) -> None:
+    other = _mod("lib/plain.py")
+    added = (f"diff --git a/{LOG} b/{LOG}\nnew file mode 100644\n"
+             f"index 0000000..1111111\n--- /dev/null\n+++ b/{LOG}\n"
+             f"@@ -0,0 +1,2 @@\n+# Code Review — x\n+token\n")
+    deleted = (f"diff --git a/{LOG} b/{LOG}\ndeleted file mode 100644\n"
+               f"index 1111111..0000000\n--- a/{LOG}\n+++ /dev/null\n"
+               f"@@ -1,2 +0,0 @@\n-# Code Review — x\n-y\n")
+    mode_only = (f"diff --git a/{LOG} b/{LOG}\nold mode 100644\n"
+                 f"new mode 100755\n")
+
+    def run(diff):
+        return rr.apply_self_exclusion(diff, LOG)
+
+    for label, sec in (("added", added), ("modified", _mod(LOG)),
+                       ("deleted in place", deleted),
+                       ("mode-only (hunk-less)", mode_only)):
+        reviewed, excl, warns = run(other + sec + other.replace("plain", "two"))
+        record(f"self-exclusion: log section dropped when {label}",
+               reviewed == other + other.replace("plain", "two")
+               and len(excl) == 1 and excl[0]["class"] == "pass-log"
+               and excl[0]["lines"] == sec.count("\n") and warns == [],
+               f"{excl} {warns}")
+    _r, excl, _w = run(added)
+    record("self-exclusion: summary entry records both endpoints (/dev/null = null)",
+           excl == [{"old_path": None, "new_path": LOG, "class": "pass-log",
+                     "lines": 8}], str(excl))
+    _r, excl, _w = run(deleted)
+    record("self-exclusion: deleted log records new_path null",
+           excl and excl[0]["old_path"] == LOG and excl[0]["new_path"] is None)
+
+    # Renames / copies crossing the log's boundary stay reviewed, whole —
+    # including with substantive new content at the other endpoint.
+    renamed = (f"diff --git a/{LOG} b/lib/evil.py\nsimilarity index 60%\n"
+               f"rename from {LOG}\nrename to lib/evil.py\nindex 1..2 100644\n"
+               + _hunk(f"a/{LOG}", "b/lib/evil.py", "-# old\n",
+                       "+import os; os.system('rm -rf /')\n"))
+    copied_from = (f"diff --git a/{LOG} b/lib/copy.py\nsimilarity index 100%\n"
+                   f"copy from {LOG}\ncopy to lib/copy.py\n")
+    renamed_in = (f"diff --git a/lib/old.md b/{LOG}\nsimilarity index 100%\n"
+                  f"rename from lib/old.md\nrename to {LOG}\n")
+    for label, sec in (("renamed to another path, with new code", renamed),
+                       ("copied to another path (hunk-less)", copied_from),
+                       ("renamed in from another path (hunk-less)", renamed_in)):
+        diff = other + sec
+        reviewed, excl, warns = run(diff)
+        record(f"self-exclusion: log section KEPT when {label}",
+               reviewed == diff and excl == [] and len(warns) == 1
+               and "stays in review" in warns[0], f"{excl} {warns}")
+
+    # §0 parsing: quoted paths, unquoted spaces, hunk-less sections.
+    quoted_log = "docs/reviews/code-review-é x.md"
+    q = '"docs/reviews/code-review-\\303\\251 x.md"'
+    quoted = (f'diff --git "a/{q[1:-1]}" "b/{q[1:-1]}"\nindex 1..2 100644\n'
+              f'--- "a/{q[1:-1]}"\n+++ "b/{q[1:-1]}"\n@@ -1 +1 @@\n-a\n+b\n')
+    reviewed, excl, _w = rr.apply_self_exclusion(other + quoted, quoted_log)
+    record("parser: C-quoted path with octal UTF-8 decoded and matched",
+           reviewed == other and len(excl) == 1, str(excl))
+    spaced = ("diff --git a/my dir/f x.py b/my dir/f x.py\nindex 1..2 100644\n"
+              "--- a/my dir/f x.py\t\n+++ b/my dir/f x.py\t\n@@ -1 +1 @@\n-a\n+b\n")
+    secs = rr.parse_diff_sections(spaced)
+    record("parser: unquoted path with spaces (a/P b/P form) identified",
+           [(x["old_path"], x["new_path"]) for x in secs]
+           == [("my dir/f x.py", "my dir/f x.py")])
+    spaced_rename = ("diff --git a/a b/c d b/e f\nsimilarity index 100%\n"
+                     "rename from a b/c d\nrename to e f\n")
+    secs = rr.parse_diff_sections(spaced_rename)
+    record("parser: ambiguous unquoted rename resolved from rename from/to",
+           [(x["old_path"], x["new_path"]) for x in secs] == [("a b/c d", "e f")])
+    binary = ("diff --git a/img.png b/img.png\nindex 1..2 100644\n"
+              "Binary files a/img.png and b/img.png differ\n")
+    binpatch = ("diff --git a/b.bin b/b.bin\nnew file mode 100644\n"
+                "index 0000000..1\nGIT binary patch\nliteral 3\nKcmZQzU|;|M00aO5\n\n"
+                "literal 0\nHcmV?d00001\n\n")
+    secs = rr.parse_diff_sections(binary + binpatch + mode_only + renamed_in)
+    record("parser: binary, binary-patch, mode-only and rename-only sections parsed",
+           [(x["old_path"], x["new_path"]) for x in secs]
+           == [("img.png", "img.png"), (None, "b.bin"), (LOG, LOG),
+               ("lib/old.md", LOG)], str([(x["old_path"], x["new_path"]) for x in secs]))
+    ff = other.replace("+b\n", "+b\x0c c\n")
+    reviewed, excl, _w = run(ff + _mod(LOG))
+    record("parser: splits on newline only (form feed / U+2028 in content)",
+           reviewed == ff and len(excl) == 1)
+    nonl = other.replace("+b\n", "+b\n\\ No newline at end of file\n")
+    reviewed, excl, _w = run(nonl + _mod(LOG))
+    record("parser: '\\ No newline at end of file' markers accepted",
+           reviewed == nonl and len(excl) == 1)
+    record("parser: sections concatenate back to the input, byte for byte",
+           "".join(x["text"] for x in rr.parse_diff_sections(
+               other + renamed + binary + quoted)) == other + renamed + binary + quoted)
+
+    # Fail closed: any unidentifiable section -> NO exclusion, one warning.
+    unparseable = {
+        "plain unified diff (no diff --git)": _hunk(f"a/{LOG}", f"b/{LOG}"),
+        "custom prefix (--no-prefix)": _mod(LOG).replace("a/", "").replace("b/", ""),
+        "text before the first section": "commit abc123\n\n" + _mod(LOG),
+        "combined diff (diff --cc)": _mod(LOG) + "diff --cc lib/m.py\nindex 1,2..3\n",
+        "truncated hunk": _mod(LOG) + other.replace("+b\n", ""),
+        "conflicting identity (--- path != diff --git)":
+            _mod(LOG).replace(f"--- a/{LOG}", "--- a/lib/other.py"),
+        "unknown extended header": _mod(LOG).replace("index 1..2", "frobnicate 1..2"),
+        "ambiguous unquoted paths, nothing to confirm them":
+            "diff --git a/p q b/r s\nold mode 100644\nnew mode 100755\n",
+    }
+    for label, bad in unparseable.items():
+        diff = _mod(LOG) + bad if not bad.startswith(("commit", "---")) else bad
+        reviewed, excl, warns = run(diff)
+        record(f"fail-closed: {label} -> nothing excluded, warning",
+               reviewed == diff and excl == [] and len(warns) == 1
+               and "self-exclusion skipped" in warns[0], f"{excl} {warns}")
+    reviewed, excl, warns = rr.apply_self_exclusion(_mod(LOG), None)
+    record("self-exclusion: log outside the repo root -> no-op",
+           reviewed == _mod(LOG) and excl == [] and warns == [])
+
+    # Composition golden: a diff carrying the pass log composes
+    # byte-identically to the same diff without it.
+    prompt = read(os.path.join(COMPOSITION, "prompt.txt"))
+    body = read(os.path.join(COMPOSITION, "lens-body.txt"))
+    mc = read(os.path.join(COMPOSITION, "matched-context.txt")).strip()
+    intent = read(os.path.join(COMPOSITION, "intent.txt"))
+    prior = read(os.path.join(COMPOSITION, "prior.txt"))
+    with_log = read(os.path.join(COMPOSITION, "diff-with-pass-log.txt"))
+    reviewed, excl, _w = rr.apply_self_exclusion(
+        with_log, "docs/reviews/code-review-test.md")
+    got = rr.compose_input(prompt, "test-lens", body, mc, intent, reviewed, prior)
+    record("composition: diff with the pass log == golden without it (byte-identical)",
+           got == read(os.path.join(COMPOSITION, "golden-with-prior.txt"))
+           and len(excl) == 1 and excl[0]["lines"] == 9, str(excl))
+
+
+def test_self_exclusion_cli(env: Env) -> None:
+    """The CLIs end to end, with diffs produced by real git: working-tree
+    and committed logs alike, selection on the original, the empty-after-
+    exclusion contract, retry parity."""
+    env.set_mode("ok")
+    tag = "selfx"
+    log_rel = f"docs/reviews/code-review-{tag}.md"
+    repo = env.repo
+
+    def git(*a):
+        return subprocess.run(["git", "-c", "user.email=t@t", "-c",
+                               "user.name=t", *a], cwd=repo, check=True,
+                              capture_output=True, text=True).stdout
+
+    os.makedirs(os.path.join(repo, "docs", "reviews"), exist_ok=True)
+    os.makedirs(os.path.join(repo, "lib"), exist_ok=True)
+    with open(os.path.join(repo, "lib", "plain.py"), "w") as fh:
+        fh.write("x = 1\n")
+    git("add", "-A")
+    git("commit", "-qm", "base")
+    with open(os.path.join(repo, "lib", "plain.py"), "w") as fh:
+        fh.write("x = 2\n")
+    # The log's content trips the security lens's content regex — selection
+    # reads the ORIGINAL diff, so security must still be selected.
+    with open(os.path.join(repo, log_rel), "w") as fh:
+        fh.write(f"# Code Review — {tag}\n\nrotate the session token\n")
+    git("add", "-N", log_rel)
+    working = git("diff")
+    git("add", "-A")
+    git("commit", "-qm", "work")
+    committed = git("diff", "HEAD~1", "HEAD")
+    code_only = git("diff", "HEAD~1", "HEAD", "--", "lib")
+    os.remove(os.path.join(repo, log_rel))  # pass 1: no prior log on disk
+
+    for label, diff in (("working-tree", working), ("committed", committed)):
+        path = os.path.join(env.handoff, f"selfx-{label}.txt")
+        with open(path, "w") as fh:
+            fh.write(diff)
+        proc = env.run("run-pass", "--diff", path, "--intent", env.intent,
+                       "--scope-tag", tag)
+        summary = json.loads(proc.stdout or "{}") if proc.returncode == 0 else {}
+        excl = summary.get("excluded", [])
+        record(f"run-pass: {label} log section excluded and recorded in the summary",
+               proc.returncode == 0 and len(excl) == 1
+               and excl[0]["new_path"] == log_rel and excl[0]["class"] == "pass-log"
+               and summary.get("diff_lines", {}).get("original")
+               - summary.get("diff_lines", {}).get("reviewed") == excl[0]["lines"],
+               proc.stderr.strip()[-200:] + str(excl))
+        lenses = summary.get("lenses", {})
+        record(f"run-pass: {label} — selection reads the original diff "
+               f"(security still selected by the excluded log's content)",
+               "security" in lenses and any(
+                   "token" in r for r in lenses["security"]["selection_reasons"]),
+               str({k: v.get("selection_reasons") for k, v in lenses.items()}))
+        composed = [read(lenses[l]["response_path"].replace(
+            ".response.json", ".input.txt")) for l in lenses]
+        record(f"run-pass: {label} — composed inputs carry the code but not the log",
+               composed and all("x = 2" in c and "rotate the session token" not in c
+                                for c in composed))
+
+    # run-lens (a retry) reproduces the same exclusion from the same log path.
+    path = os.path.join(env.handoff, "selfx-committed.txt")
+    proc = env.run("run-lens", "--diff", path, "--intent", env.intent,
+                   "--lens", "senior-dev", "--scope-tag", tag)
+    out = json.loads(proc.stdout or "{}")
+    record("run-lens: retry applies the same self-exclusion and reports it",
+           proc.returncode == 0 and len(out.get("excluded", [])) == 1
+           and out["excluded"][0]["new_path"] == log_rel
+           and "rotate the session token" not in read(out["input_path"])
+           and code_only.strip() and out["diff_lines"]["reviewed"]
+           == code_only.count("\n"), proc.stderr.strip()[-200:])
+
+    # A pass-log-only diff: the empty-diff contract — non-zero, no summary,
+    # no pass number consumed, disclosure on stderr.
+    only = os.path.join(env.handoff, "selfx-only.txt")
+    with open(only, "w") as fh:
+        fh.write(git("diff", "HEAD~1", "HEAD", "--", log_rel))
+    before = {d: sorted(os.listdir(d)) for d in env.state_dirs()}
+    proc = env.run("run-pass", "--diff", only, "--intent", env.intent,
+                   "--scope-tag", tag)
+    after = {d: sorted(os.listdir(d)) for d in env.state_dirs()}
+    record("run-pass: pass-log-only diff -> exit 1, no summary, no pass consumed",
+           proc.returncode == 1 and before == after
+           and "nothing left to review after exclusions" in proc.stderr
+           and log_rel in proc.stderr and "lines" in proc.stderr,
+           proc.stderr.strip()[-200:])
+    proc = env.run("run-lens", "--diff", only, "--intent", env.intent,
+                   "--lens", "senior-dev", "--scope-tag", tag)
+    record("run-lens: pass-log-only diff -> exit 1 with the disclosure",
+           proc.returncode == 1
+           and "nothing left to review after exclusions" in proc.stderr)
+
+    # Unparseable diff: reviewed unchanged, warning in the summary.
+    plain = os.path.join(env.handoff, "selfx-plain.txt")
+    with open(plain, "w") as fh:
+        fh.write(f"--- a/{log_rel}\n+++ b/{log_rel}\n@@ -1 +1 @@\n-a\n+b\n")
+    proc = env.run("run-pass", "--diff", plain, "--intent", env.intent,
+                   "--scope-tag", tag)
+    summary = json.loads(proc.stdout or "{}") if proc.returncode == 0 else {}
+    record("run-pass: unparseable diff -> no exclusion, warning in the summary",
+           proc.returncode == 0 and summary.get("excluded") == []
+           and any("self-exclusion skipped" in w
+                   for w in summary.get("warnings", []))
+           and summary["diff_lines"]["original"] == summary["diff_lines"]["reviewed"],
+           proc.stderr.strip()[-200:])
+
+
+# ---------------------------------------------------------------------------
 # Exit contracts + pass-log behavior (subprocess, fake codex)
 # ---------------------------------------------------------------------------
 
@@ -511,6 +768,14 @@ def test_lifecycle(env: Env, shared) -> None:
     except shared.LockError:
         summary_raises = True
     record("lifecycle: displaced run commits no summary", summary_raises)
+    clash_refused = False
+    try:
+        shared.publish_summary(lock, scope2, 1, "h", "log", [], {},
+                               extra={"complete": False})
+    except ValueError:
+        clash_refused = True
+    record("summary: extra fields may never replace a core field",
+           clash_refused)
     os.unlink(os.path.join(scope2, "run.lock"))
 
     # An abandoned reclaim marker refuses with the recovery pointer.
@@ -1765,7 +2030,9 @@ def main() -> int:
     try:
         env = Env(tmp)
         test_composition(rr)
+        test_sectioning(rr)
         test_contracts(env)
+        test_self_exclusion_cli(env)
         test_cli_alignment(env)
         test_lifecycle(env, shared)
         test_immutability(env, shared)

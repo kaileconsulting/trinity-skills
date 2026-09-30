@@ -20,7 +20,7 @@ The canonical assembly (pinned by the goldens in examples/composition/):
     <blank line>
     <intent text>
     === DIFF ===
-    <diff text>
+    <reviewed diff text — the diff minus runner-applied exclusions>
     === PRIOR PASSES ===
     <prior pass-log text, or "(none — this is pass 1)">
 
@@ -45,6 +45,7 @@ from pathlib import Path
 # (the fixture checkers do that).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import runner_shared as shared  # noqa: E402
+import selection_engine as sel  # noqa: E402
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 STATE_ROOT = SKILL_ROOT / "state"
@@ -258,6 +259,289 @@ def summarize_prior_passes(prior_text: str) -> dict:
         return {"count": 0, "first_pass_header": None}
     first_num, first_rest = matches[0]
     return {"count": len(matches), "first_pass_header": f"Pass {first_num} — {first_rest}"}
+
+
+# --------------------------------------------------------------------------
+# Diff sectioning + runner-applied exclusion (docs/review-diff-exclusions-*)
+# --------------------------------------------------------------------------
+#
+# Exclusion DELETES reviewed content, so this parser is strict where
+# selection_engine.parse_diff is best-effort: a wrong guess there changes
+# which lenses run; a wrong guess here would silently drop code from review.
+# Any doubt about any section's identity is a DiffParseError, and the caller
+# then excludes NOTHING (self-exclusion is skipped with a warning).
+#
+# Contract (plan §0): `git diff` output only — sections begin at a
+# `diff --git` line and run to the next one; default a/ b/ prefixes
+# required; C-style quoted paths decoded; a section is kept or removed as
+# raw text, never re-rendered; hunk-less sections (rename-only, mode-only,
+# binary) are sections like any other.
+
+class DiffParseError(Exception):
+    """A section's identity could not be established. Message is user-facing."""
+
+
+# Extended header lines git emits between `diff --git` and the first hunk.
+_HEADER_PREFIXES = (
+    "old mode ", "new mode ", "deleted file mode ", "new file mode ",
+    "similarity index ", "dissimilarity index ", "index ",
+)
+_HUNK_RE = re.compile(r"^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@")
+_QUOTED = r'"(?:[^"\\]|\\.)*"'
+
+
+def _split_lines(text: str) -> list:
+    """Split on "\n" ONLY, keeping the terminators. str.splitlines() would
+    also split on \r, \f, \x1c,   …, which can sit inside a diff
+    content line and would shift section boundaries."""
+    parts = text.split("\n")
+    lines = [part + "\n" for part in parts[:-1]]
+    if parts[-1]:
+        lines.append(parts[-1])
+    return lines
+
+
+def _decode_path(token: str) -> str:
+    if len(token) >= 2 and token.startswith('"') and token.endswith('"'):
+        return sel._unquote_c(token[1:-1])
+    return token
+
+
+def _strip_side(path: str, side: str, where: str) -> str:
+    if not path.startswith(side + "/"):
+        raise DiffParseError(
+            f"{where}: path {path!r} lacks the default {side}/ prefix")
+    return path[len(side) + 1:]
+
+
+def _parse_git_line(line: str):
+    """(old, new) from `diff --git <a> <b>`, or None when the unquoted form
+    is ambiguous (git does not quote spaces, so `a/x y b/z w` has several
+    readings). The unambiguous unquoted form is `a/P b/P`; a rename's exact
+    paths come from its `rename from`/`rename to` lines instead."""
+    rest = line[len("diff --git "):].rstrip("\n")
+    m = re.match(rf"^({_QUOTED}|\S+) ({_QUOTED}|\S+)$", rest)
+    if m:
+        old, new = (_decode_path(t) for t in m.groups())
+        return (_strip_side(old, "a", "diff --git"),
+                _strip_side(new, "b", "diff --git"))
+    if rest.startswith("a/") and (len(rest) - 5) % 2 == 0:
+        half = (len(rest) - 5) // 2
+        p = rest[2:2 + half]
+        if rest == f"a/{p} b/{p}":
+            return p, p
+    if rest.startswith('"') or rest.endswith('"'):
+        raise DiffParseError(f"unparseable diff --git line: {line.rstrip()!r}")
+    return None
+
+
+def _header_path(payload: str, side: str):
+    """`---`/`+++` payload → repo path, or None for /dev/null."""
+    payload = payload.rstrip("\n")
+    if "\t" in payload and not payload.startswith('"'):
+        payload = payload.split("\t", 1)[0]
+    payload = _decode_path(payload)
+    if payload == "/dev/null":
+        return None
+    return _strip_side(payload, side, f"{'---' if side == 'a' else '+++'} line")
+
+
+_UNSET = object()
+
+
+def _agree(current, value, what: str):
+    if current is not _UNSET and current != value:
+        raise DiffParseError(
+            f"section identity conflict on {what}: {current!r} vs {value!r}")
+    return value
+
+
+def _parse_section(lines: list) -> dict:
+    """Identity of one section: {old_path, new_path, text, lines}, where a
+    None endpoint is /dev/null (the missing side of an add or delete)."""
+    head = lines[0]
+    git_pair = _parse_git_line(head)
+    old = new = _UNSET
+    moved_old = moved_new = _UNSET
+    created = deleted = False
+    minus = plus = _UNSET
+    i = 1
+    n = len(lines)
+    # Extended header.
+    while i < n:
+        ln = lines[i].rstrip("\n")
+        if ln.startswith(("rename from ", "copy from ")):
+            moved_old = _agree(moved_old, _decode_path(ln.split(" from ", 1)[1]),
+                               "rename/copy source")
+        elif ln.startswith(("rename to ", "copy to ")):
+            moved_new = _agree(moved_new, _decode_path(ln.split(" to ", 1)[1]),
+                               "rename/copy target")
+        elif ln.startswith("new file mode "):
+            created = True
+        elif ln.startswith("deleted file mode "):
+            deleted = True
+        elif ln.startswith(_HEADER_PREFIXES):
+            pass
+        else:
+            break
+        i += 1
+    # Body: ---/+++ then hunks, or a binary marker, or nothing.
+    body_kind = "none"
+    if i < n and lines[i].startswith("--- "):
+        if i + 1 >= n or not lines[i + 1].startswith("+++ "):
+            raise DiffParseError(f"'---' without '+++' in section {head.rstrip()!r}")
+        minus = _header_path(lines[i][4:], "a")
+        plus = _header_path(lines[i + 1][4:], "b")
+        i += 2
+        body_kind = "hunks"
+    elif i < n and lines[i].startswith("Binary files "):
+        if i + 1 != n:
+            raise DiffParseError(
+                f"unexpected content after 'Binary files' in {head.rstrip()!r}")
+        i = n
+        body_kind = "binary"
+    elif i < n and lines[i].rstrip("\n") == "GIT binary patch":
+        i = n  # base85 payload runs to the next section
+        body_kind = "binary"
+    if body_kind == "hunks":
+        if i >= n:
+            raise DiffParseError(f"no hunks after file headers in {head.rstrip()!r}")
+        while i < n:
+            m = _HUNK_RE.match(lines[i])
+            if not m:
+                raise DiffParseError(
+                    f"expected a hunk header, got {lines[i].rstrip()[:80]!r}")
+            old_left = int(m.group(1)) if m.group(1) is not None else 1
+            new_left = int(m.group(2)) if m.group(2) is not None else 1
+            i += 1
+            while old_left > 0 or new_left > 0:
+                if i >= n:
+                    raise DiffParseError(f"truncated hunk in {head.rstrip()!r}")
+                c = lines[i][:1]
+                if c == " ":
+                    old_left -= 1
+                    new_left -= 1
+                elif c == "-":
+                    old_left -= 1
+                elif c == "+":
+                    new_left -= 1
+                elif c != "\\":
+                    raise DiffParseError(
+                        f"malformed hunk line {lines[i].rstrip()[:80]!r}")
+                if old_left < 0 or new_left < 0:
+                    raise DiffParseError(f"hunk overruns its header in {head.rstrip()!r}")
+                i += 1
+            while i < n and lines[i].startswith("\\"):
+                i += 1  # "\ No newline at end of file" after the last line
+    elif body_kind == "none" and i < n:
+        raise DiffParseError(
+            f"unrecognized line {lines[i].rstrip()[:80]!r} in {head.rstrip()!r}")
+
+    # Resolve endpoints: every present source must agree.
+    if git_pair is not None:
+        old = _agree(old, git_pair[0], "old path")
+        new = _agree(new, git_pair[1], "new path")
+    if moved_old is not _UNSET or moved_new is not _UNSET:
+        if moved_old is _UNSET or moved_new is _UNSET:
+            raise DiffParseError(f"half a rename/copy header in {head.rstrip()!r}")
+        old = _agree(old, moved_old, "old path")
+        new = _agree(new, moved_new, "new path")
+    if minus is not _UNSET and minus is not None:
+        old = _agree(old, minus, "old path")
+    if plus is not _UNSET and plus is not None:
+        new = _agree(new, plus, "new path")
+    if old is _UNSET or new is _UNSET:
+        raise DiffParseError(f"ambiguous section paths in {head.rstrip()!r}")
+    if created and deleted:
+        raise DiffParseError(f"section both creates and deletes: {head.rstrip()!r}")
+    if minus is not _UNSET and ((minus is None) != created
+                                or (plus is None) != deleted):
+        raise DiffParseError(
+            f"/dev/null header disagrees with file mode in {head.rstrip()!r}")
+    if created:
+        old = None
+    if deleted:
+        new = None
+    return {"old_path": old, "new_path": new,
+            "text": "".join(lines), "lines": len(lines)}
+
+
+def parse_diff_sections(diff: str) -> list:
+    """Split a `git diff` into identified sections (plan §0). Raises
+    DiffParseError unless EVERY section's identity is established — there
+    is no partial result, because a partial one could only be used to
+    exclude on a guess."""
+    lines = _split_lines(diff)
+    starts = [i for i, ln in enumerate(lines) if ln.startswith("diff --git ")]
+    if not starts:
+        raise DiffParseError("no 'diff --git' sections (not git diff output)")
+    if "".join(lines[:starts[0]]).strip():
+        raise DiffParseError("content before the first 'diff --git' line")
+    bounds = starts + [len(lines)]
+    return [_parse_section(lines[a:b]) for a, b in zip(bounds, bounds[1:])]
+
+
+def count_lines(text: str) -> int:
+    return len(_split_lines(text))
+
+
+def apply_self_exclusion(diff: str, log_rel):
+    """Drop the pass log's own sections (plan §1). Returns
+    (reviewed_diff, excluded, warnings).
+
+    A section is dropped ONLY when every endpoint that exists is the log
+    itself — added, modified, mode-changed or deleted in place. A rename or
+    copy whose other endpoint is any other path stays in review, whole,
+    with a warning. `log_rel` is the log's repo-relative POSIX path, or
+    None when it can't be expressed as one (nothing is excluded then).
+    Unparseable input excludes nothing and says so: never best-effort."""
+    if log_rel is None:
+        return diff, [], []
+    try:
+        sections = parse_diff_sections(diff)
+    except DiffParseError as exc:
+        return diff, [], [
+            f"pass-log self-exclusion skipped — the diff could not be "
+            f"sectioned exactly ({exc}); the diff is reviewed unchanged"]
+    kept, excluded, warnings = [], [], []
+    for sec in sections:
+        ends = {p for p in (sec["old_path"], sec["new_path"]) if p is not None}
+        if ends == {log_rel}:
+            excluded.append({"old_path": sec["old_path"],
+                             "new_path": sec["new_path"],
+                             "class": "pass-log", "lines": sec["lines"]})
+            continue
+        if log_rel in ends:
+            other = sorted(ends - {log_rel})
+            warnings.append(
+                f"pass log {log_rel} is renamed or copied to/from "
+                f"{', '.join(other)} — that section crosses the log's boundary "
+                f"and stays in review, whole")
+        kept.append(sec["text"])
+    if not excluded:
+        return diff, [], warnings
+    return "".join(kept), excluded, warnings
+
+
+def log_path_in_diff(log_path: Path, repo_root: Path):
+    """The pass log's path as `git diff` writes it (repo-relative, POSIX),
+    or None if it isn't inside the repo root."""
+    try:
+        rel = Path(os.path.realpath(str(log_path))).relative_to(
+            os.path.realpath(str(repo_root)))
+    except ValueError:
+        return None
+    return rel.as_posix()
+
+
+def excluded_stderr(prog: str, excluded: list) -> str:
+    """The disclosure for a diff that exclusions emptied entirely (plan §4):
+    no pass is created, so stderr is where it lives."""
+    lines = [f"{prog}: nothing left to review after exclusions — removed:"]
+    for e in excluded:
+        path = e["new_path"] or e["old_path"]
+        lines.append(f"{prog}:   {e['class']} {path} ({e['lines']} lines)")
+    return "\n".join(lines) + "\n"
 
 
 # --------------------------------------------------------------------------
