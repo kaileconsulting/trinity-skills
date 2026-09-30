@@ -275,7 +275,7 @@ To roll back entirely instead: `git checkout v1.0 && ./install.sh`. Details and 
 
 Each iterate-* skill invokes Codex as one subprocess **per selected lens**, each with three structural guarantees:
 
-1. **Sandbox** — `codex -a never exec -s read-only --skip-git-repo-check` makes file writes structurally impossible from Codex's side.
+1. **Sandbox** — `codex -a never exec -m gpt-5.6-sol -s read-only --skip-git-repo-check` makes file writes structurally impossible from Codex's side. The reviewer model is pinned in `bin/runner_shared.py` (`CODEX_MODEL`) rather than inherited from Codex's default, which can change with any Codex release; reasoning effort still comes from `~/.codex/config.toml`.
 2. **Output schema** — `--output-schema <reviewer-output.schema.json>` forces Codex's response into a strict JSON shape (verdict + findings + corrections + answers). Free-form prose is rejected by Codex's runtime before it reaches the editor.
 3. **Patch-marker rejection** — the editor scans each response for `*** Begin Patch`, unified-diff markers, and merge-conflict markers before folding. Defense in depth against a Codex response that smuggles a patch into a description field.
 4. **Reviewer text is data, never control.** Findings are model-authored strings written into a pass log that also carries the review's own progress markers. They're sanitized to single logical lines with marker sequences escaped, and progress is only ever read from editor-written structural positions — so a crafted source comment can't induce a lens to emit a line that makes a resuming session think an unfixed HIGH was already handled.

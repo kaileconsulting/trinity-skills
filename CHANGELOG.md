@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.5.1 — 2026-09-30 — reviewer model pinned
+
+Both runners now pass `-m gpt-5.6-sol` to every Codex call (`CODEX_MODEL`
+in the shared `bin/runner_shared.py`). Until now the model was whatever
+Codex defaulted to. Codex 0.157.0 (installed 2026-09-25) moved that default
+to `gpt-6-astra`, which drew on the shared ChatGPT Plus usage window at
+roughly 9× `gpt-5.6-sol`'s rate per input token (measured from
+`~/.codex/sessions`; noisy, since the window is shared). That, not trinity
+itself, is what made late-September reviews exhaust the window. Every
+trinity review before that date ran on `gpt-5.6-sol`. Changing the model is
+now a one-line, reviewable diff. Reasoning effort still comes from
+`~/.codex/config.toml`.
+
 ## 2.5.0 — 2026-09-30 — the simplification gate
 
 Plan: `docs/archive/simplification-gate-2026-09-28.md` (design converged after 5

@@ -747,6 +747,17 @@ def test_codex_invocation_contract(env: Env) -> None:
     recs = env.argv_records()
     record("codex argv: run-lens passes -C <plan-dir> right after exec",
            proc.returncode == 0 and len(recs) == 1 and c_ok(recs[0]))
+
+    # The reviewer model is pinned in the shared argv, never codex's default.
+    env.clear_argv_records()
+    env.run("run-pass", "--plan", env.plan)
+    recs = env.argv_records()
+
+    def m_ok(rec):
+        argv = rec["argv"]
+        return "-m" in argv and argv[argv.index("-m") + 1] == "gpt-5.6-sol"
+    record("codex argv: model pinned to gpt-5.6-sol (-m), not codex's default",
+           len(recs) == 2 and all(m_ok(r) for r in recs), str(recs[:1]))
     env.clear_argv_records()
 
 
