@@ -131,16 +131,33 @@ Both HIGHs incorporated (one via Kyle's card); suite green. HIGH+MEDIUM trajecto
 
 ## Pass 5 — 2026-09-29 12:50 [IN PROGRESS]
 
-**Scope:** branch (Phase 1 focus) · **Diff size:** 3949 lines · **Scope class:** production · **Verdict:** (pending) until the lens retries complete · **Posture:** used docs/simplification-gate-2026-09-28.md · **Lenses:** senior-dev, security, qa
+**Scope:** branch (Phase 1 focus; excluded by hand, pending issue #10: governing plan `docs/simplification-gate-2026-09-28.md` + its `.handoff-prompt.md`, and this pass log — 672 lines, all non-production) · **Diff size:** 3277 lines (3949 before exclusions) · **Scope class:** production · **Verdict:** REVISE (worst-of: senior-dev REVISE, qa REVISE; no FAILED lens) · **Posture:** used docs/simplification-gate-2026-09-28.md · **Lenses:** senior-dev, qa (forced; security deselected for cost — selected only on prose keywords, approved every prior pass with no findings of its own)
 
 ### Findings
 
-- (pending — no lens has returned)
+1. **Plan resume relies on pending items that block creation does not persist** — HIGH · lens: senior-dev (HIGH), qa (MEDIUM; merged, same defect): iterate-plan's block opens with only the merged *findings* pre-populated; corrections and question answers appear only in completed form, yet Setup resumes them by `(pending)` slots — interrupted after the block opens, a resume finishes the findings, runs the checkpoint and seals while silently dropping outstanding corrections or answers. The `[IN PROGRESS]` tag detects the interruption but does not preserve the remaining work list.
+   →
+
+### Code corrections applied
+
+- `iterate-review/examples/merge/05-simplification-card/expected-merge.md` transition step 6 (senior-dev, qa; merged) — seals the pass before the accepted-risk checkpoint card it then describes; the block stays `[IN PROGRESS]` through checkpoint cards → (pending)
+
+### New questions Codex raised
+
+- (none)
+
+### Decision cards
+
+- **simplification** (`plan-resume-entry`, pass 5, streak 3): streak findings — pass 3 #2 HIGH (qa, introduced_by_pass: null); pass 4 #2 HIGH (senior-dev, qa, introduced_by_pass: 3); pass 5 #1 HIGH (senior-dev, qa, introduced_by_pass: 4); 2 of this streak's 3 findings are fold-caused.
+  recommendation — **simplify (replace)**: replace plan-side *resume* with **abandon-and-rerun**. Setup still detects an `[IN PROGRESS]` last block, but instead of completing it, tags it `[ABORTED]` ("interrupted; superseded by pass N+1") and starts pass N+1; an aborted pass is skipped for streak and stall accounting, like a FAILED pass, and its dispositions, `AR-<n>` proposals and card answers are void. Guarantee lost: the interrupted pass's recorded work (a human answer given before the crash is asked again; one extra Codex pass per interruption). Covering layer: the plan is the reviewed artifact, so the fresh pass reviews whatever the interrupted folds left in it; a card that was pending re-fires if the fresh pass re-reports its label (committed streak unchanged, aborted pass skipped). Per-finding: pass 3 #2 — resolves (no fresh pass can bypass a pending card silently: the card is voided with its pass and re-fires from re-reported findings); pass 4 #2 — resolves (the tag still detects; nothing needs completing); pass 5 #1 — resolves (nothing is resumed, so nothing needs persisting).
+  alternatives — **simplify (remove)**: drop the plan-side resume promise and the tag, back to pre-Phase-1 Setup. Guarantee lost: interruption recovery. Covering layer: none. Per-finding: pass 3 #2 — does not (a fresh pass can again bypass a pending card); pass 4 #2 — resolves (no completeness claim left); pass 5 #1 — resolves (no claim left). · **fold once more**: port `iterate-review` step 12's rule that corrections and questions are pre-populated `(pending)` when the block opens. · *(accept the risk omitted: a bypassed pending card suppresses findings without a human decision — a PF-shipbar trust boundary)*
+  discuss — always available (the harness's free-form response; never counted against the four options).
+  chosen: (pending)
 
 ### Lens run summary
 
-- senior-dev: failed (exit 1, empty stderr) · security: failed · qa: failed. Direct probe: "You've hit your usage limit … try again at 5:20 PM." (the pass-4 retries consumed the refreshed quota). Each lens's one `run-lens` retry is **owed, not spent**. Resume: retry the three lenses against this pass's diff (head `8952a56`), merge into this block. Streak watch: `split-plan-outcome` and `plan-resume-entry` are at 2 — a HIGH/MEDIUM on either this pass triggers the simplification card.
+- senior-dev: failed → **retry REVISE** · qa: failed → **retry REVISE** · security: failed, retry not run (deselected for cost). First attempts hit the Codex usage limit ("try again at 5:20 PM"); retries ran 2026-09-30 06:33 against the slimmed diff (debug responses `debug/20260930T103338331521Z-18235-8574f134-senior-dev`, `…331520Z-18237-508cf996-qa`). The two slimmed lenses cost 24% of a fresh 5-hour window.
 
 ### Diff snapshot reference
 
-Diff captured at 2026-09-29 12:50; head SHA `8952a56`.
+Diff captured at 2026-09-30 06:33 (slimmed, at head `8952a56`, the head the pass was opened against).
