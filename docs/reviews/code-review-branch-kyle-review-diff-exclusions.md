@@ -37,7 +37,7 @@ Continue (Kyle, 2026-09-30; he used his full usage reset, so the window is back 
 
 Diff captured at 2026-09-30 10:01; head SHA `f1e769e0c7fcd8eb29f25448d734770f53a4988b`.
 
-## Pass 2 — 2026-09-30 10:25 [IN PROGRESS]
+## Pass 2 — 2026-09-30 10:25 [HISTORICAL]
 
 **Scope:** branch (excluded by hand, pre-feature: governing-plan docs/review-diff-exclusions-2026-09-29.md 373 lines; docs docs/review-diff-exclusions-2026-09-29.md.handoff-prompt.md 33 lines; pass-log docs/reviews/code-review-branch-kyle-review-diff-exclusions.md 38 lines) · **Diff size:** 1072 lines · **Scope class:** production · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** used docs/review-diff-exclusions-2026-09-29.md · **Lenses:** senior-dev, security, qa
 
@@ -61,3 +61,7 @@ Diff captured at 2026-09-30 10:01; head SHA `f1e769e0c7fcd8eb29f25448d734770f53a
 ### Diff snapshot reference
 
 Diff captured at 2026-09-30 10:18; head SHA `1ddbbfaadc1267f7e61163e3a13c6a0655a8b808`.
+
+### Checkpoint
+
+Continue, one pass (Kyle, 2026-09-30). HIGH+MEDIUM 4 → 1. Streaks: pass-log-identity 2 (one below the cluster threshold), diff-section-parser 0. Cost: 5-hour window 0% → 20%, weekly 0% → 3% (~1.6M input tokens; all three lenses read deeply).
