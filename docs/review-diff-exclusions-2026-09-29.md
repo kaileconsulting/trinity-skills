@@ -68,7 +68,7 @@ reused or renamed once referenced.
 - The editor can exclude further paths by passing them to the runner **with a class**; the runner applies the class's rule, refuses what the rule forbids, and records every exclusion in the pass summary.
 - Every exclusion appears in the pass header's `Scope:` line, copied from the summary.
 - Composition stays byte-deterministic; goldens pin the excluded forms.
-- `tools/scope_classifier.py` and the runner's refusal logic apply the same heuristic, pinned so they cannot drift.
+- `tools/scope_classifier.py` and the runner's refusal logic apply the same heuristic, pinned so they cannot drift (as built: one implementation in `bin/path_classes.py`, which `tools/` imports).
 
 ## Non-goals (MVP)
 
@@ -101,7 +101,7 @@ The editor passes `--exclude <class>:<path-or-glob>` (repeatable) to `run-pass` 
 | `docs` | documentation paths | nothing further | the path is production under the heuristic |
 | `generated` | lockfiles and generated files | an `=== EXCLUDED SUMMARY ===` block in the intent with one entry per excluded path, `- <path>: <audited property>`, the property non-empty | any excluded path has no entry, or its entry's property is empty |
 
-The checks are **mechanical presence checks**. The runner verifies that each `generated` path has a non-empty audit entry naming it; whether the audit happened and was adequate is the editor's responsibility, visible to the human because the entries are copied into the pass header. The refusal is fail-closed: an unknown class, a glob matching nothing, or any rule above failing exits non-zero before fan-out, like any other runner contract violation. The heuristic is step 3's production/non-production rule; because the runner can't import `tools/` in a copied install, it carries its own copy in `bin/`, and a checker asserts it agrees with `tools/scope_classifier.py` on every fixture (the same dev-side-pin pattern as the cluster threshold in 2.5.0).
+The checks are **mechanical presence checks**. The runner verifies that each `generated` path has a non-empty audit entry naming it; whether the audit happened and was adequate is the editor's responsibility, visible to the human because the entries are copied into the pass header. The refusal is fail-closed: an unknown class, a glob matching nothing, or any rule above failing exits non-zero before fan-out, like any other runner contract violation. The heuristic is step 3's production/non-production rule. The runner can't import `tools/` in a copied install, so *as built* (Phase 1) the single implementation moved to `bin/path_classes.py` and `tools/scope_classifier.py` became a shim importing it: one implementation can't drift, which is stronger than the copy-plus-pin first planned; `tools/check-scope-classification.py` additionally pins step 3's prose to the code's segment and root-doc lists. Also settled while building: each section is decided by the **first** matching spec in command-line order (so `governing-plan` goes before a broad `docs:docs/**`); `governing-plan` takes the exact path only, no globs; a spec whose only match is the pass log counts as matched; a single-path section failing its class rule refuses, while a rename/copy with only one endpoint in the class is kept with a warning.
 
 ### §3 Order of operations
 
@@ -147,7 +147,7 @@ Modified: `iterate-review/bin/review_runner.py` (diff sectioning + exclusion), `
 - A worked example in `examples/merge/` (a lockfile-bearing diff, with summary and disclosure), built from the ResearchLogix dependabot review.
 
 **Iterate-review:** YES (rationale: the trust-boundary half: rules that let the editor take files out of review; wrong rules silently suppress findings)
-**Status:** not started
+**Status:** built 2026-09-30, iterate-review pending. `--exclude <class>:<path-or-glob>` on run-pass and run-lens (`apply_exclusions()` in review_runner.py, pass-log self-exclusion folded into the same engine); the heuristic's single implementation moved to `bin/path_classes.py` (tools/ imports it) with a SKILL.md-prose pin; worked example `examples/merge/06-lockfile-exclusion/`, run by check-runners and byte-compared. check-runners 209/209 (29 new: every refusal and valid case in the acceptance list, scenario 06, and the CLI refusal/summary/run-lens paths); a mutation pass over the engine's eight rules caught seven, and the eighth (an up-front governing-plan production check) was removed as redundant with the per-section rule.
 
 ### Phase 2 — Closeout — CHANGELOG, README, close #10 (~1h)
 **Deliverables:**
@@ -175,7 +175,7 @@ Modified: `iterate-review/bin/review_runner.py` (diff sectioning + exclusion), `
 **Mitigation:** production paths can leave only as `generated`, and only with an audit summary in the intent; every exclusion is disclosed with its line count; the refusal is in code. The residual risk is an editor mislabeling a hand-written production file as `generated`. Its disclosure makes that visible to the human, but it is not prevented. *To challenge:* should `generated` also require a path pattern list (lockfile names, a `generated/` segment) rather than any path?
 
 ### R2 — The heuristic copy drifts from `tools/scope_classifier.py`
-**Mitigation:** a checker asserts agreement on every classifier fixture, the same pattern 2.5.0 uses for the cluster threshold.
+**Mitigation:** a checker asserts agreement on every classifier fixture, the same pattern 2.5.0 uses for the cluster threshold. *As built:* there is no copy — `tools/` imports `bin/path_classes.py` — and the remaining copy, SKILL.md step 3's prose, is pinned by `check-scope-classification.py`.
 
 ### R3 — Composition determinism breaks
 **Mitigation:** the sectioning is a pure function of the diff text and the resolved log path; goldens pin with/without cases; renames covered.
