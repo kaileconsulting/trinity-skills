@@ -1,0 +1,8 @@
+Dependabot cleanup: npm @tiptap/core 3.20.4 → 3.31.3 and @tailwindcss/postcss 4.3.1 → 4.3.3 (frontend); composer guzzlehttp/guzzle 7.9.2 → 7.10.0; development-history entry.
+
+The two lockfiles are left out of the reviewed diff (runner-applied, class
+`generated`); the editor audited each one before the pass:
+
+=== EXCLUDED SUMMARY ===
+- frontend/package-lock.json: every npm `resolved` URL points at https://registry.npmjs.org/; versions match the package.json ranges; no new packages
+- composer.lock: every composer `dist.url` is an https://api.github.com/repos/<owner>/<repo>/zipball/<sha> URL for the named package; only guzzlehttp/guzzle changed

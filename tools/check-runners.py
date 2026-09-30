@@ -493,6 +493,191 @@ def test_sectioning(rr) -> None:
            and len(excl) == 1 and excl[0]["lines"] == 9, str(excl))
 
 
+EXAMPLE_06 = os.path.join(SKILL, "examples", "merge", "06-lockfile-exclusion")
+
+
+def test_classed_exclusions(rr, sel) -> None:
+    """Phase 1 (plan §2): --exclude <class>:<path-or-glob> — every refusal
+    case, the crossing-rename keep, the valid cases, and scenario 06."""
+    plan = "docs/plans/x-plan.md"
+    intent_plan = f"Some intent.\nGoverning-plan: {plan}\n"
+    audit_intent = ("intent\n\n=== EXCLUDED SUMMARY ===\n"
+                    "- a/yarn.lock: every resolved URL is the npm registry\n"
+                    "- b/Gemfile.lock: gems unchanged except rack\n")
+    code = _mod("src/app.py")
+
+    def spec(*items):
+        return rr.parse_exclude_specs(list(items))
+
+    def refused(label, diff, specs_, intent, needle):
+        try:
+            rr.apply_exclusions(diff, None, specs_, intent)
+        except rr.ExclusionError as exc:
+            record(f"exclude refused: {label}", needle in str(exc), str(exc))
+            return
+        record(f"exclude refused: {label}", False, "no ExclusionError")
+
+    def refused_parse(label, items, needle):
+        try:
+            rr.parse_exclude_specs(items)
+        except rr.ExclusionError as exc:
+            record(f"exclude refused: {label}", needle in str(exc), str(exc))
+            return
+        record(f"exclude refused: {label}", False, "no ExclusionError")
+
+    # Refusals.
+    refused("production path under docs",
+            code + _mod("docs/a.md"), spec("docs:**/*.py"), "", "production path")
+    refused_parse("unknown class", ["vendor:x"], "unknown class")
+    refused_parse("missing pattern", ["docs:"], "expected <class>:<path-or-glob>")
+    refused("glob matching nothing", code + _mod("docs/a.md"),
+            spec("docs:guides/**"), "", "matches no path")
+    refused("governing-plan with no Governing-plan: line",
+            code + _mod(plan), spec(f"governing-plan:{plan}"), "intent\n", "found 0")
+    refused("duplicated Governing-plan: line",
+            code + _mod(plan), spec(f"governing-plan:{plan}"),
+            intent_plan + f"Governing-plan: {plan}\n", "found 2")
+    refused("governing-plan naming a different path than the line",
+            code + _mod(plan) + _mod("docs/other.md"),
+            spec("governing-plan:docs/other.md"), intent_plan, "must name exactly")
+    refused("governing-plan given as a glob",
+            code + _mod(plan), spec("governing-plan:docs/plans/*.md"),
+            "Governing-plan: docs/plans/*.md\n", "must name exactly")
+    refused("governing-plan that is production under the heuristic",
+            code + _mod("PLAN.md"), spec("governing-plan:PLAN.md"),
+            "Governing-plan: PLAN.md\n", "production path")
+    refused("generated path with no audit entry",
+            code + _mod("a/yarn.lock") + _mod("c/Cargo.lock"),
+            spec("generated:**/*.lock"), audit_intent, "c/Cargo.lock has no non-empty audit entry")
+    refused("generated audit entry with an empty property",
+            code + _mod("a/yarn.lock"), spec("generated:a/yarn.lock"),
+            "=== EXCLUDED SUMMARY ===\n- a/yarn.lock: \n", "no non-empty audit entry")
+    refused("generated with no EXCLUDED SUMMARY block",
+            code + _mod("a/yarn.lock"), spec("generated:a/yarn.lock"), "intent\n", "found 0")
+    refused("generated with two EXCLUDED SUMMARY blocks",
+            code + _mod("a/yarn.lock"), spec("generated:a/yarn.lock"),
+            audit_intent + "\n" + audit_intent, "found 2")
+    refused("an unparseable diff aborts an explicit request",
+            _hunk("a/docs/a.md", "b/docs/a.md"), spec("docs:docs/**"), "",
+            "can't be")
+    refused("audit entry for a different path does not count",
+            code + _mod("a/yarn.lock.bak"), spec("generated:a/yarn.lock.bak"),
+            audit_intent, "no non-empty audit entry")
+
+    # A rename crossing out of the class is kept, whole, never refused.
+    crossing = ("diff --git a/docs/a.md b/src/a.py\nsimilarity index 90%\n"
+                "rename from docs/a.md\nrename to src/a.py\nindex 1..2 100644\n"
+                + _hunk("a/docs/a.md", "b/src/a.py", "-x\n", "+import os\n"))
+    reviewed, excl, warns = rr.apply_exclusions(
+        code + crossing + _mod("docs/b.md"), None, spec("docs:docs/**"), "")
+    record("exclude: a rename crossing into a production path is kept, whole, with a warning",
+           reviewed == code + crossing and len(excl) == 1
+           and excl[0]["new_path"] == "docs/b.md"
+           and any("crossing out of the class" in w for w in warns), f"{excl} {warns}")
+    inside = ("diff --git a/docs/a.md b/docs/guide/a.md\nsimilarity index 100%\n"
+              "rename from docs/a.md\nrename to docs/guide/a.md\n")
+    reviewed, excl, _w = rr.apply_exclusions(code + inside, None, spec("docs:docs/**"), "")
+    record("exclude: a rename with both endpoints in the class is excluded",
+           reviewed == code and excl[0]["old_path"] == "docs/a.md")
+
+    # Valid cases.
+    reviewed, excl, _w = rr.apply_exclusions(
+        code + _mod(plan), None, spec(f"governing-plan:{plan}"), intent_plan)
+    record("exclude: governing-plan naming the intent's line is excluded",
+           reviewed == code and [e["class"] for e in excl] == ["governing-plan"])
+    reviewed, excl, _w = rr.apply_exclusions(
+        code + _mod("a/yarn.lock") + _mod("b/Gemfile.lock"), None,
+        spec("generated:**/*.lock"), audit_intent)
+    record("exclude: several generated paths, each with its own audit entry",
+           reviewed == code and [e["audit"] for e in excl] == [
+               {"a/yarn.lock": "every resolved URL is the npm registry"},
+               {"b/Gemfile.lock": "gems unchanged except rack"}], str(excl))
+    reviewed, excl, _w = rr.apply_exclusions(
+        code + _mod(plan), None,
+        spec(f"governing-plan:{plan}", "docs:docs/**"), intent_plan)
+    record("exclude: the first matching spec decides a section (command-line order)",
+           [e["class"] for e in excl] == ["governing-plan"])
+    reviewed, excl, _w = rr.apply_exclusions(
+        code + _mod(LOG), LOG, spec("docs:docs/**"), "")
+    record("exclude: a glob whose only match is the pass log counts as matched",
+           reviewed == code and [e["class"] for e in excl] == ["pass-log"])
+
+    # Scenario 06, run: byte-identical to its goldens, and selection reads
+    # the ORIGINAL diff (security survives the excluded lockfile).
+    diff = read(os.path.join(EXAMPLE_06, "input.diff"))
+    intent = read(os.path.join(EXAMPLE_06, "intent.txt"))
+    raw = [ln.split(" ", 1)[1] for ln in
+           read(os.path.join(EXAMPLE_06, "exclude-args.txt")).splitlines()]
+    reviewed, excl, warns = rr.apply_exclusions(
+        diff, None, rr.parse_exclude_specs(raw), intent)
+    got = json.dumps({"excluded": excl, "diff_lines": {
+        "original": rr.count_lines(diff), "reviewed": rr.count_lines(reviewed)},
+        "warnings": warns}, indent=2, sort_keys=True) + "\n"
+    record("scenario 06: exclusion fields match expected-exclusion.json.golden",
+           got == read(os.path.join(EXAMPLE_06, "expected-exclusion.json.golden")))
+    record("scenario 06: reviewed diff matches expected-reviewed.diff",
+           reviewed == read(os.path.join(EXAMPLE_06, "expected-reviewed.diff")))
+    lenses, cfg = sel.load_lenses(), sel.load_readme_config()
+    record("scenario 06: selection on the original keeps security; on the reviewed it wouldn't",
+           sel.select(diff, lenses, cfg)[0] == ["security", "senior-dev"]
+           and sel.select(reviewed, lenses, cfg)[0] == ["senior-dev"])
+    broken = intent.replace("- composer.lock: every", "- composer.lock:")
+    broken = broken.split("- composer.lock:")[0] + "\n"
+    try:
+        rr.apply_exclusions(diff, None, rr.parse_exclude_specs(raw), broken)
+        ok = False
+    except rr.ExclusionError as exc:
+        ok = "composer.lock" in str(exc)
+    record("scenario 06: deleting one audit entry refuses the pass", ok)
+
+
+def test_classed_exclusions_cli(env: Env) -> None:
+    """--exclude end to end: a refusal exits 1 before fan-out with no pass
+    consumed; a valid request lands in the summary; run-lens matches."""
+    env.set_mode("ok")
+    diff = os.path.join(env.handoff, "cx-diff.txt")
+    intent = os.path.join(env.handoff, "cx-intent.txt")
+    shutil.copy(os.path.join(EXAMPLE_06, "input.diff"), diff)
+    shutil.copy(os.path.join(EXAMPLE_06, "intent.txt"), intent)
+    args = []
+    for ln in read(os.path.join(EXAMPLE_06, "exclude-args.txt")).splitlines():
+        args += ln.split(" ", 1)
+    proc = env.run("run-pass", "--diff", diff, "--intent", intent,
+                   "--scope-tag", "cx", *args)
+    summary = json.loads(proc.stdout or "{}") if proc.returncode == 0 else {}
+    golden = json.loads(read(os.path.join(EXAMPLE_06, "expected-exclusion.json.golden")))
+    lenses = summary.get("lenses", {})
+    composed = [read(v["response_path"].replace(".response.json", ".input.txt"))
+                for v in lenses.values()]
+    record("run-pass --exclude: summary carries the classed exclusions (scenario 06)",
+           proc.returncode == 0 and summary.get("excluded") == golden["excluded"]
+           and summary.get("diff_lines") == golden["diff_lines"]
+           and sorted(lenses) == ["security", "senior-dev"]
+           and composed and all("sha512-CCCC" not in c  # lockfile-only content
+                                and "^3.31.3" in c for c in composed),
+           proc.stderr.strip()[-200:] + f" lenses={sorted(lenses)} "
+           f"lines={summary.get('diff_lines')} "
+           f"classes={[e['class'] for e in summary.get('excluded', [])]} "
+           f"lockfile_in_input={['sha512-CCCC' in c for c in composed]}")
+    proc = env.run("run-lens", "--diff", diff, "--intent", intent,
+                   "--lens", "senior-dev", "--scope-tag", "cx", *args)
+    out = json.loads(proc.stdout or "{}") if proc.returncode == 0 else {}
+    record("run-lens --exclude: the same exclusions, reported",
+           proc.returncode == 0 and out.get("excluded") == golden["excluded"])
+
+    before = {d: sorted(os.listdir(d)) for d in env.state_dirs()}
+    proc = env.run("run-pass", "--diff", diff, "--intent", env.intent,
+                   "--scope-tag", "cx", *args)
+    after = {d: sorted(os.listdir(d)) for d in env.state_dirs()}
+    record("run-pass --exclude refusal: exit 1, no summary, no pass consumed",
+           proc.returncode == 1 and before == after
+           and "EXCLUDED SUMMARY" in proc.stderr, proc.stderr.strip()[-200:])
+    proc = env.run("run-pass", "--diff", diff, "--intent", intent,
+                   "--scope-tag", "cx", "--exclude", "vendor:x")
+    record("run-pass --exclude: unknown class -> exit 1", proc.returncode == 1
+           and "unknown class" in proc.stderr)
+
+
 def test_self_exclusion_cli(env: Env) -> None:
     """The CLIs end to end, with diffs produced by real git: working-tree
     and committed logs alike, selection on the original, the empty-after-
@@ -2200,6 +2385,7 @@ def main() -> int:
     try:
         rr = load(os.path.join(SKILL, "bin", "review_runner.py"), "rr_check")
         shared = load(os.path.join(SKILL, "bin", "runner_shared.py"), "shared_check")
+        sel = load(os.path.join(SKILL, "bin", "selection_engine.py"), "sel_check")
     except Exception as exc:  # noqa: BLE001
         print(f"setup error loading runner modules: {exc}", file=sys.stderr)
         return 2
@@ -2209,8 +2395,10 @@ def main() -> int:
         env = Env(tmp)
         test_composition(rr)
         test_sectioning(rr)
+        test_classed_exclusions(rr, sel)
         test_contracts(env)
         test_self_exclusion_cli(env)
+        test_classed_exclusions_cli(env)
         test_cli_alignment(env)
         test_lifecycle(env, shared)
         test_immutability(env, shared)

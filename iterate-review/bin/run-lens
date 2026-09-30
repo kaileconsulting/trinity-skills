@@ -52,6 +52,12 @@ def build_parser():
     p.add_argument("--scope-tag", required=True, help="scope tag (with the resolved log path, keys the state dir)")
     p.add_argument("--log-path", type=Path, default=None,
                    help="pass-log override; default is <repo-root>/docs/reviews/code-review-<scope-tag>.md")
+    p.add_argument("--exclude", action="append", default=[],
+                   metavar="CLASS:PATH-OR-GLOB",
+                   help="leave a path out of the reviewed diff, by class "
+                        "(governing-plan | docs | generated); repeatable. "
+                        "Refused, before any Codex call, unless the class's "
+                        "rule holds — see SKILL.md step 9")
     return p
 
 
@@ -111,8 +117,13 @@ def main(argv=None):
     log_rel, target_warnings = rr.self_exclusion_target(
         args.scope_tag, log_path, repo_root,
         overridden=args.log_path is not None)
-    reviewed_text, excluded, excl_warnings = rr.apply_self_exclusion(
-        diff_text, log_rel)
+    try:
+        reviewed_text, excluded, excl_warnings = rr.apply_exclusions(
+            diff_text, log_rel, rr.parse_exclude_specs(args.exclude),
+            intent_text)
+    except rr.ExclusionError as exc:
+        sys.stderr.write(f"run-lens: {exc}\n")
+        return EXIT_ERROR
     warnings = warnings + target_warnings + excl_warnings
     if not reviewed_text.strip():
         sys.stderr.write(rr.excluded_stderr("run-lens", excluded))

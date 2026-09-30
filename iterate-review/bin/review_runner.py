@@ -46,6 +46,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import runner_shared as shared  # noqa: E402
 import selection_engine as sel  # noqa: E402
+import path_classes  # noqa: E402
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 STATE_ROOT = SKILL_ROOT / "state"
@@ -560,38 +561,203 @@ def count_lines(text: str) -> int:
 
 
 def apply_self_exclusion(diff: str, log_rel):
-    """Drop the pass log's own sections (plan §1). Returns
-    (reviewed_diff, excluded, warnings).
+    """Drop the pass log's own sections (plan §1) and nothing else: the
+    no-`--exclude` case of apply_exclusions. Returns (reviewed_diff,
+    excluded, warnings).
 
     A section is dropped ONLY when every endpoint that exists is the log
     itself — added, modified, mode-changed or deleted in place. A rename or
     copy whose other endpoint is any other path stays in review, whole,
     with a warning. `log_rel` is the log's repo-relative POSIX path, or
-    None when it can't be expressed as one (nothing is excluded then).
+    None when there is no trusted log slot (nothing is excluded then).
     Unparseable input excludes nothing and says so: never best-effort."""
-    if log_rel is None:
+    return apply_exclusions(diff, log_rel, [], "")
+
+
+# --------------------------------------------------------------------------
+# Classed editor exclusions (plan §2): --exclude <class>:<path-or-glob>
+# --------------------------------------------------------------------------
+
+class ExclusionError(Exception):
+    """An --exclude request the runner refuses. Always fatal before fan-out:
+    a refused exclusion is never downgraded to "review it anyway" silently,
+    because the editor asked for something the rules forbid. Message is
+    user-facing."""
+
+
+EXCLUDE_CLASSES = ("governing-plan", "docs", "generated")
+GOVERNING_PLAN_RE = re.compile(r"^Governing-plan: (\S(?:.*\S)?)$", re.MULTILINE)
+EXCLUDED_SUMMARY_HEADER = "=== EXCLUDED SUMMARY ==="
+_GLOB_CHARS = set("*?[")
+
+
+def parse_exclude_specs(raw: list) -> list:
+    """`<class>:<path-or-glob>` strings → [(class, pattern)], in the order
+    given. Unknown classes and empty patterns are refused."""
+    specs = []
+    for item in raw or []:
+        cls, sep, pattern = item.partition(":")
+        if not sep or not pattern:
+            raise ExclusionError(
+                f"--exclude {item!r}: expected <class>:<path-or-glob>")
+        if cls not in EXCLUDE_CLASSES:
+            raise ExclusionError(
+                f"--exclude {item!r}: unknown class {cls!r} "
+                f"(known: {', '.join(EXCLUDE_CLASSES)})")
+        specs.append((cls, pattern))
+    return specs
+
+
+def _governing_plan(intent: str):
+    lines = GOVERNING_PLAN_RE.findall(intent)
+    if len(lines) != 1:
+        raise ExclusionError(
+            f"--exclude governing-plan needs exactly one 'Governing-plan: "
+            f"<repo-relative path>' line in the intent; found {len(lines)}")
+    return lines[0]
+
+
+def _excluded_summary(intent: str) -> list:
+    """The intent's `=== EXCLUDED SUMMARY ===` block's entries, each the
+    text after `- `. Entries are `- <path>: <audited property>`, one per line, up to the next
+    blank line or `===` header. Exactly one block is allowed. A path is
+    looked up verbatim (never split on ': '), so a path containing ': '
+    still binds to its own entry."""
+    lines = intent.split("\n")
+    starts = [i for i, ln in enumerate(lines) if ln == EXCLUDED_SUMMARY_HEADER]
+    if len(starts) != 1:
+        raise ExclusionError(
+            f"--exclude generated needs exactly one '{EXCLUDED_SUMMARY_HEADER}' "
+            f"block in the intent; found {len(starts)}")
+    entries = []
+    for ln in lines[starts[0] + 1:]:
+        if not ln.strip() or ln.startswith("==="):
+            break
+        if not ln.startswith("- "):
+            raise ExclusionError(
+                f"malformed {EXCLUDED_SUMMARY_HEADER} line {ln[:80]!r}: "
+                f"expected '- <path>: <audited property>'")
+        entries.append(ln[2:])
+    return entries
+
+
+def _audit_entry(entries: list, path: str):
+    """The non-empty audited property recorded for exactly `path`, or None."""
+    found = [e[len(path) + 2:].strip() for e in entries
+             if e.startswith(path + ": ")]
+    if len(found) != 1 or not found[0]:
+        return None
+    return found[0]
+
+
+def apply_exclusions(diff: str, log_rel, specs: list, intent: str):
+    """Pass-log self-exclusion plus the editor's classed exclusions (plan
+    §1–§2). Returns (reviewed_diff, excluded, warnings); raises
+    ExclusionError for anything the class rules refuse.
+
+    With no specs this is exactly apply_self_exclusion (an unparseable diff
+    just skips self-exclusion). With specs, an unparseable diff aborts: an
+    explicit request is never silently dropped (§0).
+
+    Each section is decided by the FIRST spec (command-line order) whose
+    pattern matches any of its existing endpoints:
+    - one real path (added, modified, deleted): the class rule must hold
+      for it, or the request is refused;
+    - two distinct endpoints (rename/copy): excluded only if both match the
+      pattern and satisfy the rule; otherwise it stays in review, whole,
+      with a warning — a crossing rename is kept, never refused.
+    Class rules: `docs` and `governing-plan` refuse production paths
+    (path_classes.is_non_production); `governing-plan` additionally matches
+    only the one path on the intent's `Governing-plan:` line; `generated`
+    needs a non-empty `- <path>: <property>` audit entry per endpoint in
+    the intent's EXCLUDED SUMMARY block. A spec matching no section at all
+    is refused."""
+    if log_rel is None and not specs:
         return diff, [], []
     try:
         sections = parse_diff_sections(diff)
     except DiffParseError as exc:
+        if specs:
+            raise ExclusionError(
+                f"--exclude needs a diff the runner can section exactly, and "
+                f"this one can't be ({exc}); nothing was excluded") from None
         return diff, [], [
             f"pass-log self-exclusion skipped — the diff could not be "
             f"sectioned exactly ({exc}); the diff is reviewed unchanged"]
+
+    plan_path = audit = None
+    matchers = []
+    for cls, pattern in specs:
+        if cls == "governing-plan":
+            plan_path = plan_path or _governing_plan(intent)
+            if _GLOB_CHARS & set(pattern) or pattern != plan_path:
+                raise ExclusionError(
+                    f"--exclude governing-plan:{pattern}: must name exactly "
+                    f"the intent's Governing-plan: path ({plan_path})")
+            # Production-ness is checked per section below, like `docs`.
+            rx = re.compile(re.escape(pattern) + r"\Z")
+        else:
+            if cls == "generated" and audit is None:
+                audit = _excluded_summary(intent)
+            rx = sel.glob_to_regex(pattern)
+        matchers.append((cls, pattern, rx))
+
+    def rule_holds(cls, path):
+        if cls == "generated":
+            return _audit_entry(audit, path) is not None
+        return path_classes.is_non_production(path)
+
+    used = set()
     kept, excluded, warnings = [], [], []
     for sec in sections:
-        ends = {p for p in (sec["old_path"], sec["new_path"]) if p is not None}
-        if ends == {log_rel}:
+        ends = [p for p in (sec["old_path"], sec["new_path"]) if p is not None]
+        distinct = sorted(set(ends))
+        matching = [(idx, [p for p in distinct if rx.match(p)])
+                    for idx, (_c, _p, rx) in enumerate(matchers)]
+        used.update(idx for idx, hits in matching if hits)
+        if log_rel is not None and distinct == [log_rel]:
             excluded.append({"old_path": sec["old_path"],
                              "new_path": sec["new_path"],
                              "class": "pass-log", "lines": sec["lines"]})
             continue
-        if log_rel in ends:
-            other = sorted(ends - {log_rel})
+        if log_rel is not None and log_rel in distinct:
             warnings.append(
                 f"pass log {log_rel} is renamed or copied to/from "
-                f"{', '.join(other)} — that section crosses the log's boundary "
-                f"and stays in review, whole")
-        kept.append(sec["text"])
+                f"{', '.join(p for p in distinct if p != log_rel)} — that "
+                f"section crosses the log's boundary and stays in review, whole")
+        decided = next(((idx, hits) for idx, hits in matching if hits), None)
+        if decided is None:
+            kept.append(sec["text"])
+            continue
+        cls, pattern, _rx = matchers[decided[0]]
+        hits = decided[1]
+        if len(distinct) == 1:
+            if not rule_holds(cls, distinct[0]):
+                why = ("has no non-empty audit entry in the intent's "
+                       f"{EXCLUDED_SUMMARY_HEADER} block"
+                       if cls == "generated" else
+                       "is a production path under the §3 heuristic")
+                raise ExclusionError(
+                    f"--exclude {cls}:{pattern}: {distinct[0]} {why}; refused")
+        elif len(hits) != len(distinct) or not all(
+                rule_holds(cls, p) for p in distinct):
+            warnings.append(
+                f"--exclude {cls}:{pattern}: {' → '.join(distinct)} is a "
+                f"rename/copy crossing out of the class; that section stays "
+                f"in review, whole")
+            kept.append(sec["text"])
+            continue
+        entry = {"old_path": sec["old_path"], "new_path": sec["new_path"],
+                 "class": cls, "lines": sec["lines"]}
+        if cls == "generated":
+            entry["audit"] = {p: _audit_entry(audit, p) for p in distinct}
+        excluded.append(entry)
+    unused = [f"{cls}:{pattern}" for idx, (cls, pattern, _rx)
+              in enumerate(matchers) if idx not in used]
+    if unused:
+        raise ExclusionError(
+            f"--exclude {', '.join(unused)}: matches no path in the diff "
+            f"(both endpoints, deleted paths included); refused")
     if not excluded:
         return diff, [], warnings
     return "".join(kept), excluded, warnings

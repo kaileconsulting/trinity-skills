@@ -14,11 +14,37 @@ Usage:
 from __future__ import annotations
 
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from scope_classifier import classify  # noqa: E402
+from scope_classifier import (  # noqa: E402
+    NON_PRODUCTION_SEGMENTS, _ROOT_DOC_BASENAMES, classify)
+
+SKILL_MD = os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))), "iterate-review", "SKILL.md")
+
+
+def prose_agreement() -> list:
+    """The heuristic has ONE implementation (iterate-review/bin/
+    path_classes.py, shared with the runner's --exclude refusals), so code
+    can't drift from code; this pins the remaining copy, SKILL.md Setup
+    step 3's prose, to it: every segment and root doc name the code uses
+    is named there, in backticks, and vice versa for segments."""
+    with open(SKILL_MD, encoding="utf-8") as fh:
+        text = fh.read()
+    start = text.index("**Classify the diff")
+    step = text[start:text.index("**Worked examples:**", start)]
+    problems = []
+    named_segments = set(re.findall(r"`([a-z]+)`", step.split("a filename matching")[0]))
+    if named_segments != NON_PRODUCTION_SEGMENTS:
+        problems.append(f"segments: prose {sorted(named_segments)} vs code "
+                        f"{sorted(NON_PRODUCTION_SEGMENTS)}")
+    for name in sorted(_ROOT_DOC_BASENAMES):
+        if f"`{name.upper()}`" not in step and f"{name.upper()}`" not in step:
+            problems.append(f"root doc name {name.upper()} missing from the prose")
+    return problems
 
 CASES: list[tuple[str, list[str], str]] = [
     ("tests+docs-only diff (SKILL.md worked example 1)",
@@ -79,6 +105,12 @@ def main() -> int:
         print(f"  {status:4}  {label:<70} -> {got}")
         if got != want:
             failures.append(f"{label}: got {got!r}, want {want!r} (paths={paths})")
+
+    for problem in prose_agreement():
+        failures.append(f"SKILL.md step 3 prose disagrees with path_classes.py — {problem}")
+        print(f"  FAIL  prose agreement: {problem}")
+    if not any("prose" in f for f in failures):
+        print("  ok    SKILL.md step 3 prose names exactly the code's segments and root doc names")
 
     print()
     if failures:

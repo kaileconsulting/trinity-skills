@@ -83,12 +83,15 @@ If the user invokes without a `--scope` flag, ask them which scope they want bef
    | `.github/workflows/ci.yml` (a path that isn't clearly source *or* clearly test/docs) | production (ambiguity biases toward the full budget) |
    | `README.md`, `CHANGELOG.md` (root-level, no `docs` segment) | non-production — root-level documentation-file convention, not just a `docs/` segment |
 
-   These worked examples aren't only prose: `tools/scope_classifier.py` is a
-   reference implementation of this exact heuristic, boundary-case-tested
+   These worked examples aren't only prose: `bin/path_classes.py` is the
+   single implementation of this exact heuristic — the runner's `--exclude`
+   refusals (step 9) use it too — boundary-case-tested
    (case-insensitivity, filename conventions, empty input, mixed paths) by
-   `tools/check-scope-classification.py` — since this heuristic gates review
-   depth, it gets the same executable-fixture treatment every other
-   control-flow rule in this repo does, not prose alone.
+   `tools/check-scope-classification.py`, which also checks that this
+   paragraph names exactly the segments and root doc names the code uses —
+   since this heuristic gates review depth and exclusion, it gets the same
+   executable-fixture treatment every other control-flow rule in this repo
+   does, not prose alone.
 
    Record the classification in-session — it sets the loop-mode pass-budget
    default (step 14) and is echoed in every pass's log-header `Scope class:`
@@ -127,6 +130,24 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
 9. **Prepare the pass inputs — the runner selects lenses and composes.** Write two files for the runner — **in the per-repository handoff directory, enforced**: `<git-dir>/iterate-review/` (worktree-aware; invisible to git, uncommittable; in a non-git cwd: `<cwd>/.iterate-review/`). The runner refuses `--diff`/`--intent` paths (symlinks resolved) anywhere else — including elsewhere *inside* the repo, so an injected invocation can't feed an untracked `.env` or `.git/config` to codex — and any `--log-path` (override *or* default, symlinks resolved) must live inside the repo root. No shared cross-repo handoff area exists. All of this exists so the pre-approved allowlist rule can never be used to read arbitrary files into a network-backed codex prompt:
 
    - the **diff file** — the captured diff content from step 3, **unchanged except for runner-applied exclusions, each recorded in the summary and the pass header.** Never edit the diff file to leave something out. The runner itself drops **this review's own pass log** from what the lenses see — that content already reaches them as `=== PRIOR PASSES ===`. It drops a section only when every endpoint that exists is the resolved pass log (the log added, modified, mode-changed or deleted in place); a rename or copy between the log and any other path stays reviewed, whole, with a warning. Only the **default** log slot (`docs/reviews/code-review-<scope-tag>.md`) is trusted as this review's own log, and only as that literal path: with a `--log-path` override, or when the slot (or a parent directory) is a symlink, nothing is self-excluded, and the summary's `warnings` says so. The diff must carry git's default root-relative paths (as every step-3 command produces; never `git diff --relative`), and it is sectioned strictly: if any section's identity can't be established exactly (not `git diff` output, custom `--src-prefix`/`--no-prefix`, a combined `diff --cc`, a malformed hunk or binary payload, a `Binary files` line naming other paths), **nothing** is excluded and the summary's `warnings` says so. Lens selection reads the original diff; only composition reads the reviewed one, so an exclusion never trims a lens;
+
+     **Further exclusions are the editor's, by class, and the runner applies them:** pass `--exclude <class>:<path-or-glob>` (repeatable) to `run-pass`, and the same flags to any `run-lens` retry. Globs use the lens-selection glob semantics (`**` spans directories) and match the paths *in the diff*, both endpoints, deleted paths included. Three classes:
+
+     | Class | Use it for | The runner refuses it when |
+     |---|---|---|
+     | `governing-plan` | the converged plan this review treats as its spec | the intent lacks exactly one `Governing-plan: <repo-relative path>` line, the flag names any other path (no globs), or the plan is production under step 3's heuristic |
+     | `docs` | documentation the review doesn't need line by line | a matched path is production under step 3's heuristic |
+     | `generated` | lockfiles and generated files — production paths allowed, but only with an audit | a matched path has no non-empty entry in the intent's `=== EXCLUDED SUMMARY ===` block |
+
+     The `generated` audit block is part of the intent file, one entry per excluded path, exactly one block:
+
+     ```
+     === EXCLUDED SUMMARY ===
+     - frontend/package-lock.json: every npm `resolved` URL points at https://registry.npmjs.org/
+     - composer.lock: every composer `dist.url` is an api.github.com zipball for the named package
+     ```
+
+     These are **presence checks**: the runner confirms each excluded path has a non-empty entry naming what you audited; whether the audit happened and was adequate is yours, and it is visible because every entry is copied into the pass header (step 12). Do the audit before writing the entry. A refused request — unknown class, a spec matching nothing, a rule failing, or a diff that can't be sectioned exactly — exits non-zero **before any Codex call**, and no pass is created; fix the request or drop the flag. Each section is decided by the **first** spec that matches it, so put `governing-plan` before a broad `docs:docs/**`. A rename or copy with only one endpoint inside a class stays reviewed, whole, with a warning. `examples/merge/06-lockfile-exclusion/` is a worked example (built from a real Dependabot review);
    - the **intent file** — best-effort intent context, per scope:
      - `--scope=working` → "Standalone code review of working-tree changes; no commit message yet."
      - `--scope=branch` → output of `git log $(git merge-base HEAD main)..HEAD --pretty=format:"%h %s%n%b%n---"` (commit messages on the branch)
@@ -175,10 +196,11 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     ~/.claude/skills/iterate-review/bin/run-pass \
       --diff "$DIFF_FILE" --intent "$INTENT_FILE" \
       --scope-tag <scope-tag> --pass-num $PASS_N \
-      [--log-path <override>] [--lenses <ids>]
+      [--log-path <override>] [--lenses <ids>] \
+      [--exclude <class>:<path-or-glob> ...]
     ```
 
-    Contract: **the runner composes and invokes; it never folds, never writes pass logs, never decides.** Exit 0 means exactly "the summary was published" — per-lens failure/rejection is *data* inside it (`status: ok|failed|rejected`, with exit code + stderr tail). Non-zero exit / absent summary means the pass **aborted**: treat it as never-ran and surface the runner's stderr to the user (e.g. the scope is locked by a concurrent run, or an ambiguous lock needs `prune-state --force-unlock`). **A pass exists iff its summary exists.** The summary also carries `prior_passes: {count, first_pass_header}` (see step 7) — check it before folding; a surprising value means the resolved log wasn't the one you expected. It records every runner-applied exclusion as `excluded: [{old_path, new_path, class, lines}]` (`null` is `/dev/null`; `lines` is the removed section's length) plus `diff_lines: {original, reviewed}`; step 12 copies them into the pass header. **A diff that exclusions empty entirely is not a pass** — e.g. a pass-log-only diff: `run-pass` exits non-zero before fan-out, publishes no summary, consumes no pass number, and lists the removed paths and line counts on stderr; tell the human "nothing left to review after exclusions" with that list. `run-lens` applies the same exclusion from the same resolved log path, so a retry sees the pass's reviewed diff. This one command shape is what the README's single allowlist rule pre-approves; requires `python3` ≥ 3.9 and `codex` on PATH.
+    Contract: **the runner composes and invokes; it never folds, never writes pass logs, never decides.** Exit 0 means exactly "the summary was published" — per-lens failure/rejection is *data* inside it (`status: ok|failed|rejected`, with exit code + stderr tail). Non-zero exit / absent summary means the pass **aborted**: treat it as never-ran and surface the runner's stderr to the user (e.g. the scope is locked by a concurrent run, or an ambiguous lock needs `prune-state --force-unlock`). **A pass exists iff its summary exists.** The summary also carries `prior_passes: {count, first_pass_header}` (see step 7) — check it before folding; a surprising value means the resolved log wasn't the one you expected. It records every runner-applied exclusion as `excluded: [{old_path, new_path, class, lines[, audit]}]` (`class` is `pass-log`, `governing-plan`, `docs` or `generated`; `null` is `/dev/null`; `lines` is the removed section's length; a `generated` entry's `audit` maps each endpoint to its audited property from the intent) plus `diff_lines: {original, reviewed}`; step 12 copies them into the pass header. **A diff that exclusions empty entirely is not a pass** — e.g. a pass-log-only diff: `run-pass` exits non-zero before fan-out, publishes no summary, consumes no pass number, and lists the removed paths and line counts on stderr; tell the human "nothing left to review after exclusions" with that list. `run-lens` applies the same exclusion from the same resolved log path, so a retry sees the pass's reviewed diff. This one command shape is what the README's single allowlist rule pre-approves; requires `python3` ≥ 3.9 and `codex` on PATH.
 
 11. **Read, validate, and merge the lens responses.**
     - **Per response:** read the summary's per-lens entries. For `status: ok`, read that lens's `$STATE_DIR/pass-$PASS_N.<lensid>.response.json` (schema-validated by `--output-schema`; the runner has already applied belt-and-suspenders **patch-marker rejection** in code — `*** Begin Patch`, `--- a/` or `+++ b/`, `@@ -` followed by digits, `<<<<<<<` or `=======` or `>>>>>>>` — plus structural checks, both fixture-pinned).
@@ -337,8 +359,10 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     stamped with the abort time and says so inline.
     The `(excluded: …)` suffix on Scope is copied from the summary's
     `excluded` array, one `<class> <path> <lines> lines` entry per item
-    (`<path>` is new_path, or old_path for a deletion), e.g.
-    `branch (excluded: pass-log docs/reviews/code-review-branch-x.md 136 lines)`;
+    (`<path>` is new_path, or old_path for a deletion; a `generated` entry
+    adds ` — <audit property>`), e.g.
+    `branch (excluded: pass-log docs/reviews/code-review-branch-x.md 136 lines;
+    generated composer.lock 17 lines — every dist.url is an api.github.com zipball)`;
     omit the suffix when the array is empty. Diff size is the diff as
     captured (the summary's diff_lines.original). -->
 
@@ -885,9 +909,11 @@ In v2, steps 2 and 4 collapse to a single `iterate-review --plan=<path> --phase=
   reproduces per-pass tallies — pass counts, fold-caused share, disposition mix, and
   §3's rollback-cohort query — from the `passes` rows above; fixture-pinned by
   `tools/check-provenance-recipe.py`.
-- `../tools/scope_classifier.py` — reference implementation of the §3 path heuristic
-  above (editor-side judgment, not runner code); boundary-case-tested by
-  `tools/check-scope-classification.py`.
+- `bin/path_classes.py` — the single implementation of the §3 path heuristic above:
+  the editor's scope classification (loop control, never decided by the runner) and
+  the runner's `--exclude` refusals both use it; boundary-case-tested, and pinned to
+  the step-3 prose, by `tools/check-scope-classification.py` (`tools/scope_classifier.py`
+  is a shim re-exporting it).
 - `bin/` — the runner scripts steps 9–11 invoke: `run-pass` (selection + composition +
   concurrent fan-out + summary), `run-lens` (one lens, standalone/debug), `prune-state`
   (state-dir cleanup: `--scope` at Converge, `--older-than` for abandoned runs,

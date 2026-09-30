@@ -1,0 +1,33 @@
+{
+  "diff_lines": {
+    "original": 67,
+    "reviewed": 13
+  },
+  "excluded": [
+    {
+      "audit": {
+        "composer.lock": "every composer `dist.url` is an https://api.github.com/repos/<owner>/<repo>/zipball/<sha> URL for the named package; only guzzlehttp/guzzle changed"
+      },
+      "class": "generated",
+      "lines": 17,
+      "new_path": "composer.lock",
+      "old_path": "composer.lock"
+    },
+    {
+      "class": "docs",
+      "lines": 12,
+      "new_path": "docs/development-history.md",
+      "old_path": "docs/development-history.md"
+    },
+    {
+      "audit": {
+        "frontend/package-lock.json": "every npm `resolved` URL points at https://registry.npmjs.org/; versions match the package.json ranges; no new packages"
+      },
+      "class": "generated",
+      "lines": 25,
+      "new_path": "frontend/package-lock.json",
+      "old_path": "frontend/package-lock.json"
+    }
+  ],
+  "warnings": []
+}
