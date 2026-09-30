@@ -136,3 +136,35 @@ Diff captured at 2026-09-30 11:14; head SHA `d4e1e820cc118b66e2e5d8715b3ea968061
 ### Checkpoint
 
 Continue, one pass (Kyle, 2026-09-30). HIGH+MEDIUM 6 (first Phase 1 pass). Streaks: exclusion-class-rules 1, path-heuristic 1, diff-section-parser 1, exclusion-disclosure 1, path-heuristic-prose-pin 1. Cost: ~1.53M input tokens, ~20% of the 5-hour window, ~3% weekly (query-iq was running reviews on the same quota).
+
+## Pass 5 — 2026-09-30 11:48 [IN PROGRESS]
+
+**Scope:** branch (excluded by hand, pre-feature: governing-plan docs/review-diff-exclusions-2026-09-29.md 374 lines; docs docs/review-diff-exclusions-2026-09-29.md.handoff-prompt.md 33 lines; pass-log docs/reviews/code-review-branch-kyle-review-diff-exclusions.md 138 lines) · **Diff size:** 2228 lines · **Scope class:** production · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** used docs/review-diff-exclusions-2026-09-29.md · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+1. **Decoded paths can forge the human-facing disclosure** — HIGH · lens: qa, security (co-reported): `disclosure()` and `excluded_stderr()` interpolate C-decoded paths (and audit text) verbatim, so a filename with a newline, carriage return, ANSI escape, bidi control or markdown can erase, reorder or fake parts of the Scope line or stderr, while the JSON summary stays escaped.
+   → Editor: incorporated — `_undisplayable()`: every classed exclusion refuses a path or audit property containing a Cc/Cf/Zl/Zp character (controls, bidi/format, line and paragraph separators), and a path containing a backtick; `disclosure()` shows paths in backticks (a code span, so markdown renders literally), rename endpoints as `` `old` → `new` ``. Chose refusal over an escaping scheme: fail-closed, and nothing a human reads needs decoding. Pass-log entries use the lexical slot, whose scope-tag charset is already restricted. Fixtures: newline (with a forged `**Verdict:**`), CR, ANSI escape, bidi override and backtick paths, and a control character in an audit property, all refused; a markdown-laden filename renders in a code span. SKILL.md step 9/12, scenario 06's expected header and plan §2 updated. [introduced_by_pass: null — verbatim interpolation dates from Phase 0's `excluded_stderr`] [component: exclusion-disclosure]
+2. **The root-doc rule admits executable files** — HIGH · lens: security: `is_documentation()` matches the basename before the first dot, so `SECURITY.py`, `README.sh`, `NOTICE.js` leave review as `docs` or `governing-plan` without an audit.
+   → Editor: incorporated — `is_documentation()` now also requires a documentation file type, `path_classes.DOC_EXTENSIONS` (prose and images; nothing executable, no HTML/SVG), by final extension: under `docs/` always, and for a root doc name unless extensionless. So the same gap closes for `docs/deploy.sh` too. Step 3's budget heuristic (`is_non_production`) is deliberately unchanged, since its "any extension" rule governs pass budgets, not exclusion. Fixtures: `SECURITY.py`, `README.sh`, `NOTICE.js`, `docs/deploy.sh`, `docs/Makefile`, `docs/site.html`, `docs/diagram.svg` refused; `README.en.md`, `LICENSE`, `docs/img/arch.png` accepted. The extension list is pinned to step 9's table, both directions, by check-scope-classification. [introduced_by_pass: 4 — pass 4's `is_documentation()` reused the root-doc rule as-is] [component: path-heuristic]
+3. **The non-UTF-8 check is a U+FFFD heuristic, not strict decoding** — HIGH · lens: senior-dev: it rejects a valid C-quoted U+FFFD (`\357\277\275`) and accepts invalid bytes when the token also has a literal U+FFFD, so distinct rename endpoints could still collapse.
+   → Editor: incorporated — `selection_engine._unquote_c()` takes an `errors` policy (default "replace", unchanged for selection); `_decode_path()` decodes with "strict" and turns a `UnicodeDecodeError` into `DiffParseError`. Fixtures: a validly quoted U+FFFD decodes exactly; invalid bytes beside a literal U+FFFD fail closed; the pass-4 non-UTF-8 cases still refuse. Selection routing unchanged (14/14). [introduced_by_pass: 4 — pass 4's replacement-character heuristic] [component: diff-section-parser]
+
+### Code corrections applied
+
+- review_runner.py `apply_exclusions` docstring (senior-dev, security, qa; merged) — says docs/governing-plan use `is_non_production` → names `is_documentation` and says tests/fixtures are not eligible
+- review_runner.py `_excluded_summary` docstring (senior-dev) — claims a path containing `: ` still binds; `_audit_entry` refuses it → describes raw entries and the delimiter refusal
+- review_runner.py pass-log crossing warning (senior-dev) — says the section stays in review, but a classed spec may still exclude it → now says self-exclusion skips it and only an explicit `--exclude` spec could remove it
+- tools/check-runners.py (senior-dev, security, qa; merged) — the crossing-rename comment is duplicated → one copy
+
+### New questions Codex raised
+
+- (none)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: REVISE · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-09-30 11:38; head SHA `a2be51146af4efb5529498ec8f3a4872d09a3214`.

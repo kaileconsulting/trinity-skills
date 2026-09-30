@@ -37,6 +37,7 @@ import os
 import re
 import secrets
 import sys
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -304,14 +305,14 @@ def _split_lines(text: str) -> list:
 
 def _decode_path(token: str) -> str:
     if len(token) >= 2 and token.startswith('"') and token.endswith('"'):
-        decoded = sel._unquote_c(token[1:-1])
-        if "\ufffd" in decoded and "\ufffd" not in token:
-            # Octal escapes that aren't valid UTF-8 decode lossily, so two
-            # distinct files could collapse to one identity: refuse.
+        try:
+            # Strict: octal escapes that aren't valid UTF-8 would otherwise
+            # decode lossily, and two distinct files could share one identity.
+            return sel._unquote_c(token[1:-1], errors="strict")
+        except UnicodeDecodeError:
             raise DiffParseError(
                 f"path {token!r} carries non-UTF-8 bytes; its identity can't "
-                f"be represented exactly")
-        return decoded
+                f"be represented exactly") from None
     return token
 
 
@@ -627,9 +628,9 @@ def _governing_plan(intent: str):
 def _excluded_summary(intent: str) -> list:
     """The intent's `=== EXCLUDED SUMMARY ===` block's entries, each the
     text after `- `. Entries are `- <path>: <audited property>`, one per line, up to the next
-    blank line or `===` header. Exactly one block is allowed. A path is
-    looked up verbatim (never split on ': '), so a path containing ': '
-    still binds to its own entry."""
+    blank line or `===` header. Exactly one block is allowed. Entries are
+    kept raw and matched by _audit_entry(), which refuses any path
+    containing the ': ' delimiter rather than guess which entry binds it."""
     lines = intent.split("\n")
     starts = [i for i, ln in enumerate(lines) if ln == EXCLUDED_SUMMARY_HEADER]
     if len(starts) != 1:
@@ -664,6 +665,18 @@ def _audit_entry(entries: list, path: str):
     return found[0]
 
 
+def _undisplayable(text: str, path: bool):
+    """The first character that would let `text` corrupt a human-facing
+    disclosure (a control, format/bidi or line/paragraph separator — or,
+    in a path, a backtick, which would break the code span it's shown in),
+    as a repr; None when it's safe to show verbatim."""
+    for ch in text:
+        if unicodedata.category(ch) in ("Cc", "Cf", "Zl", "Zp") or (
+                path and ch == "`"):
+            return repr(ch)
+    return None
+
+
 def apply_exclusions(diff: str, log_rel, specs: list, intent: str):
     """Pass-log self-exclusion plus the editor's classed exclusions (plan
     §1–§2). Returns (reviewed_diff, excluded, warnings); raises
@@ -680,8 +693,10 @@ def apply_exclusions(diff: str, log_rel, specs: list, intent: str):
     - two distinct endpoints (rename/copy): excluded only if both match the
       pattern and satisfy the rule; otherwise it stays in review, whole,
       with a warning — a crossing rename is kept, never refused.
-    Class rules: `docs` and `governing-plan` refuse production paths
-    (path_classes.is_non_production); `governing-plan` additionally matches
+    Class rules: `docs` and `governing-plan` accept only documentation
+    (path_classes.is_documentation: a doc file type under a `docs` segment
+    or a root doc name, nothing test-shaped — generic non-production paths
+    such as tests and fixtures are NOT eligible); `governing-plan` additionally matches
     only the one path on the intent's `Governing-plan:` line; `generated`
     needs a non-empty `- <path>: <property>` audit entry per endpoint in
     the intent's EXCLUDED SUMMARY block. A spec matching no section at all
@@ -738,7 +753,9 @@ def apply_exclusions(diff: str, log_rel, specs: list, intent: str):
             warnings.append(
                 f"pass log {log_rel} is renamed or copied to/from "
                 f"{', '.join(p for p in distinct if p != log_rel)} — that "
-                f"section crosses the log's boundary and stays in review, whole")
+                f"section crosses the log's boundary, so pass-log "
+                f"self-exclusion skips it (only an explicit --exclude spec "
+                f"could still remove it)")
         decided = next(((idx, hits) for idx, hits in matching if hits), None)
         if decided is None:
             kept.append(sec["text"])
@@ -768,6 +785,16 @@ def apply_exclusions(diff: str, log_rel, specs: list, intent: str):
         if cls == "generated":
             entry["audit"] = {p: _audit_entry(audit, p)
                               for p in dict.fromkeys(ends)}  # old, then new
+        # The disclosure is the trust boundary: nothing excluded may be
+        # able to forge or hide its own line in the pass header or stderr.
+        for text, is_path in ([(p, True) for p in distinct]
+                              + [(v, False) for v in
+                                 (entry.get("audit") or {}).values()]):
+            bad = _undisplayable(text, is_path)
+            if bad:
+                raise ExclusionError(
+                    f"--exclude {cls}:{pattern}: {text!r} contains {bad}, "
+                    f"which can't be disclosed safely on one line; refused")
         excluded.append(entry)
     unused = [f"{cls}:{pattern}" for idx, (cls, pattern, _rx)
               in enumerate(matchers) if idx not in used]
@@ -811,10 +838,14 @@ def self_exclusion_target(scope_tag: str, log_path: Path, repo_root: Path,
 def disclosure(entry: dict) -> str:
     """One `excluded` entry as the human reads it — the pass header's Scope
     suffix (SKILL.md step 12) and the all-excluded stderr alike: `<class>
-    <path> <N> lines[ — <audit>]`, where a rename/copy shows `old → new` and
-    a two-endpoint `generated` entry shows each endpoint's own audit."""
+    `<path>` <N> lines[ — <audit>]`, the path in backticks (a code span, so
+    markdown in a filename renders literally), a rename/copy as
+    `` `old` → `new` ``, and a two-endpoint `generated` entry with each
+    endpoint's own audit. apply_exclusions() has already refused any text
+    that could not be shown this way on one line."""
     old, new = entry["old_path"], entry["new_path"]
-    where = f"{old} → {new}" if old and new and old != new else (new or old)
+    where = (f"`{old}` → `{new}`" if old and new and old != new
+             else f"`{new or old}`")
     text = f"{entry['class']} {where} {entry['lines']} lines"
     audit = entry.get("audit") or {}
     if len(audit) == 1:

@@ -66,21 +66,36 @@ def is_non_production(path: str) -> bool:
     return False
 
 
+# File types the `docs` / `governing-plan` exclusion classes accept: prose
+# and images. Nothing a runtime or a browser executes (no source, no
+# scripts, no HTML/SVG), so a code file can't leave review as "docs" by
+# living under docs/ or borrowing a root doc name (SECURITY.py).
+DOC_EXTENSIONS = {
+    "md", "markdown", "mdx", "txt", "text", "rst", "adoc", "asciidoc", "org",
+    "png", "jpg", "jpeg", "gif", "webp", "pdf",
+}
+
+
 def is_documentation(path: str) -> bool:
     """The `docs` / `governing-plan` exclusion classes' positive rule —
-    narrower than is_non_production, which also admits tests, specs,
-    fixtures, goldens and examples (the QA evidence a review must keep):
-    a path under a `docs` segment, or a root-level documentation file,
-    and nothing test-shaped anywhere in it."""
+    narrower than is_non_production (step 3's budget heuristic, which also
+    admits tests, specs, fixtures, goldens and examples — the QA evidence a
+    review keeps — and a root doc name with ANY extension): a documentation
+    file type (DOC_EXTENSIONS, by final extension) under a `docs` segment,
+    or a root-level doc name that is extensionless or of such a type — and
+    nothing test-shaped anywhere in the path."""
     segments, filename = _split(path)
     lowered = [seg.lower() for seg in segments]
     if any(seg in NON_PRODUCTION_SEGMENTS - {"docs"} for seg in lowered):
         return False
     if any(p.match(filename) for p in _TEST_FILENAME_PATTERNS):
         return False
+    stem, dot, _rest = filename.partition(".")
+    ext = filename.rsplit(".", 1)[1].lower() if dot else None
     if "docs" in lowered:
-        return True
-    return not segments and filename.split(".", 1)[0].lower() in _ROOT_DOC_BASENAMES
+        return ext in DOC_EXTENSIONS
+    return (not segments and stem.lower() in _ROOT_DOC_BASENAMES
+            and (ext is None or ext in DOC_EXTENSIONS))
 
 
 def classify(paths) -> str:

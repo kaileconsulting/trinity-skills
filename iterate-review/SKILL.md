@@ -136,7 +136,7 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
      | Class | Use it for | The runner refuses it when |
      |---|---|---|
      | `governing-plan` | the converged plan this review treats as its spec | the intent lacks exactly one `Governing-plan: <repo-relative path>` line, the flag names any other path (no globs), or the plan is not a documentation path (below) |
-     | `docs` | documentation the review doesn't need line by line | a matched path is not a documentation path: one under a `docs` segment, or a root-level README/CHANGELOG/… per step 3, **and** nothing test-shaped (no `test`/`spec`/`fixture`/`golden`/`example` segment, no test-named file). Non-production is not enough: tests, fixtures and goldens are the QA evidence a review keeps |
+     | `docs` | documentation the review doesn't need line by line | a matched path is not a documentation path: a documentation file type — `.md` `.markdown` `.mdx` `.txt` `.text` `.rst` `.adoc` `.asciidoc` `.org` `.png` `.jpg` `.jpeg` `.gif` `.webp` `.pdf`, by final extension; nothing executable, no HTML/SVG — under a `docs` segment, or a root-level README/CHANGELOG/… per step 3 that is extensionless or of such a type (so `SECURITY.py` never qualifies); **and** nothing test-shaped (no `test`/`spec`/`fixture`/`golden`/`example` segment, no test-named file). Non-production is not enough: tests, fixtures and goldens are the QA evidence a review keeps |
      | `generated` | lockfiles and generated files — production paths allowed, but only with an audit | a matched path has no non-empty entry in the intent's `=== EXCLUDED SUMMARY ===` block |
 
      The `generated` audit block is part of the intent file, one entry per excluded path, exactly one block:
@@ -147,7 +147,7 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
      - composer.lock: every composer `dist.url` is an api.github.com zipball for the named package
      ```
 
-     These are **presence checks**: the runner confirms each excluded path has a non-empty entry naming what you audited; whether the audit happened and was adequate is yours, and it is visible because every entry is copied into the pass header (step 12). Do the audit before writing the entry. A refused request — unknown class, a spec matching nothing, a rule failing, or a diff that can't be sectioned exactly — exits non-zero **before any Codex call**, and no pass is created; fix the request or drop the flag. Each section is decided by the **first** spec that matches it, so put `governing-plan` before a broad `docs:docs/**`. A rename or copy with only one endpoint inside a class stays reviewed, whole, with a warning. `examples/merge/06-lockfile-exclusion/` is a worked example (built from a real Dependabot review);
+     Every class also refuses a path or audit property containing a control, format/bidi or line-separator character, and a path containing a backtick: nothing excluded may be able to forge or hide its own disclosure line. These are **presence checks**: the runner confirms each excluded path has a non-empty entry naming what you audited; whether the audit happened and was adequate is yours, and it is visible because every entry is copied into the pass header (step 12). Do the audit before writing the entry. A refused request — unknown class, a spec matching nothing, a rule failing, or a diff that can't be sectioned exactly — exits non-zero **before any Codex call**, and no pass is created; fix the request or drop the flag. Each section is decided by the **first** spec that matches it, so put `governing-plan` before a broad `docs:docs/**`. A rename or copy with only one endpoint inside a class stays reviewed, whole, with a warning. `examples/merge/06-lockfile-exclusion/` is a worked example (built from a real Dependabot review);
    - the **intent file** — best-effort intent context, per scope:
      - `--scope=working` → "Standalone code review of working-tree changes; no commit message yet."
      - `--scope=branch` → output of `git log $(git merge-base HEAD main)..HEAD --pretty=format:"%h %s%n%b%n---"` (commit messages on the branch)
@@ -360,13 +360,15 @@ Each pass selects the applicable **persona lenses** (see `lenses/` — `senior-d
     The `(excluded: …)` suffix on Scope is copied from the summary's
     `excluded` array, one entry per item, `;`-separated, each rendered
     exactly as the runner's own disclosure (`review_runner.disclosure()`,
-    also used for the all-excluded stderr): `<class> <path> <N> lines`,
-    where `<path>` is the one endpoint that exists, or `old → new` for a
-    rename/copy — both endpoints, always; a `generated` entry adds
+    also used for the all-excluded stderr): `<class> `<path>` <N> lines`,
+    the path in backticks (a code span, so markdown in a filename renders
+    literally), where `<path>` is the one endpoint that exists, or
+    `` `old` → `new` `` for a rename/copy — both endpoints, always; a
+    `generated` entry adds
     ` — <audit property>`, or ` — <old>: <property> / <new>: <property>`
     when it has two endpoints. E.g.
-    `branch (excluded: pass-log docs/reviews/code-review-branch-x.md 136 lines;
-    generated composer.lock 17 lines — every dist.url is an api.github.com zipball)`;
+    `branch (excluded: pass-log `docs/reviews/code-review-branch-x.md` 136 lines;
+    generated `composer.lock` 17 lines — every dist.url is an api.github.com zipball)`;
     omit the suffix when the array is empty. Diff size is the diff as
     captured (the summary's diff_lines.original). -->
 

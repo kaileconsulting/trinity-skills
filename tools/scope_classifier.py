@@ -11,5 +11,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "iterate-review", "bin"))
 
 from path_classes import (  # noqa: E402,F401
-    NON_PRODUCTION_SEGMENTS, classify, is_non_production)
+    DOC_EXTENSIONS, NON_PRODUCTION_SEGMENTS, classify, is_documentation,
+    is_non_production)
 from path_classes import _ROOT_DOC_BASENAMES  # noqa: E402,F401

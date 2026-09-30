@@ -20,7 +20,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from scope_classifier import (  # noqa: E402
-    NON_PRODUCTION_SEGMENTS, _ROOT_DOC_BASENAMES, classify)
+    DOC_EXTENSIONS, NON_PRODUCTION_SEGMENTS, _ROOT_DOC_BASENAMES, classify)
 
 SKILL_MD = os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "iterate-review", "SKILL.md")
@@ -50,7 +50,15 @@ def prose_agreement() -> list:
     if named_roots != _ROOT_DOC_BASENAMES:
         problems.append(f"root doc names: prose {sorted(named_roots)} vs code "
                         f"{sorted(_ROOT_DOC_BASENAMES)}")
+    # The docs class's file types (path_classes.DOC_EXTENSIONS) are listed
+    # in step 9's class table; pin that list both ways too.
+    row = next(ln for ln in text.split("\n") if ln.startswith("     | `docs` |"))
+    named_exts = set(re.findall(r"`\.([a-z]+)`", row))
+    if named_exts != DOC_EXTENSIONS:
+        problems.append(f"docs file types: step 9 {sorted(named_exts)} vs code "
+                        f"{sorted(DOC_EXTENSIONS)}")
     return problems
+
 
 CASES: list[tuple[str, list[str], str]] = [
     ("tests+docs-only diff (SKILL.md worked example 1)",
@@ -118,7 +126,7 @@ def main() -> int:
         failures.append(f"SKILL.md step 3 prose disagrees with path_classes.py — {problem}")
         print(f"  FAIL  prose agreement: {problem}")
     if not any("prose" in f for f in failures):
-        print("  ok    SKILL.md step 3 prose names exactly the code's segments and root doc names")
+        print("  ok    SKILL.md prose names exactly the code's segments, root doc names and doc file types")
 
     print()
     if failures:

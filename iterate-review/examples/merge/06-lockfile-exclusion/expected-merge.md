@@ -35,11 +35,12 @@ lens selection and compares the results byte for byte.
 ## Expected pass header
 
 ```markdown
-**Scope:** branch (excluded: generated composer.lock 17 lines — every composer `dist.url` is an https://api.github.com/repos/<owner>/<repo>/zipball/<sha> URL for the named package; only guzzlehttp/guzzle changed; docs docs/development-history.md 12 lines; generated frontend/package-lock.json 25 lines — every npm `resolved` URL points at https://registry.npmjs.org/; versions match the package.json ranges; no new packages) · **Diff size:** 67 lines · … · **Lenses:** security, senior-dev
+**Scope:** branch (excluded: generated `composer.lock` 17 lines — every composer `dist.url` is an https://api.github.com/repos/<owner>/<repo>/zipball/<sha> URL for the named package; only guzzlehttp/guzzle changed; docs `docs/development-history.md` 12 lines; generated `frontend/package-lock.json` 25 lines — every npm `resolved` URL points at https://registry.npmjs.org/; versions match the package.json ranges; no new packages) · **Diff size:** 67 lines · … · **Lenses:** security, senior-dev
 ```
 
-Copied from the summary's `excluded` array, in its order, never written
-from memory. A `generated` entry shows its audit property after ` — ` so
+Copied from the summary's `excluded` array, in its order, each entry
+rendered as `review_runner.disclosure()` renders it, never written from
+memory. A `generated` entry shows its audit property after ` — ` so
 the human sees, in the header itself, what the editor claims to have
 checked instead of reading the file.
 
