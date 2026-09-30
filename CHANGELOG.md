@@ -126,6 +126,12 @@ Passes 4–6: HIGH+MEDIUM 6 → 3 → 6, fifteen findings; the gate fired twice.
   non-plain *unmatched* rename endpoint keeps the section instead of
   aborting; scope tags and paths end at `\Z`, not `$`; a governing plan
   named with `[brackets]` is exact, not a glob.
+- Pass 7, on the simplified surface: the governing plan's mode is checked
+  on each side of an in-place change (executable → 100644 no longer
+  passes), and every mode source must agree; only git's canonical C
+  escapes are accepted (`\544` would have aliased `d`); a path component
+  padded with spaces is not plain; a two-endpoint `generated` change with
+  a missing audit is refused rather than kept as a "crossing".
 
 ## 2.5.1 — 2026-09-30 — reviewer model pinned
 

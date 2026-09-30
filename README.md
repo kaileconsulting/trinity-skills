@@ -104,7 +104,7 @@ Every lens gets the whole diff, and Codex re-sends it across its file-reading tu
   | `governing-plan` | the converged plan the review treats as its spec | the intent names it on exactly one `Governing-plan:` line; it's a regular, non-executable `.md` file |
   | `generated` | lockfiles, generated files (production allowed) | each path has a plain-text audit entry in the intent's `=== EXCLUDED SUMMARY ===` block saying what the editor checked |
 
-  Only plain paths qualify (printable ASCII, no backtick, backslash, double quote or `: `), and audit text is plain too; anything unusual stays in review. There is deliberately no `docs` class: "is this documentation?" kept admitting code during this feature's own review, so other docs are reviewed like code.
+  Only plain paths qualify (printable ASCII, no backtick, backslash, double quote or `: `, no component padded with spaces), and audit text is plain too; anything unusual stays in review. There is deliberately no `docs` class: "is this documentation?" kept admitting code during this feature's own review, so other docs are reviewed like code.
 - **Every exclusion is visible.** The runner records it in `pass-N.summary.json` (`excluded`, with line counts and each `generated` audit), and the pass header's `Scope:` line copies it from there, for example ``branch (excluded: pass-log `docs/reviews/code-review-branch-x.md` 136 lines; generated `composer.lock` 17 lines — `every dist.url is an api.github.com zipball`)``. A diff that exclusions empty entirely creates no pass, and the runner lists what it removed.
 - **Exclusion never changes which lenses run.** Selection reads the original diff, so an excluded lockfile still triggers `security`.
 

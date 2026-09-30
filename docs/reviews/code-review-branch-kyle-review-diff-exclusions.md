@@ -220,3 +220,37 @@ Diff captured at 2026-09-30 15:20; head SHA `ac44dc7cff710a0c9b12efa64da8115750d
 ### Checkpoint
 
 Continue, one pass (Kyle, 2026-09-30). HIGH+MEDIUM 6 (from 3); two simplification cards answered (docs-eligibility: remove → retired; exclusion-disclosure: narrow → streak 0). Streaks after the pass: path-heuristic 0, diff-section-parser 0, exclusion-disclosure 0 (card reset), plain-path-rule 1, scope-tag-validation 1, governing-plan-spec 1. Fold ecc571f net-shrank the diff (+468/−433). ResearchLogix was running reviews on the same quota.
+
+## Pass 7 — 2026-09-30 18:12 [IN PROGRESS]
+
+**Scope:** branch (excluded by hand, pre-feature: governing-plan docs/review-diff-exclusions-2026-09-29.md 390 lines; docs docs/review-diff-exclusions-2026-09-29.md.handoff-prompt.md 33 lines; pass-log docs/reviews/code-review-branch-kyle-review-diff-exclusions.md 222 lines) · **Diff size:** 2443 lines · **Scope class:** production · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** used docs/review-diff-exclusions-2026-09-29.md · **Lenses:** senior-dev, security, qa
+
+### Findings
+
+1. **Governing-plan mode check validates only the new endpoint on an in-place change** — HIGH · lens: qa, senior-dev (co-reported): `mode_of` is keyed by path, so when old and new paths are equal the new mode overwrites the old; `docs/plan.md` going 100755 or 120000 → 100644 is accepted.
+   → Editor: incorporated — `rule_holds()` checks the mode of each side whose path is the plan, so an in-place change needs 100644 on both sides. Fixtures: 100755 → 100644 and 120000 → 100644 refused. [introduced_by_pass: 6 — pass 6's path-keyed `mode_of`] [component: governing-plan-spec]
+2. **Contradictory mode headers can forge governing-plan eligibility** — HIGH · lens: security: repeated `new file mode` / `old mode` / `new mode` lines overwrite earlier ones and a conflicting `index` mode is ignored, so symlink/executable modes followed by a forged `100644` pass.
+   → Editor: incorporated — every mode source for a side must agree (`mode_agree`, six octal digits), the `index` mode included, and a mode stated for the missing side of an add/delete fails closed. Git never writes such headers (the diff comes from the editor's own `git diff`); this is defense in depth. Fixtures: a forged repeated `old mode`, an `index` mode contradicting `new mode`, and an `old mode` on an added file, all fail closed. [introduced_by_pass: 6 — pass 6's mode parsing] [component: diff-section-parser]
+3. **Out-of-range octal escapes alias other paths** — HIGH · lens: security: `_unquote_c()` masks up to three octal digits with `& 0xFF`, so `\544` decodes to `d` like `\144`, and a malformed quoted path can resolve to the governing plan or the pass-log slot.
+   → Editor: incorporated — `_decode_path()` accepts only git's canonical C-quoting (`_CANONICAL_C_QUOTED`: the named escapes or exactly three octal digits, `\000`–`\377`) before decoding; anything else fails closed. Selection's decoder is untouched. Fixtures: `\544ocs/…` aliasing the governing plan is refused; `\544`, `\7` and `\4000` are rejected by the parser. [introduced_by_pass: null — the mask predates this branch (selection_engine)] [component: diff-section-parser]
+4. **Space-bearing paths are ambiguous in a markdown code span** — HIGH · lens: senior-dev: `_PLAIN_PATH` allows spaces anywhere, and CommonMark strips a paired leading/trailing space inside a code span, so ` plan.lock ` displays as `plan.lock`.
+   → Editor: incorporated — `_is_plain()`: `_PLAIN_PATH` plus no empty component and no component starting or ending with a space. Fixtures: leading, trailing and space-padded-component paths refused; interior spaces still accepted. [introduced_by_pass: null — the pass-5 checkpoint narrowing (ac44dc7), a checkpoint decision rather than a pass fold] [component: plain-path-rule]
+5. **A failed rule on a two-endpoint `generated` change is downgraded to "crossing"** — MEDIUM · lens: senior-dev: when both endpoints match the glob but one lacks an audit entry, the section is kept with a "crossing out of the class" warning instead of refusing.
+   → Editor: incorporated — the keep-with-warning path is now only for a real crossing (an endpoint the spec didn't match, or one that isn't plain); when every endpoint matched and any fails its rule, the request is refused. Fixture: a generated rename with one of two audits missing refuses. [introduced_by_pass: null] [component: exclusion-class-rules]
+
+### Code corrections applied
+
+- iterate-review/SKILL.md step 10 (senior-dev, security, qa; merged) — the summary's `class` values still list `docs` → now `pass-log`, `governing-plan` or `generated`
+- tools/check-scope-classification.py (qa) — prose-pin failures are counted as classifier-case failures (e.g. "23/24 passed") → the prose pin is counted as its own check (25/25)
+
+### New questions Codex raised
+
+- (none)
+
+### Lens run summary
+
+- senior-dev: REVISE · security: REVISE · qa: REVISE
+
+### Diff snapshot reference
+
+Diff captured at 2026-09-30 18:09; head SHA `dd43336a71bb694b6558255b30cc9b96a66c50ef`.

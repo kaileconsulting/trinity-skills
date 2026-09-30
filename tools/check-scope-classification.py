@@ -113,19 +113,24 @@ def main() -> int:
         if got != want:
             failures.append(f"{label}: got {got!r}, want {want!r} (paths={paths})")
 
-    for problem in prose_agreement():
-        failures.append(f"SKILL.md step 3 prose disagrees with scope_classifier.py — {problem}")
+    # The prose pin is its own check, counted separately from the cases.
+    prose = prose_agreement()
+    for problem in prose:
         print(f"  FAIL  prose agreement: {problem}")
-    if not any("prose" in f for f in failures):
+    if not prose:
         print("  ok    SKILL.md step 3 prose names exactly the code's segments and root doc names")
+    total = len(CASES) + 1
+    passed = len(CASES) - len(failures) + (0 if prose else 1)
+    failures += [f"SKILL.md step 3 prose disagrees with scope_classifier.py — {p}"
+                 for p in prose]
 
     print()
     if failures:
-        print(f"{len(CASES) - len(failures)}/{len(CASES)} passed")
+        print(f"{passed}/{total} passed")
         for f in failures:
             print(f"  FAILED: {f}")
         return 1
-    print(f"{len(CASES)}/{len(CASES)} passed")
+    print(f"{total}/{total} passed")
     return 0
 
 

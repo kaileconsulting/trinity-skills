@@ -301,8 +301,18 @@ def _split_lines(text: str) -> list:
     return lines
 
 
+# Git's C-quoting, exactly: the named escapes, or a three-digit octal byte
+# (\000-\377). Anything else — \544 would otherwise be masked to `d`,
+# aliasing another path — is not git output, so the section fails closed.
+_CANONICAL_C_QUOTED = re.compile(r'(?:[^"\\]|\\[\\"tnrabfv]|\\[0-3][0-7]{2})*\Z')
+
+
 def _decode_path(token: str) -> str:
     if len(token) >= 2 and token.startswith('"') and token.endswith('"'):
+        if not _CANONICAL_C_QUOTED.match(token[1:-1]):
+            raise DiffParseError(
+                f"path {token!r} uses an escape git never writes; its "
+                f"identity can't be established exactly")
         try:
             # Strict: octal escapes that aren't valid UTF-8 would otherwise
             # decode lossily, and two distinct files could share one identity.
@@ -429,6 +439,15 @@ def _parse_section(lines: list) -> dict:
     minus = plus = _UNSET
     old_mode = new_mode = None
     i = 1
+
+    def mode_agree(current, value, where):
+        if not re.fullmatch(r"[0-7]{6}", value):
+            raise DiffParseError(f"malformed mode {value!r} in {head.rstrip()!r}")
+        if current is not None and current != value:
+            raise DiffParseError(
+                f"conflicting {where} modes ({current} vs {value}) in "
+                f"{head.rstrip()!r}")
+        return value
     n = len(lines)
     # Extended header.
     while i < n:
@@ -441,19 +460,19 @@ def _parse_section(lines: list) -> dict:
                                "rename/copy target")
         elif ln.startswith("new file mode "):
             created = True
-            new_mode = ln.rsplit(" ", 1)[1]
+            new_mode = mode_agree(new_mode, ln.rsplit(" ", 1)[1], "new")
         elif ln.startswith("deleted file mode "):
             deleted = True
-            old_mode = ln.rsplit(" ", 1)[1]
+            old_mode = mode_agree(old_mode, ln.rsplit(" ", 1)[1], "old")
         elif ln.startswith("old mode "):
-            old_mode = ln.rsplit(" ", 1)[1]
+            old_mode = mode_agree(old_mode, ln.rsplit(" ", 1)[1], "old")
         elif ln.startswith("new mode "):
-            new_mode = ln.rsplit(" ", 1)[1]
+            new_mode = mode_agree(new_mode, ln.rsplit(" ", 1)[1], "new")
         elif ln.startswith("index "):
             parts = ln.split(" ")
             if len(parts) == 3:  # `index a..b <mode>`: mode unchanged
-                old_mode = old_mode or parts[2]
-                new_mode = new_mode or parts[2]
+                old_mode = mode_agree(old_mode, parts[2], "old")
+                new_mode = mode_agree(new_mode, parts[2], "new")
         elif ln.startswith(_HEADER_PREFIXES):
             pass
         else:
@@ -557,10 +576,9 @@ def _parse_section(lines: list) -> dict:
             binary_marker, old, new):
         raise DiffParseError(
             f"'Binary files' paths disagree with the section in {head.rstrip()!r}")
-    if created:
-        old_mode = None
-    if deleted:
-        new_mode = None
+    if (created and old_mode is not None) or (deleted and new_mode is not None):
+        raise DiffParseError(
+            f"a mode for the missing side of an add/delete in {head.rstrip()!r}")
     return {"old_path": old, "new_path": new,
             "modes": {"old": old_mode, "new": new_mode},
             "text": "".join(lines), "lines": len(lines)}
@@ -688,6 +706,14 @@ def _audit_entry(entries: list, path: str):
 _PLAIN_PATH = re.compile(r"^(?:(?!: )[ !#-\[\]-_a-~])+\Z")  # \Z, not $: no trailing newline
 
 
+def _is_plain(path: str) -> bool:
+    """_PLAIN_PATH, and no path component that is empty or starts or ends
+    with a space: a markdown code span strips a paired leading/trailing
+    space, so ` plan.lock ` would display as `plan.lock`."""
+    return bool(_PLAIN_PATH.match(path)) and all(
+        part and part == part.strip(" ") for part in path.split("/"))
+
+
 # Audit properties are plain text too: printable ASCII without a backtick,
 # shown inside a code span, so nothing in them can render as markdown or
 # HTML in the pass header (Phase 1 review, pass-6 simplification card).
@@ -747,10 +773,15 @@ def apply_exclusions(diff: str, log_rel, specs: list, intent: str):
             rx = sel.glob_to_regex(pattern)
         matchers.append((cls, pattern, rx))
 
-    def rule_holds(cls, path, mode):
+    def rule_holds(cls, path, sec):
         if cls == "generated":
             return _audit_entry(audit, path) is not None
-        return path.lower().endswith(".md") and mode == "100644"
+        # Each side's own mode: an in-place change has one path but two
+        # modes, and both must be a regular, non-executable blob.
+        modes = [sec["modes"][side] for side in ("old", "new")
+                 if sec[f"{side}_path"] == path]
+        return (path.lower().endswith(".md") and bool(modes)
+                and all(m == "100644" for m in modes))
 
     used = set()
     kept, excluded, warnings = [], [], []
@@ -778,29 +809,30 @@ def apply_exclusions(diff: str, log_rel, specs: list, intent: str):
             continue
         cls, pattern, _rx = matchers[decided[0]]
         hits = decided[1]
-        mode_of = {sec["old_path"]: sec["modes"]["old"],
-                   sec["new_path"]: sec["modes"]["new"]}
-        odd = [p for p in hits if not _PLAIN_PATH.match(p)]
+        odd = [p for p in hits if not _is_plain(p)]
         if odd:
             raise ExclusionError(
                 f"--exclude {cls}:{pattern}: {odd[0]!r} is not a plain path "
                 f"(printable ASCII without backtick, backslash, double quote "
-                f"or ': '); classed exclusion takes plain paths only, so it "
+                f"or ': ', no component starting or ending with a space); "
+                f"classed exclusion takes plain paths only, so it "
                 f"stays in review — drop or narrow the spec")
-        if len(distinct) == 1:
-            if not rule_holds(cls, distinct[0], mode_of.get(distinct[0])):
+        crossing = len(hits) != len(distinct) or not all(
+            _is_plain(p) for p in distinct)
+        if not crossing:
+            failed = [p for p in distinct if not rule_holds(cls, p, sec)]
+            if failed:
                 why = ("has no non-empty audit entry in the intent's "
                        f"{EXCLUDED_SUMMARY_HEADER} block"
                        if cls == "generated" else
                        "is not a regular, non-executable .md file (mode "
-                       "100644)")
+                       "100644 on every side)")
                 raise ExclusionError(
-                    f"--exclude {cls}:{pattern}: {distinct[0]} {why}; refused")
-        elif len(hits) != len(distinct) or not all(
-                _PLAIN_PATH.match(p) and rule_holds(cls, p, mode_of.get(p))
-                for p in distinct):
-            # repr: an unmatched endpoint may be anything, so it is never
-            # shown raw, even in a warning.
+                    f"--exclude {cls}:{pattern}: {failed[0]} {why}; refused")
+        else:
+            # Only a real crossing — an endpoint the spec didn't match, or
+            # one that isn't plain — is kept rather than refused. repr: an
+            # unmatched endpoint may be anything, so it is never shown raw.
             warnings.append(
                 f"--exclude {cls}:{pattern}: "
                 f"{' → '.join(repr(p) for p in distinct)} is a rename/copy "

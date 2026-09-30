@@ -737,6 +737,55 @@ def test_classed_exclusions(rr, sel) -> None:
            == "generated `docs/**bold** and | pipe.lock` 7 lines — "
               "`checked <br> **Verdict:** APPROVE`", str(excl))
 
+    # Pass-7 folds.
+    # Each side's own mode: an in-place change 100755/120000 → 100644 is
+    # refused, as is 100644 → 100755 (covered above).
+    for old_mode in ("100755", "120000"):
+        refused(f"governing-plan changing mode {old_mode} → 100644 (old side checked)",
+                code + _mod(plan).replace("index 1..2 100644\n",
+                                          f"old mode {old_mode}\nnew mode 100644\nindex 1..2\n"),
+                spec(f"governing-plan:{plan}"), intent_plan,
+                "not a regular, non-executable .md")
+    # Every mode source must agree; a forged later line fails closed.
+    forged = _mod(plan).replace("index 1..2 100644\n",
+                                "old mode 120000\nold mode 100644\nnew mode 100644\nindex 1..2\n")
+    reviewed, excl, warns = rr.apply_self_exclusion(code + forged, LOG)
+    record("parser: repeated, conflicting mode lines fail closed",
+           excl == [] and any("conflicting old modes" in w for w in warns), str(warns))
+    idx_conflict = _mod(plan).replace("index 1..2 100644\n",
+                                      "new mode 100755\nindex 1..2 100644\n")
+    reviewed, excl, warns = rr.apply_self_exclusion(code + idx_conflict, LOG)
+    record("parser: an index mode contradicting a mode line fails closed",
+           any("conflicting new modes" in w for w in warns), str(warns))
+    ghost = (f"diff --git a/{plan} b/{plan}\nold mode 120000\nnew file mode 100644\n"
+             f"index 0000000..1111111\n--- /dev/null\n+++ b/{plan}\n@@ -0,0 +1 @@\n+x\n")
+    reviewed, excl, warns = rr.apply_self_exclusion(code + ghost, LOG)
+    record("parser: a mode on the missing side of an add/delete fails closed",
+           excl == [] and any("missing side" in w for w in warns), str(warns))
+    # Only git's canonical C escapes: \544 would alias `d`.
+    alias = ('diff --git "a/\\544ocs/plans/x-plan.md" "b/\\544ocs/plans/x-plan.md"\n'
+             'index 1..2 100644\n--- "a/\\544ocs/plans/x-plan.md"\n'
+             '+++ "b/\\544ocs/plans/x-plan.md"\n@@ -1 +1 @@\n-a\n+b\n')
+    refused("an out-of-range octal escape aliasing the governing plan",
+            code + alias, spec(f"governing-plan:{plan}"), intent_plan, "can't be")
+    record("parser: short or out-of-range octal escapes are not git output",
+           all(any("escape git never writes" in w
+                   for w in rr.apply_self_exclusion(code + quoted_mod(esc), LOG)[2])
+               for esc in ("\\544", "\\7", "\\4000")))
+    # Space-bearing paths: no component may start or end with a space.
+    for label, path in (("leading space", " plan.lock"), ("trailing space", "plan.lock "),
+                        ("space-padded component", "a/ b /c.lock")):
+        refused(f"a path with a {label} (ambiguous in a code span)",
+                code + _mod(path), spec(f"generated:{path}"), summary_for(path),
+                "is not a plain path")
+    # A two-endpoint generated change whose endpoints both match but one
+    # lacks its audit is refused, not downgraded to a "crossing".
+    refused("a generated rename with both endpoints matched but one unaudited",
+            code + "diff --git a/old/yarn.lock b/new/yarn.lock\nsimilarity index 100%\n"
+            "rename from old/yarn.lock\nrename to new/yarn.lock\n",
+            spec("generated:**/yarn.lock"), summary_for("new/yarn.lock"),
+            "old/yarn.lock has no non-empty audit entry")
+
     # Scope tags end at the true end of the string (pass-6 fold).
     try:
         rr.validate_scope_tag("x\n")
