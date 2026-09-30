@@ -9,6 +9,8 @@ Read it all first, including both HISTORICAL review blocks at the bottom: they r
 
 **Work in the worktree, not the main checkout.** The branch is `kyle/review-diff-exclusions` at `~/code/trinity-skills-wt-exclusions`, rebased onto 2.5.0. The installed skills in `~/.claude/skills/` are symlinks to `~/code/trinity-skills` (on `main`), which every project's reviews use, so building there would change live behavior mid-build.
 
+**If this session was started in `~/code/trinity-skills`** (likely: it keeps that project's memory), the shell resets to the main checkout between commands. So: begin **every** Bash command with `cd ~/code/trinity-skills-wt-exclusions &&`, and give every Read/Edit/Write an absolute path under `~/code/trinity-skills-wt-exclusions/`. Before the first edit, and before every commit, confirm `git -C ~/code/trinity-skills-wt-exclusions branch --show-current` prints `kyle/review-diff-exclusions`, and that `git -C ~/code/trinity-skills status --short` is empty (the main checkout must stay untouched).
+
 ## Current step
 Phase 0: the runner's self-exclusion of the pass log. Iterate-review YES: when Phase 0's commits land, run `/iterate-review --scope=branch --loop` from the worktree before moving to Phase 1. Leave the plan doc, its handoff prompt and the review log out of that review's diff by hand, recorded in the `Scope:` line, until this feature ships. That is the practice this plan builds in.
 
