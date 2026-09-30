@@ -5,7 +5,7 @@ Built from a real review: ResearchLogix_v2's Dependabot cleanup
 which left its lockfiles out of the reviewed diff by hand, with the audit
 written into the intent ("every npm `resolved` → registry.npmjs.org; every
 composer `dist.url` → api.github.com zipball"). This scenario is the same
-review done through the runner (docs/review-diff-exclusions-2026-09-29.md
+review done through the runner (docs/archive/review-diff-exclusions-2026-09-29.md
 §2). Unlike scenarios 01–05 it is **run, not only read**:
 `tools/check-runners.py` feeds these files to `apply_exclusions()` and to
 lens selection and compares the results byte for byte.

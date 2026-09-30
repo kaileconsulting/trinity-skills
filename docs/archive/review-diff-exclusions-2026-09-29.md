@@ -132,7 +132,7 @@ Modified: `iterate-review/bin/review_runner.py` (diff sectioning + exclusion), `
 - Replaying the simplification-gate branch's pass-4 diff through the new runner drops exactly the 130-line log section.
 
 **Iterate-review:** YES (rationale: changes the runner's input composition, whose byte-determinism is golden-pinned; a bug here drops or duplicates reviewed content)
-**Status:** reviewed 2026-09-30 — iterate-review converged at pass 3 (APPROVE ×3; HIGH+MEDIUM 4 → 1 → 0, five HIGH findings all incorporated, none fold-caused, no decision card; log `docs/reviews/code-review-branch-kyle-review-diff-exclusions.md`). The folds hardened the §0 parser (binary markers confirm identity, binary payloads and no-newline markers validated, nothing before the first section, no create/delete mixed with a move) and narrowed §1 to the lexical default log slot (no override, no symlink). First review on the gpt-5.6-sol pin (2.5.1): ~30% of one 5-hour window, ~5% weekly, for three passes. Built `tools/check-all.sh` green (check-runners 163/163, 37 new: exclusion cases plus the summary-clash guard; check-plan-runners adds an exact-summary-fields case; a mutation pass confirmed the fail-closed, rename-kept, newline-only-split and original/reviewed-split cases each catch their mutant). The strict parser round-trips all 456 non-merge commit diffs in this repo's history byte for byte and refuses the one `diff --cc`. Replay: the simplification-gate branch diff at `8952a56` (the 130-line log) drops exactly one section, the log's 136 lines (130 content + 6 header), and the reviewed diff is byte-identical to `git diff … -- . ':!<log>'`; same at `8bdb0ae` (111-line log, 117-line section). The old pass-4 state was pruned, so the replay is from git history rather than a committed fixture. `lines` in `excluded` is the removed section's length, so `diff_lines.original − reviewed = Σ lines`.
+**Status:** reviewed 2026-09-30 — iterate-review converged at pass 3 (APPROVE ×3; HIGH+MEDIUM 4 → 1 → 0, five HIGH findings all incorporated, none fold-caused, no decision card; log `docs/archive/code-review-branch-kyle-review-diff-exclusions.md`). The folds hardened the §0 parser (binary markers confirm identity, binary payloads and no-newline markers validated, nothing before the first section, no create/delete mixed with a move) and narrowed §1 to the lexical default log slot (no override, no symlink). First review on the gpt-5.6-sol pin (2.5.1): ~30% of one 5-hour window, ~5% weekly, for three passes. Built `tools/check-all.sh` green (check-runners 163/163, 37 new: exclusion cases plus the summary-clash guard; check-plan-runners adds an exact-summary-fields case; a mutation pass confirmed the fail-closed, rename-kept, newline-only-split and original/reviewed-split cases each catch their mutant). The strict parser round-trips all 456 non-merge commit diffs in this repo's history byte for byte and refuses the one `diff --cc`. Replay: the simplification-gate branch diff at `8952a56` (the 130-line log) drops exactly one section, the log's 136 lines (130 content + 6 header), and the reviewed diff is byte-identical to `git diff … -- . ':!<log>'`; same at `8bdb0ae` (111-line log, 117-line section). The old pass-4 state was pruned, so the replay is from git history rather than a committed fixture. `lines` in `excluded` is the removed section's length, so `diff_lines.original − reviewed = Σ lines`.
 
 ### Phase 1 — Editor-side excludable classes, disclosed (~4h)
 **Deliverables:**
@@ -158,16 +158,16 @@ Modified: `iterate-review/bin/review_runner.py` (diff sectioning + exclusion), `
 - Closeout checklist fully checked; plan archived.
 
 **Iterate-review:** NO (rationale: docs-only; no code surface to review)
-**Status:** drafted 2026-09-30 while Phase 1's pass 6 waited on the usage window: CHANGELOG 2.6.0 (unreleased, FINALIZE-AT-MERGE markers for pass 6+), README "Review cost & diff exclusions" section and dev-check rows, tools/README rows, pre-merge doc sweep (no stale exclusive language found), issue #10 closing comment drafted below. Finalize after Phase 1 converges.
+**Status:** done 2026-09-30, in the same PR as Phases 0–1 (Kyle's call: this repo has no CI gates, so the closeout rides with the change it closes). Drafted while Phase 1's pass 6 waited on the usage window; finalized after Phase 1 converged: CHANGELOG 2.6.0 dated, README "Review cost & diff exclusions" section and dev-check rows, tools/README rows, doc sweep re-run after the `docs` class was removed, plan + handoff + review log archived, issue #10 closes on merge (`Closes #10` in the PR).
 
 ## Acceptance criteria
 
-- [ ] The runner drops the review's own pass log from every composed diff it can parse and records it in the summary; nothing else changes (golden-pinned). An unparseable diff is left unchanged with a warning (§0).
-- [ ] Classed `--exclude` works for `governing-plan` and `generated` (the `docs` class was removed at the Phase 1 review's pass-6 simplification card), and fails closed on every refusal case.
-- [ ] Exclusion never changes lens selection or scope classification (both read the original diff), and never removes a section with an endpoint outside its class.
-- [ ] No path can leave the reviewed diff except through the runner, and every exclusion is disclosed: in `pass-N.summary.json` and the pass header's `Scope:` line for a pass, or on stderr, relayed by the editor, when exclusions leave nothing to review and no pass is created (§4).
-- [ ] The runner's heuristic copy and `tools/scope_classifier.py` are pinned to agree.
-- [ ] Issue #10 closed; CHANGELOG and README current.
+- [x] The runner drops the review's own pass log from every composed diff it can parse and records it in the summary; nothing else changes (golden-pinned). An unparseable diff is left unchanged with a warning (§0).
+- [x] Classed `--exclude` works for `governing-plan` and `generated` (the `docs` class was removed at the Phase 1 review's pass-6 simplification card), and fails closed on every refusal case.
+- [x] Exclusion never changes lens selection or scope classification (both read the original diff), and never removes a section with an endpoint outside its class.
+- [x] No path can leave the reviewed diff except through the runner, and every exclusion is disclosed: in `pass-N.summary.json` and the pass header's `Scope:` line for a pass, or on stderr, relayed by the editor, when exclusions leave nothing to review and no pass is created (§4).
+- [x] The runner's heuristic copy and `tools/scope_classifier.py` are pinned to agree. *(Moot as built: after the `docs` class was removed the runner uses no heuristic; SKILL.md step 3's prose is pinned to `tools/scope_classifier.py` both ways instead.)*
+- [x] Issue #10 closed (on merge, via `Closes #10`); CHANGELOG and README current.
 
 ## Risks
 
@@ -207,33 +207,41 @@ After the simplification-gate PR merges (done: PR #11, merged 2026-09-30; this b
 
 ## Closeout
 
-- [ ] Append entry to your project's milestones / changelog index (if you
+- [x] Append entry to your project's milestones / changelog index (if you
   keep one): one paragraph covering what shipped, the ship commit, key
-  delta, and a link back to the archived plan path.
-- [ ] Update memory and/or project notes: mark plan completed, link to
+  delta, and a link back to the archived plan path. (CHANGELOG 2.6.0; the
+  ship commit is the PR's merge.)
+- [x] Update memory and/or project notes: mark plan completed, link to
   ship commits, update any related context files this plan touched.
-- [ ] Update any backlog / priority queue: remove if it was queued, or
-  mark closed inline.
-- [ ] Move plan to archive: `git mv docs/<plan>.md docs/archive/<plan>.md`.
-- [ ] Final commit with a "shipped" message referencing this plan.
-- [ ] Close issue #10 with a comment linking the archived plan and stating what was and was not built.
-  <!-- DRAFT closing comment (finalize the pass counts at merge):
-  Shipped in 2.6.0 (PR #<n>). The runner now drops the review's own pass log
-  from every composed diff (only the literal default log slot is trusted;
-  renames crossing it stay reviewed), and the editor can exclude further
-  paths by class with `--exclude governing-plan|docs|generated:<path-or-glob>`:
-  refused before any Codex call unless the class's rule holds, plain paths
-  only, and every exclusion recorded in `pass-N.summary.json` and the pass
-  header's Scope line. Lens selection still reads the original diff.
-  Not built, as planned: automatic exclusion beyond the pass log, lens
-  trimming, reading Codex's usage state, and a per-phase `--base` for branch
-  reviews (Q4, still the largest remaining lever). Also learned on the way:
-  the cost measured when this issue was opened was mostly the model (Codex
-  0.157 had defaulted to gpt-6-astra, ~9x gpt-5.6-sol's burn), fixed
-  separately in 2.5.1; this release removes the duplicated and settled
-  content on top, roughly 10-20% of per-lens input on plan-driven branches.
-  Plan: docs/archive/review-diff-exclusions-2026-09-29.md. -->
-- [ ] ResearchLogix_v2 (in that repo): replace hand exclusions in review practice with the classed flags.
+  (trinity-expansion and codex-quota memories; codex-quota's "exclude by
+  hand" advice now points at the flags.)
+- [x] Update any backlog / priority queue: remove if it was queued, or
+  mark closed inline. (Issue #10 is the queue entry; it closes on merge.)
+- [x] Move plan to archive: `git mv docs/<plan>.md docs/archive/<plan>.md`. (Handoff prompt and review log moved beside it, per the v2.4 convention.)
+- [x] Final commit with a "shipped" message referencing this plan. (The closeout commit on the PR branch; it ships on merge.)
+- [x] Close issue #10 with a comment linking the archived plan and stating what was and was not built. (The summary below is the PR description's closing section, and `Closes #10` closes the issue on merge.)
+  Closing summary: 2.6.0 builds this in. The runner drops the review's own
+  pass log from every composed diff (only the literal default log slot is
+  trusted; renames crossing it stay reviewed), and the editor can exclude
+  two further kinds of content by class: `--exclude governing-plan:<path>`
+  (the one converged plan the intent names; a regular `.md` file) and
+  `--exclude generated:<path-or-glob>` (lockfiles and generated files, each
+  with a plain-text audit entry in the intent). Every request is refused
+  before any Codex call unless its rule holds; only plain paths qualify;
+  every exclusion is recorded in `pass-N.summary.json` and shown in the pass
+  header's Scope line; lens selection still reads the original diff. Not
+  built, as planned: automatic exclusion beyond the pass log, lens trimming,
+  reading Codex's usage state, and a per-phase `--base` for branch reviews
+  (Q4, still the largest remaining lever). Changed by the review: a `docs`
+  class was built and then removed at a simplification card, because "is
+  this documentation?" kept admitting code. Learned on the way: the cost
+  measured when this issue was opened was mostly the model (Codex 0.157 had
+  defaulted to gpt-6-astra, ~9x gpt-5.6-sol's burn), fixed separately in
+  2.5.1; this release removes duplicated and settled content on top,
+  roughly 10–20% of per-lens input on plan-driven branches. Plan:
+  `docs/archive/review-diff-exclusions-2026-09-29.md`; review log:
+  `docs/archive/code-review-branch-kyle-review-diff-exclusions.md`.
+- [x] ResearchLogix_v2 follow-up noted (tracked in memory; the edit itself happens in that repo): replace hand exclusions in review practice with the classed flags once 2.6.0 is installed there. Note that its "docs/ excluded" practice has no class now: those docs will be reviewed.
 
 ## References
 
@@ -266,9 +274,9 @@ where each phase stands in the review lifecycle.
 
 | Phase | Iterate-review | Status | Last pass | Pass log |
 |-------|----------------|--------|-----------|----------|
-| Phase 0 | YES | converged (APPROVE ×3) | 3 — 2026-09-30 | `docs/reviews/code-review-branch-kyle-review-diff-exclusions.md` |
-| Phase 1 | YES | converged (APPROVE ×3) | 8 — 2026-09-30 | `docs/reviews/code-review-branch-kyle-review-diff-exclusions.md` |
-| Phase 2 | NO | not started | — | — |
+| Phase 0 | YES | converged (APPROVE ×3) | 3 — 2026-09-30 | `docs/archive/code-review-branch-kyle-review-diff-exclusions.md` |
+| Phase 1 | YES | converged (APPROVE ×3) | 8 — 2026-09-30 | `docs/archive/code-review-branch-kyle-review-diff-exclusions.md` |
+| Phase 2 | NO | done (in-PR closeout) | — | — |
 
 ## Pre-flight review pass (the editor, YYYY-MM-DD) [HISTORICAL]
 

@@ -8,7 +8,7 @@ Pins the behavior the runner-scripts plan promises
                   iterate-review/examples/composition/)
   exclusion     — strict diff sectioning (fail closed), pass-log
                   self-exclusion, the original/reviewed split
-                  (docs/review-diff-exclusions-2026-09-29.md §0-§4)
+                  (docs/archive/review-diff-exclusions-2026-09-29.md §0-§4)
   exit contracts— run-lens 0/2/1 at its boundary; run-pass exit 0 iff a
                   summary was published (per-lens failure/rejection is data)
   lifecycle     — exclusive scope lock, fail-fast on concurrent runs, lock
@@ -273,7 +273,7 @@ def test_composition(rr) -> None:
 
 # ---------------------------------------------------------------------------
 # Diff sectioning + pass-log self-exclusion (module-level, pure)
-# docs/review-diff-exclusions-2026-09-29.md §0-§1
+# docs/archive/review-diff-exclusions-2026-09-29.md §0-§1
 # ---------------------------------------------------------------------------
 
 LOG = "docs/reviews/code-review-x.md"
@@ -398,7 +398,7 @@ def test_sectioning(rr) -> None:
         record(f"fail-closed: {label} -> nothing excluded, warning",
                reviewed == diff and excl == [] and len(warns) == 1
                and "self-exclusion skipped" in warns[0], f"{excl} {warns}")
-    # Pass-1 review folds (docs/reviews/code-review-branch-kyle-review-
+    # Pass-1 review folds (docs/archive/code-review-branch-kyle-review-
     # diff-exclusions.md): each malformed form below dressed up as the log
     # must fail closed — nothing excluded, one warning.
     b64 = "literal 3\nKcmZQzU|;|M00aO5\n\n"

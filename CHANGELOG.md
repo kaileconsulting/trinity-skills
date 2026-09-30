@@ -1,11 +1,11 @@
 # Changelog
 
-## 2.6.0 — unreleased — review-diff exclusions
-<!-- FINALIZE-AT-MERGE: date the heading; replace the pass-6+ placeholder
-     below with the real Phase 1 convergence line; plan path → docs/archive/. -->
+## 2.6.0 — 2026-09-30 — review-diff exclusions
 
-Plan: `docs/review-diff-exclusions-2026-09-29.md` (design converged after 2
-`iterate-plan` passes, 5 → 0 HIGH+MEDIUM, 5 findings, none fold-caused).
+Plan: `docs/archive/review-diff-exclusions-2026-09-29.md` (design converged after 2
+`iterate-plan` passes, 5 → 0 HIGH+MEDIUM, 5 findings, none fold-caused;
+code review converged at pass 3 for Phase 0 and pass 8 for Phase 1, log
+`docs/archive/code-review-branch-kyle-review-diff-exclusions.md`).
 **Closes [issue #10](https://github.com/kaileconsulting/trinity-skills/issues/10).**
 
 **The problem.** Every lens got the whole diff, "unchanged", and on long
