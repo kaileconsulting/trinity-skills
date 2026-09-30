@@ -198,7 +198,7 @@ performed by the runner, deterministically.
    call per selected lens, concurrently** (all lens futures awaited; one
    lens failing never cancels its siblings), each writing
    `$STATE_DIR/pass-$N.<lensid>.response.json` with the exact sandbox flags
-   (`codex -a never exec -C <plan-dir> -s read-only --skip-git-repo-check
+   (`codex -a never exec -C <plan-dir> -m gpt-5.6-sol -s read-only --skip-git-repo-check
    --output-schema … --json --output-last-message … -`), then publishes
    `pass-$N.summary.json` last:
 

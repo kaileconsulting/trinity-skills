@@ -58,8 +58,16 @@ SKILL_NAME = Path(__file__).resolve().parent.parent.name
 # sandbox is a hard rule. One named constant so drift is a one-line diff.
 # --------------------------------------------------------------------------
 
+# The reviewer model is pinned, never inherited from codex's default: codex
+# 0.157.0 (2026-09-25) silently moved its default to gpt-6-astra, which drew
+# on the shared ChatGPT usage window at roughly 9x gpt-5.6-sol's rate per
+# input token. A pin also keeps "which model reviewed this" a property of
+# the skill version. Reasoning effort still comes from ~/.codex/config.toml.
+CODEX_MODEL = "gpt-5.6-sol"
+
 CODEX_BASE_ARGS = (
     "-a", "never", "exec",
+    "-m", CODEX_MODEL,
     "-s", "read-only",
     "--skip-git-repo-check",
 )
