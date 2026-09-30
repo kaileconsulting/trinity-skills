@@ -1,10 +1,8 @@
 # Changelog
 
-## 2.5.0 — unreleased — the simplification gate
+## 2.5.0 — 2026-09-30 — the simplification gate
 
-<!-- FINALIZE AT MERGE: replace "unreleased" with the merge date. -->
-
-Plan: `docs/simplification-gate-2026-09-28.md` (design converged after 5
+Plan: `docs/archive/simplification-gate-2026-09-28.md` (design converged after 5
 `iterate-plan` passes, 5 → 3 → 3 → 2 → 0 HIGH+MEDIUM, 13 findings, 7 of
 them fold-caused). **Closes
 [issue #6](https://github.com/kaileconsulting/trinity-skills/issues/6)**,

@@ -173,7 +173,7 @@ New: `tools/cluster_tracker.py`, `tools/check-cluster-streak.py` (wired into `to
 - The "no guardrail may consult `introduced_by_pass`" sentence is *still present* at the end of Phase 0: this phase collects, it does not gate.
 
 **Iterate-review:** YES (rationale: touches the fold path in both skills and adds a fixture-pinned tracker tool; wrong tagging rules silently under- or over-count streaks)
-**Status:** reviewed — built 2026-09-29 (`056f971`, `adf983c`, `62c1eb7`); iterate-review converged at pass 2 (1 HIGH folded in `5cc566f`: tracker outcomes split into mechanism events vs card answers, narrow/accept-risk resets card-answer-only; 1 wording correction in `9083cdf`); pass log `docs/reviews/code-review-branch-kyle-simplification-gate.md`
+**Status:** reviewed — built 2026-09-29 (`056f971`, `adf983c`, `62c1eb7`); iterate-review converged at pass 2 (1 HIGH folded in `5cc566f`: tracker outcomes split into mechanism events vs card answers, narrow/accept-risk resets card-answer-only; 1 wording correction in `9083cdf`); pass log `docs/archive/code-review-branch-kyle-simplification-gate.md`
 
 ### Phase 1 — Simplification decision card + checkpoint wiring (~5h)
 **Deliverables:**
@@ -201,20 +201,20 @@ New: `tools/cluster_tracker.py`, `tools/check-cluster-streak.py` (wired into `to
 - Closeout checklist below fully checked; plan archived.
 
 **Iterate-review:** NO (rationale: docs-only; no code surface to review)
-**Status:** drafted 2026-09-29 while Phase 1's review was blocked on the Codex limit (CHANGELOG 2.5.0 marked `unreleased` with FINALIZE comments, README guardrails + simplification-gate section + dev-checks rows, tools/README, issue #6 comment drafted in Closeout); re-sweep after Phase 1 converges
+**Status:** shipped 2026-09-30 (PR #11, merge `c74516a`); drafted 2026-09-29 while Phase 1's review was blocked on the Codex limit (CHANGELOG 2.5.0 marked `unreleased` with FINALIZE comments, README guardrails + simplification-gate section + dev-checks rows, tools/README, issue #6 comment drafted in Closeout); re-sweep after Phase 1 converges
 
 
 ## Acceptance criteria
 
-- [ ] Both skills tag findings with `[component: <label>]` under identical labeling rules, parity-pinned.
-- [ ] `tools/cluster_tracker.py` + `tools/check-cluster-streak.py` exist, pass, and are wired into `check-all.sh`.
-- [ ] State summaries at `summary_schema` 2 carry `components` (counts), `streaks`, `retired` and `cards`; schema-1 files still read; every §5 measure is demonstrated from state-file fixtures including a multi-finding label and a pending card.
-- [ ] Both installed skills state the threshold as a literal in their own SKILL.md; `check-cluster-streak.py` fails when either literal disagrees with the development constant or with the other file.
-- [ ] The simplification card fires at streak 3, before the fold, with all required fields, in both skills; "fold once more" is always an alternative and never the recommendation.
-- [ ] No path exists by which the gate stops a loop or removes a mechanism without a card being answered by a human.
-- [ ] Cap and stall cards show the cluster section.
-- [ ] `provenance-recipe.jq` answers the §5 measures from accumulated state files.
-- [ ] Issue #6 closed; CHANGELOG 2.5.0; README current.
+- [x] Both skills tag findings with `[component: <label>]` under identical labeling rules, parity-pinned.
+- [x] `tools/cluster_tracker.py` + `tools/check-cluster-streak.py` exist, pass, and are wired into `check-all.sh`.
+- [x] State summaries at `summary_schema` 2 carry `components` (counts), `streaks`, `retired` and `cards`; schema-1 files still read; every §5 measure is demonstrated from state-file fixtures including a multi-finding label and a pending card.
+- [x] Both installed skills state the threshold as a literal in their own SKILL.md; `check-cluster-streak.py` fails when either literal disagrees with the development constant or with the other file.
+- [x] The simplification card fires at streak 3, before the fold, with all required fields, in both skills; "fold once more" is always an alternative and never the recommendation.
+- [x] No path exists by which the gate stops a loop or removes a mechanism without a card being answered by a human.
+- [x] Cap and stall cards show the cluster section.
+- [x] `provenance-recipe.jq` answers the §5 measures from accumulated state files.
+- [x] Issue #6 closed; CHANGELOG 2.5.0; README current.
 
 ## Risks
 
@@ -262,18 +262,18 @@ Now, because: the data gate on issue #6 is met; the prose rule is live in Resear
 
 ## Closeout
 
-- [ ] Append entry to your project's milestones / changelog index (if you
+- [x] Append entry to your project's milestones / changelog index (if you
   keep one): one paragraph covering what shipped, the ship commit, key
   delta, and a link back to the archived plan path.
-- [ ] Update memory and/or project notes: mark plan completed, link to
+- [x] Update memory and/or project notes: mark plan completed, link to
   ship commits, update any related context files this plan touched.
-- [ ] Update any backlog / priority queue: remove if it was queued, or
+- [x] Update any backlog / priority queue: remove if it was queued, or
   mark closed inline.
-- [ ] Move plan to archive: `git mv docs/<plan>.md docs/archive/<plan>.md`.
-- [ ] Final commit with a "shipped" message referencing this plan.
-- [ ] Post the issue #6 closing comment below (update the ship commit and the archived path), then close #6.
-- [ ] ResearchLogix_v2 follow-up (done in that repo, not here): reduce `docs/hardening-playbook.md` §7's clustering paragraph to a pointer at the skills once 2.5.0 is installed there.
-- [ ] Next up: issue #10 (review-diff exclusions), drafted as its own plan while this PR was blocked on the Codex limit.
+- [x] Move plan to archive: `git mv docs/<plan>.md docs/archive/<plan>.md`. (Handoff prompt and review log moved beside it, per the v2.4 convention.)
+- [x] Final commit with a "shipped" message referencing this plan.
+- [x] Post the issue #6 closing comment below (update the ship commit and the archived path), then close #6. (#6 auto-closed by PR #11; comment posted 2026-09-30.)
+- [x] ResearchLogix_v2 follow-up noted (tracked in memory; the edit itself happens in that repo): reduce `docs/hardening-playbook.md` §7's clustering paragraph to a pointer at the skills once 2.5.0 is installed there.
+- [x] Next up: issue #10 (review-diff exclusions), drafted as its own plan while this PR was blocked on the Codex limit.
 
 <!-- DRAFT — issue #6 closing comment (post at merge):
 
@@ -317,9 +317,9 @@ workflows"). Single-page view of where each phase stands. -->
 
 | Phase | Iterate-review | Status | Last pass | Pass log |
 |-------|----------------|--------|-----------|----------|
-| Phase 0 | YES | reviewed — converged 2026-09-29 | pass 2 (APPROVE ×3) | `docs/reviews/code-review-branch-kyle-simplification-gate.md` |
-| Phase 1 | YES | reviewed — converged 2026-09-30 | pass 6 (APPROVE ×3) | `docs/reviews/code-review-branch-kyle-simplification-gate.md` |
-| Phase 2 | NO | not started | — | — |
+| Phase 0 | YES | reviewed — converged 2026-09-29 | pass 2 (APPROVE ×3) | `docs/archive/code-review-branch-kyle-simplification-gate.md` |
+| Phase 1 | YES | reviewed — converged 2026-09-30 | pass 6 (APPROVE ×3) | `docs/archive/code-review-branch-kyle-simplification-gate.md` |
+| Phase 2 | NO | shipped 2026-09-30 | n/a | n/a |
 
 ## Pre-flight review pass (the editor, YYYY-MM-DD) [HISTORICAL]
 
