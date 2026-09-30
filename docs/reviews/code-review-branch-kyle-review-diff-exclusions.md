@@ -173,7 +173,7 @@ Diff captured at 2026-09-30 11:38; head SHA `a2be51146af4efb5529498ec8f3a4872d09
 
 Continue after a narrowing (Kyle, 2026-09-30): "Narrow to plain paths, pass 6 after 15:18". HIGH+MEDIUM 6 → 3; 2 of 3 fold-caused (pass 4). Streaks: exclusion-disclosure 2, path-heuristic 2, diff-section-parser 2 (each one below the cluster threshold, 2,); exclusion-class-rules 0, path-heuristic-prose-pin 0. Passes 4–5 kept finding filename edge cases (backslash, non-UTF-8, control/bidi, `: `), so before pass 6 the editor proposed, and Kyle chose, narrowing classed `--exclude` to plain paths (printable ASCII, no backtick, backslash, double quote or `: `); anything else is refused and stays in review. Not a simplification card (no label reached 3); recorded here as the checkpoint decision, and pass 6 reviews the narrowed head. Cost: ~1.55M input tokens (one lens 1.46M), ~17% of the 5-hour window, ~2% weekly.
 
-## Pass 6 — 2026-09-30 15:24 [IN PROGRESS]
+## Pass 6 — 2026-09-30 15:24 [HISTORICAL]
 
 **Scope:** branch (excluded by hand, pre-feature: governing-plan docs/review-diff-exclusions-2026-09-29.md 374 lines; docs docs/review-diff-exclusions-2026-09-29.md.handoff-prompt.md 33 lines; pass-log docs/reviews/code-review-branch-kyle-review-diff-exclusions.md 174 lines) · **Diff size:** 2396 lines · **Scope class:** production · **Verdict:** REVISE (worst-of; no FAILED lenses) · **Posture:** used docs/review-diff-exclusions-2026-09-29.md · **Lenses:** senior-dev, security, qa
 
@@ -216,3 +216,7 @@ retired: docs-eligibility (removed at the pass-6 simplification card)
 ### Diff snapshot reference
 
 Diff captured at 2026-09-30 15:20; head SHA `ac44dc7cff710a0c9b12efa64da8115750d0cb5f`.
+
+### Checkpoint
+
+Continue, one pass (Kyle, 2026-09-30). HIGH+MEDIUM 6 (from 3); two simplification cards answered (docs-eligibility: remove → retired; exclusion-disclosure: narrow → streak 0). Streaks after the pass: path-heuristic 0, diff-section-parser 0, exclusion-disclosure 0 (card reset), plain-path-rule 1, scope-tag-validation 1, governing-plan-spec 1. Fold ecc571f net-shrank the diff (+468/−433). ResearchLogix was running reviews on the same quota.
