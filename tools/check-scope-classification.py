@@ -14,11 +14,42 @@ Usage:
 from __future__ import annotations
 
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from scope_classifier import classify  # noqa: E402
+from scope_classifier import (  # noqa: E402
+    NON_PRODUCTION_SEGMENTS, _ROOT_DOC_BASENAMES, classify)
+
+SKILL_MD = os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))), "iterate-review", "SKILL.md")
+
+
+def prose_agreement() -> list:
+    """Pins SKILL.md Setup step 3's prose to scope_classifier.py: the
+    prose names, in backticks, exactly the segments and root doc names the
+    code uses — both directions."""
+    with open(SKILL_MD, encoding="utf-8") as fh:
+        text = fh.read()
+    start = text.index("**Classify the diff")
+    step = text[start:text.index("**Worked examples:**", start)]
+    problems = []
+    named_segments = set(re.findall(r"`([a-z]+)`", step.split("a filename matching")[0]))
+    if named_segments != NON_PRODUCTION_SEGMENTS:
+        problems.append(f"segments: prose {sorted(named_segments)} vs code "
+                        f"{sorted(NON_PRODUCTION_SEGMENTS)}")
+    # The root doc list runs from "documentation filename" to its
+    # "(case-insensitive" qualifier; names are backticked, upper-case, and
+    # LICENSE/LICENCE is written `LICENSE`/`LICENCE`.
+    lo = step.index("documentation filename")
+    root_list = step[lo:step.index("(case-insensitive", lo)]
+    named_roots = {n.lower() for n in re.findall(r"`([A-Z][A-Z_]*)`", root_list)}
+    if named_roots != _ROOT_DOC_BASENAMES:
+        problems.append(f"root doc names: prose {sorted(named_roots)} vs code "
+                        f"{sorted(_ROOT_DOC_BASENAMES)}")
+    return problems
+
 
 CASES: list[tuple[str, list[str], str]] = [
     ("tests+docs-only diff (SKILL.md worked example 1)",
@@ -68,6 +99,8 @@ CASES: list[tuple[str, list[str], str]] = [
      ["README.en.md"], "non-production"),
     ("multi-extension root doc filename (generated variant)",
      ["CHANGELOG.generated.md"], "non-production"),
+    ("a literal backslash is a filename character, not a separator (git paths)",
+     ["src\\docs\\billing.py"], "production"),
 ]
 
 
@@ -80,13 +113,24 @@ def main() -> int:
         if got != want:
             failures.append(f"{label}: got {got!r}, want {want!r} (paths={paths})")
 
+    # The prose pin is its own check, counted separately from the cases.
+    prose = prose_agreement()
+    for problem in prose:
+        print(f"  FAIL  prose agreement: {problem}")
+    if not prose:
+        print("  ok    SKILL.md step 3 prose names exactly the code's segments and root doc names")
+    total = len(CASES) + 1
+    passed = len(CASES) - len(failures) + (0 if prose else 1)
+    failures += [f"SKILL.md step 3 prose disagrees with scope_classifier.py — {p}"
+                 for p in prose]
+
     print()
     if failures:
-        print(f"{len(CASES) - len(failures)}/{len(CASES)} passed")
+        print(f"{passed}/{total} passed")
         for f in failures:
             print(f"  FAILED: {f}")
         return 1
-    print(f"{len(CASES)}/{len(CASES)} passed")
+    print(f"{total}/{total} passed")
     return 0
 
 

@@ -20,7 +20,7 @@ The canonical assembly (pinned by the goldens in examples/composition/):
     <blank line>
     <intent text>
     === DIFF ===
-    <diff text>
+    <reviewed diff text — the diff minus runner-applied exclusions>
     === PRIOR PASSES ===
     <prior pass-log text, or "(none — this is pass 1)">
 
@@ -45,6 +45,7 @@ from pathlib import Path
 # (the fixture checkers do that).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import runner_shared as shared  # noqa: E402
+import selection_engine as sel  # noqa: E402
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 STATE_ROOT = SKILL_ROOT / "state"
@@ -60,7 +61,7 @@ class CompositionError(Exception):
     """A composition input could not be read/parsed. Message is user-facing."""
 
 
-SCOPE_TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+SCOPE_TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\Z")  # \Z: no trailing newline
 
 
 def validate_scope_tag(scope_tag: str) -> str:
@@ -258,6 +259,671 @@ def summarize_prior_passes(prior_text: str) -> dict:
         return {"count": 0, "first_pass_header": None}
     first_num, first_rest = matches[0]
     return {"count": len(matches), "first_pass_header": f"Pass {first_num} — {first_rest}"}
+
+
+# --------------------------------------------------------------------------
+# Diff sectioning + runner-applied exclusion (docs/review-diff-exclusions-*)
+# --------------------------------------------------------------------------
+#
+# Exclusion DELETES reviewed content, so this parser is strict where
+# selection_engine.parse_diff is best-effort: a wrong guess there changes
+# which lenses run; a wrong guess here would silently drop code from review.
+# Any doubt about any section's identity is a DiffParseError, and the caller
+# then excludes NOTHING (self-exclusion is skipped with a warning).
+#
+# Contract (plan §0): `git diff` output only — sections begin at a
+# `diff --git` line and run to the next one; default a/ b/ prefixes
+# required; C-style quoted paths decoded; a section is kept or removed as
+# raw text, never re-rendered; hunk-less sections (rename-only, mode-only,
+# binary) are sections like any other.
+
+class DiffParseError(Exception):
+    """A section's identity could not be established. Message is user-facing."""
+
+
+# Extended header lines git emits between `diff --git` and the first hunk.
+_HEADER_PREFIXES = (
+    "old mode ", "new mode ", "deleted file mode ", "new file mode ",
+    "similarity index ", "dissimilarity index ", "index ",
+)
+_HUNK_RE = re.compile(r"^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@")
+_QUOTED = r'"(?:[^"\\]|\\.)*"'
+
+
+def _split_lines(text: str) -> list:
+    """Split on "\n" ONLY, keeping the terminators. str.splitlines() would
+    also split on \r, \f, \x1c,   …, which can sit inside a diff
+    content line and would shift section boundaries."""
+    parts = text.split("\n")
+    lines = [part + "\n" for part in parts[:-1]]
+    if parts[-1]:
+        lines.append(parts[-1])
+    return lines
+
+
+# Git's C-quoting, exactly: the named escapes, or a three-digit octal byte
+# (\000-\377). Anything else — \544 would otherwise be masked to `d`,
+# aliasing another path — is not git output, so the section fails closed.
+_CANONICAL_C_QUOTED = re.compile(r'(?:[^"\\]|\\[\\"tnrabfv]|\\[0-3][0-7]{2})*\Z')
+
+
+def _decode_path(token: str) -> str:
+    if len(token) >= 2 and token.startswith('"') and token.endswith('"'):
+        if not _CANONICAL_C_QUOTED.match(token[1:-1]):
+            raise DiffParseError(
+                f"path {token!r} uses an escape git never writes; its "
+                f"identity can't be established exactly")
+        try:
+            # Strict: octal escapes that aren't valid UTF-8 would otherwise
+            # decode lossily, and two distinct files could share one identity.
+            return sel._unquote_c(token[1:-1], errors="strict")
+        except UnicodeDecodeError:
+            raise DiffParseError(
+                f"path {token!r} carries non-UTF-8 bytes; its identity can't "
+                f"be represented exactly") from None
+    return token
+
+
+def _strip_side(path: str, side: str, where: str) -> str:
+    if not path.startswith(side + "/"):
+        raise DiffParseError(
+            f"{where}: path {path!r} lacks the default {side}/ prefix")
+    return path[len(side) + 1:]
+
+
+def _parse_git_line(line: str):
+    """(old, new) from `diff --git <a> <b>`, or None when the unquoted form
+    is ambiguous (git does not quote spaces, so `a/x y b/z w` has several
+    readings). The unambiguous unquoted form is `a/P b/P`; a rename's exact
+    paths come from its `rename from`/`rename to` lines instead."""
+    rest = line[len("diff --git "):].rstrip("\n")
+    m = re.match(rf"^({_QUOTED}|\S+) ({_QUOTED}|\S+)$", rest)
+    if m:
+        old, new = (_decode_path(t) for t in m.groups())
+        return (_strip_side(old, "a", "diff --git"),
+                _strip_side(new, "b", "diff --git"))
+    if rest.startswith("a/") and (len(rest) - 5) % 2 == 0:
+        half = (len(rest) - 5) // 2
+        p = rest[2:2 + half]
+        if rest == f"a/{p} b/{p}":
+            return p, p
+    if rest.startswith('"') or rest.endswith('"'):
+        raise DiffParseError(f"unparseable diff --git line: {line.rstrip()!r}")
+    return None
+
+
+def _header_path(payload: str, side: str):
+    """`---`/`+++` payload → repo path, or None for /dev/null."""
+    payload = payload.rstrip("\n")
+    if "\t" in payload and not payload.startswith('"'):
+        payload = payload.split("\t", 1)[0]
+    payload = _decode_path(payload)
+    if payload == "/dev/null":
+        return None
+    return _strip_side(payload, side, f"{'---' if side == 'a' else '+++'} line")
+
+
+_UNSET = object()
+_NO_NEWLINE = "\\ No newline at end of file"
+# git's base85 alphabet; a payload line is <length char><5 chars per 4 bytes>.
+_B85_LINE = re.compile(r"^[A-Za-z][0-9A-Za-z!#$%&()*+\-;<=>?@^_`{|}~]+$")
+_BINARY_BLOCK = re.compile(r"^(?:literal|delta) \d+$")
+
+
+def _check_binary_patch(lines: list, i: int, head: str) -> None:
+    """`GIT binary patch` payload: one or two blocks, each `literal N` or
+    `delta N`, base85 lines whose length character matches their width,
+    then a blank line — and nothing else up to the next section."""
+    n = len(lines)
+    blocks = 0
+    while i < n:
+        if not _BINARY_BLOCK.match(lines[i].rstrip("\n")):
+            raise DiffParseError(
+                f"malformed binary patch block header {lines[i].rstrip()[:80]!r}")
+        i += 1
+        payload = 0
+        while i < n and lines[i] != "\n":
+            ln = lines[i].rstrip("\n")
+            if not _B85_LINE.match(ln):
+                raise DiffParseError(f"malformed binary patch line in {head.rstrip()!r}")
+            c = ln[0]
+            nbytes = ord(c) - 64 if c <= "Z" else ord(c) - 96 + 26
+            if len(ln) - 1 != (nbytes + 3) // 4 * 5:
+                raise DiffParseError(f"binary patch line width mismatch in {head.rstrip()!r}")
+            payload += 1
+            i += 1
+        if payload == 0 or i >= n:
+            raise DiffParseError(f"unterminated binary patch block in {head.rstrip()!r}")
+        i += 1
+        blocks += 1
+    if blocks not in (1, 2):
+        raise DiffParseError(f"binary patch has {blocks} blocks in {head.rstrip()!r}")
+
+
+def _binary_marker_confirms(line: str, old, new) -> bool:
+    """`Binary files <a> and <b> differ` names exactly the resolved
+    endpoints. Paths may themselves contain " and ", so every split is
+    tried and exactly one must match."""
+    body = line.rstrip("\n")
+    if not (body.startswith("Binary files ") and body.endswith(" differ")):
+        return False
+    mid = body[len("Binary files "):-len(" differ")]
+    want = ("/dev/null" if old is None else f"a/{old}",
+            "/dev/null" if new is None else f"b/{new}")
+    hits, k = 0, mid.find(" and ")
+    while k >= 0:
+        if (_decode_path(mid[:k]), _decode_path(mid[k + 5:])) == want:
+            hits += 1
+        k = mid.find(" and ", k + 1)
+    return hits == 1
+
+
+def _agree(current, value, what: str):
+    if current is not _UNSET and current != value:
+        raise DiffParseError(
+            f"section identity conflict on {what}: {current!r} vs {value!r}")
+    return value
+
+
+def _parse_section(lines: list) -> dict:
+    """Identity of one section: {old_path, new_path, modes, text, lines},
+    where a None endpoint is /dev/null (the missing side of an add or
+    delete) and `modes` is {"old", "new"} — each endpoint's git object
+    mode (100644, 100755, 120000 symlink, 160000 gitlink) where the header
+    states it, else None."""
+    head = lines[0]
+    git_pair = _parse_git_line(head)
+    old = new = _UNSET
+    moved_old = moved_new = _UNSET
+    created = deleted = False
+    minus = plus = _UNSET
+    old_mode = new_mode = None
+    i = 1
+
+    def mode_agree(current, value, where):
+        if not re.fullmatch(r"[0-7]{6}", value):
+            raise DiffParseError(f"malformed mode {value!r} in {head.rstrip()!r}")
+        if current is not None and current != value:
+            raise DiffParseError(
+                f"conflicting {where} modes ({current} vs {value}) in "
+                f"{head.rstrip()!r}")
+        return value
+    n = len(lines)
+    # Extended header.
+    while i < n:
+        ln = lines[i].rstrip("\n")
+        if ln.startswith(("rename from ", "copy from ")):
+            moved_old = _agree(moved_old, _decode_path(ln.split(" from ", 1)[1]),
+                               "rename/copy source")
+        elif ln.startswith(("rename to ", "copy to ")):
+            moved_new = _agree(moved_new, _decode_path(ln.split(" to ", 1)[1]),
+                               "rename/copy target")
+        elif ln.startswith("new file mode "):
+            created = True
+            new_mode = mode_agree(new_mode, ln.rsplit(" ", 1)[1], "new")
+        elif ln.startswith("deleted file mode "):
+            deleted = True
+            old_mode = mode_agree(old_mode, ln.rsplit(" ", 1)[1], "old")
+        elif ln.startswith("old mode "):
+            old_mode = mode_agree(old_mode, ln.rsplit(" ", 1)[1], "old")
+        elif ln.startswith("new mode "):
+            new_mode = mode_agree(new_mode, ln.rsplit(" ", 1)[1], "new")
+        elif ln.startswith("index "):
+            parts = ln.split(" ")
+            if len(parts) == 3:  # `index a..b <mode>`: mode unchanged
+                old_mode = mode_agree(old_mode, parts[2], "old")
+                new_mode = mode_agree(new_mode, parts[2], "new")
+        elif ln.startswith(_HEADER_PREFIXES):
+            pass
+        else:
+            break
+        i += 1
+    # Body: ---/+++ then hunks, or a binary marker, or nothing.
+    body_kind = "none"
+    binary_marker = None
+    if i < n and lines[i].startswith("--- "):
+        if i + 1 >= n or not lines[i + 1].startswith("+++ "):
+            raise DiffParseError(f"'---' without '+++' in section {head.rstrip()!r}")
+        minus = _header_path(lines[i][4:], "a")
+        plus = _header_path(lines[i + 1][4:], "b")
+        i += 2
+        body_kind = "hunks"
+    elif i < n and lines[i].startswith("Binary files "):
+        if i + 1 != n:
+            raise DiffParseError(
+                f"unexpected content after 'Binary files' in {head.rstrip()!r}")
+        binary_marker = lines[i]
+        i = n
+        body_kind = "binary"
+    elif i < n and lines[i].rstrip("\n") == "GIT binary patch":
+        _check_binary_patch(lines, i + 1, head)
+        i = n
+        body_kind = "binary"
+    if body_kind == "hunks":
+        if i >= n:
+            raise DiffParseError(f"no hunks after file headers in {head.rstrip()!r}")
+        while i < n:
+            m = _HUNK_RE.match(lines[i])
+            if not m:
+                raise DiffParseError(
+                    f"expected a hunk header, got {lines[i].rstrip()[:80]!r}")
+            old_left = int(m.group(1)) if m.group(1) is not None else 1
+            new_left = int(m.group(2)) if m.group(2) is not None else 1
+            i += 1
+            after_content = False  # a no-newline marker may follow one content line
+            while old_left > 0 or new_left > 0:
+                if i >= n:
+                    raise DiffParseError(f"truncated hunk in {head.rstrip()!r}")
+                c = lines[i][:1]
+                if c == "\\":
+                    if not after_content or lines[i].rstrip("\n") != _NO_NEWLINE:
+                        raise DiffParseError(
+                            f"malformed or misplaced '\\' line in {head.rstrip()!r}")
+                    after_content = False
+                    i += 1
+                    continue
+                after_content = True
+                if c == " ":
+                    old_left -= 1
+                    new_left -= 1
+                elif c == "-":
+                    old_left -= 1
+                elif c == "+":
+                    new_left -= 1
+                else:
+                    raise DiffParseError(
+                        f"malformed hunk line {lines[i].rstrip()[:80]!r}")
+                if old_left < 0 or new_left < 0:
+                    raise DiffParseError(f"hunk overruns its header in {head.rstrip()!r}")
+                i += 1
+            if i < n and after_content and lines[i].rstrip("\n") == _NO_NEWLINE:
+                i += 1  # the hunk's last line had no trailing newline
+    elif body_kind == "none" and i < n:
+        raise DiffParseError(
+            f"unrecognized line {lines[i].rstrip()[:80]!r} in {head.rstrip()!r}")
+
+    # Resolve endpoints: every present source must agree.
+    if git_pair is not None:
+        old = _agree(old, git_pair[0], "old path")
+        new = _agree(new, git_pair[1], "new path")
+    if moved_old is not _UNSET or moved_new is not _UNSET:
+        if moved_old is _UNSET or moved_new is _UNSET:
+            raise DiffParseError(f"half a rename/copy header in {head.rstrip()!r}")
+        old = _agree(old, moved_old, "old path")
+        new = _agree(new, moved_new, "new path")
+    if minus is not _UNSET and minus is not None:
+        old = _agree(old, minus, "old path")
+    if plus is not _UNSET and plus is not None:
+        new = _agree(new, plus, "new path")
+    if old is _UNSET or new is _UNSET:
+        raise DiffParseError(f"ambiguous section paths in {head.rstrip()!r}")
+    if created and deleted:
+        raise DiffParseError(f"section both creates and deletes: {head.rstrip()!r}")
+    if (created or deleted) and (moved_old is not _UNSET or old != new):
+        # An add or delete has ONE real path; nulling a side of a rename or
+        # copy would silently erase its other endpoint.
+        raise DiffParseError(
+            f"file created/deleted and moved in one section: {head.rstrip()!r}")
+    if minus is not _UNSET and ((minus is None) != created
+                                or (plus is None) != deleted):
+        raise DiffParseError(
+            f"/dev/null header disagrees with file mode in {head.rstrip()!r}")
+    if created:
+        old = None
+    if deleted:
+        new = None
+    if binary_marker is not None and not _binary_marker_confirms(
+            binary_marker, old, new):
+        raise DiffParseError(
+            f"'Binary files' paths disagree with the section in {head.rstrip()!r}")
+    if (created and old_mode is not None) or (deleted and new_mode is not None):
+        raise DiffParseError(
+            f"a mode for the missing side of an add/delete in {head.rstrip()!r}")
+    return {"old_path": old, "new_path": new,
+            "modes": {"old": old_mode, "new": new_mode},
+            "text": "".join(lines), "lines": len(lines)}
+
+
+def parse_diff_sections(diff: str) -> list:
+    """Split a `git diff` into identified sections (plan §0). Raises
+    DiffParseError unless EVERY section's identity is established — there
+    is no partial result, because a partial one could only be used to
+    exclude on a guess."""
+    lines = _split_lines(diff)
+    starts = [i for i, ln in enumerate(lines) if ln.startswith("diff --git ")]
+    if not starts:
+        raise DiffParseError("no 'diff --git' sections (not git diff output)")
+    if starts[0] != 0:
+        # Not even whitespace: it would be dropped on rejoin (raw text, §0).
+        raise DiffParseError("content before the first 'diff --git' line")
+    bounds = starts + [len(lines)]
+    return [_parse_section(lines[a:b]) for a, b in zip(bounds, bounds[1:])]
+
+
+def count_lines(text: str) -> int:
+    return len(_split_lines(text))
+
+
+def apply_self_exclusion(diff: str, log_rel):
+    """Drop the pass log's own sections (plan §1) and nothing else: the
+    no-`--exclude` case of apply_exclusions. Returns (reviewed_diff,
+    excluded, warnings).
+
+    A section is dropped ONLY when every endpoint that exists is the log
+    itself — added, modified, mode-changed or deleted in place. A rename or
+    copy whose other endpoint is any other path stays in review, whole,
+    with a warning. `log_rel` is the log's repo-relative POSIX path, or
+    None when there is no trusted log slot (nothing is excluded then).
+    Unparseable input excludes nothing and says so: never best-effort."""
+    return apply_exclusions(diff, log_rel, [], "")
+
+
+# --------------------------------------------------------------------------
+# Classed editor exclusions (plan §2): --exclude <class>:<path-or-glob>
+# --------------------------------------------------------------------------
+
+class ExclusionError(Exception):
+    """An --exclude request the runner refuses. Always fatal before fan-out:
+    a refused exclusion is never downgraded to "review it anyway" silently,
+    because the editor asked for something the rules forbid. Message is
+    user-facing."""
+
+
+EXCLUDE_CLASSES = ("governing-plan", "generated")
+GOVERNING_PLAN_RE = re.compile(r"^Governing-plan: (\S(?:.*\S)?)$", re.MULTILINE)
+EXCLUDED_SUMMARY_HEADER = "=== EXCLUDED SUMMARY ==="
+_GLOB_CHARS = set("*?")  # the runner's globs have no character classes
+
+
+def parse_exclude_specs(raw: list) -> list:
+    """`<class>:<path-or-glob>` strings → [(class, pattern)], in the order
+    given. Unknown classes and empty patterns are refused."""
+    specs = []
+    for item in raw or []:
+        cls, sep, pattern = item.partition(":")
+        if not sep or not pattern:
+            raise ExclusionError(
+                f"--exclude {item!r}: expected <class>:<path-or-glob>")
+        if cls not in EXCLUDE_CLASSES:
+            raise ExclusionError(
+                f"--exclude {item!r}: unknown class {cls!r} "
+                f"(known: {', '.join(EXCLUDE_CLASSES)})")
+        specs.append((cls, pattern))
+    return specs
+
+
+def _governing_plan(intent: str):
+    lines = GOVERNING_PLAN_RE.findall(intent)
+    if len(lines) != 1:
+        raise ExclusionError(
+            f"--exclude governing-plan needs exactly one 'Governing-plan: "
+            f"<repo-relative path>' line in the intent; found {len(lines)}")
+    return lines[0]
+
+
+def _excluded_summary(intent: str) -> list:
+    """The intent's `=== EXCLUDED SUMMARY ===` block's entries, each the
+    text after `- `. Entries are `- <path>: <audited property>`, one per line, up to the next
+    blank line or `===` header. Exactly one block is allowed. Entries are
+    kept raw and matched by _audit_entry(), which refuses any path
+    containing the ': ' delimiter rather than guess which entry binds it."""
+    lines = intent.split("\n")
+    starts = [i for i, ln in enumerate(lines) if ln == EXCLUDED_SUMMARY_HEADER]
+    if len(starts) != 1:
+        raise ExclusionError(
+            f"--exclude generated needs exactly one '{EXCLUDED_SUMMARY_HEADER}' "
+            f"block in the intent; found {len(starts)}")
+    entries = []
+    for ln in lines[starts[0] + 1:]:
+        if not ln.strip() or ln.startswith("==="):
+            break
+        if not ln.startswith("- "):
+            raise ExclusionError(
+                f"malformed {EXCLUDED_SUMMARY_HEADER} line {ln[:80]!r}: "
+                f"expected '- <path>: <audited property>'")
+        entries.append(ln[2:])
+    return entries
+
+
+def _audit_entry(entries: list, path: str):
+    """The non-empty audited property recorded for exactly `path`, or None.
+    `path` is plain (_PLAIN_PATH), so it never contains the ": " delimiter
+    and entry `a: b: x` can bind only to `a`."""
+    found = [e[len(path) + 2:].strip() for e in entries
+             if e.startswith(path + ": ")]
+    if len(found) != 1 or not found[0]:
+        return None
+    return found[0]
+
+
+# Classed exclusions take PLAIN paths only: printable ASCII, no backtick
+# (it would break the code span the path is disclosed in), backslash or
+# double quote (C-quoting territory), and no ": " (the EXCLUDED SUMMARY
+# entry delimiter). Anything else is refused and stays in review. One rule
+# instead of a patch per filename trick (Phase 1 review, pass-5
+# checkpoint): decoding, control and bidi characters, markdown-breaking
+# and delimiter-bearing names can't reach an exclusion at all.
+_PLAIN_PATH = re.compile(r"^(?:(?!: )[ !#-\[\]-_a-~])+\Z")  # \Z, not $: no trailing newline
+
+
+def _is_plain(path: str) -> bool:
+    """_PLAIN_PATH, and no path component that is empty or starts or ends
+    with a space: a markdown code span strips a paired leading/trailing
+    space, so ` plan.lock ` would display as `plan.lock`."""
+    return bool(_PLAIN_PATH.match(path)) and all(
+        part and part == part.strip(" ") for part in path.split("/"))
+
+
+# Audit properties are plain text too: printable ASCII without a backtick,
+# shown inside a code span, so nothing in them can render as markdown or
+# HTML in the pass header (Phase 1 review, pass-6 simplification card).
+_PLAIN_TEXT = re.compile(r"^[ -_a-~]+\Z")
+
+
+def apply_exclusions(diff: str, log_rel, specs: list, intent: str):
+    """Pass-log self-exclusion plus the editor's classed exclusions (plan
+    §1–§2). Returns (reviewed_diff, excluded, warnings); raises
+    ExclusionError for anything the class rules refuse.
+
+    With no specs this is exactly apply_self_exclusion (an unparseable diff
+    just skips self-exclusion). With specs, an unparseable diff aborts: an
+    explicit request is never silently dropped (§0).
+
+    Each section is decided by the FIRST spec (command-line order) whose
+    pattern matches any of its existing endpoints:
+    - one real path (added, modified, deleted): the class rule must hold
+      for it, or the request is refused;
+    - two distinct endpoints (rename/copy): excluded only if both match the
+      pattern and satisfy the rule; otherwise it stays in review, whole,
+      with a warning — a crossing rename is kept, never refused.
+    Class rules: `governing-plan` matches only the one path on the intent's
+    `Governing-plan:` line, and it must be a regular, non-executable `.md`
+    blob (mode 100644 at every existing endpoint); `generated` needs a
+    non-empty plain-text `- <path>: <property>` audit entry per endpoint in
+    the intent's EXCLUDED SUMMARY block. Matched paths must be plain
+    (_PLAIN_PATH). A spec matching no section at all is refused. (A `docs`
+    class existed during Phase 1's review and was removed at its pass-6
+    simplification card: "is this documentation?" kept drawing findings.)"""
+    if log_rel is None and not specs:
+        return diff, [], []
+    try:
+        sections = parse_diff_sections(diff)
+    except DiffParseError as exc:
+        if specs:
+            raise ExclusionError(
+                f"--exclude needs a diff the runner can section exactly, and "
+                f"this one can't be ({exc}); nothing was excluded") from None
+        return diff, [], [
+            f"pass-log self-exclusion skipped — the diff could not be "
+            f"sectioned exactly ({exc}); the diff is reviewed unchanged"]
+
+    plan_path = audit = None
+    matchers = []
+    for cls, pattern in specs:
+        if cls == "governing-plan":
+            plan_path = plan_path or _governing_plan(intent)
+            if _GLOB_CHARS & set(pattern) or pattern != plan_path:
+                raise ExclusionError(
+                    f"--exclude governing-plan:{pattern}: must name exactly "
+                    f"the intent's Governing-plan: path ({plan_path})")
+            rx = re.compile(re.escape(pattern) + r"\Z")
+        else:
+            if cls == "generated" and audit is None:
+                audit = _excluded_summary(intent)
+            rx = sel.glob_to_regex(pattern)
+        matchers.append((cls, pattern, rx))
+
+    def rule_holds(cls, path, sec):
+        if cls == "generated":
+            return _audit_entry(audit, path) is not None
+        # Each side's own mode: an in-place change has one path but two
+        # modes, and both must be a regular, non-executable blob.
+        modes = [sec["modes"][side] for side in ("old", "new")
+                 if sec[f"{side}_path"] == path]
+        return (path.lower().endswith(".md") and bool(modes)
+                and all(m == "100644" for m in modes))
+
+    used = set()
+    kept, excluded, warnings = [], [], []
+    for sec in sections:
+        ends = [p for p in (sec["old_path"], sec["new_path"]) if p is not None]
+        distinct = sorted(set(ends))
+        matching = [(idx, [p for p in distinct if rx.match(p)])
+                    for idx, (_c, _p, rx) in enumerate(matchers)]
+        used.update(idx for idx, hits in matching if hits)
+        if log_rel is not None and distinct == [log_rel]:
+            excluded.append({"old_path": sec["old_path"],
+                             "new_path": sec["new_path"],
+                             "class": "pass-log", "lines": sec["lines"]})
+            continue
+        if log_rel is not None and log_rel in distinct:
+            warnings.append(
+                f"pass log {log_rel} is renamed or copied to/from "
+                f"{', '.join(p for p in distinct if p != log_rel)} — that "
+                f"section crosses the log's boundary, so pass-log "
+                f"self-exclusion skips it (only an explicit --exclude spec "
+                f"could still remove it)")
+        decided = next(((idx, hits) for idx, hits in matching if hits), None)
+        if decided is None:
+            kept.append(sec["text"])
+            continue
+        cls, pattern, _rx = matchers[decided[0]]
+        hits = decided[1]
+        odd = [p for p in hits if not _is_plain(p)]
+        if odd:
+            raise ExclusionError(
+                f"--exclude {cls}:{pattern}: {odd[0]!r} is not a plain path "
+                f"(printable ASCII without backtick, backslash, double quote "
+                f"or ': ', no component starting or ending with a space); "
+                f"classed exclusion takes plain paths only, so it "
+                f"stays in review — drop or narrow the spec")
+        crossing = len(hits) != len(distinct) or not all(
+            _is_plain(p) for p in distinct)
+        if not crossing:
+            failed = [p for p in distinct if not rule_holds(cls, p, sec)]
+            if failed:
+                why = ("has no non-empty audit entry in the intent's "
+                       f"{EXCLUDED_SUMMARY_HEADER} block"
+                       if cls == "generated" else
+                       "is not a regular, non-executable .md file (mode "
+                       "100644 on every side)")
+                raise ExclusionError(
+                    f"--exclude {cls}:{pattern}: {failed[0]} {why}; refused")
+        else:
+            # Only a real crossing — an endpoint the spec didn't match, or
+            # one that isn't plain — is kept rather than refused. repr: an
+            # unmatched endpoint may be anything, so it is never shown raw.
+            warnings.append(
+                f"--exclude {cls}:{pattern}: "
+                f"{' → '.join(repr(p) for p in dict.fromkeys(ends))} is a "
+                f"rename/copy "
+                f"crossing out of the class; that section stays in review, "
+                f"whole")
+            kept.append(sec["text"])
+            continue
+        entry = {"old_path": sec["old_path"], "new_path": sec["new_path"],
+                 "class": cls, "lines": sec["lines"]}
+        if cls == "generated":
+            entry["audit"] = {p: _audit_entry(audit, p)
+                              for p in dict.fromkeys(ends)}  # old, then new
+        # The disclosure is the trust boundary: nothing excluded may be
+        # able to forge or hide its own line in the pass header or stderr.
+        # Paths are already plain; the editor's audit text must be too.
+        for text in (entry.get("audit") or {}).values():
+            if not _PLAIN_TEXT.match(text):
+                raise ExclusionError(
+                    f"--exclude {cls}:{pattern}: audit property {text!r} is "
+                    f"not plain text (printable ASCII without a backtick), "
+                    f"so it can't be shown safely in the pass header; "
+                    f"refused")
+        excluded.append(entry)
+    unused = [f"{cls}:{pattern}" for idx, (cls, pattern, _rx)
+              in enumerate(matchers) if idx not in used]
+    if unused:
+        raise ExclusionError(
+            f"--exclude {', '.join(unused)}: matches no path in the diff "
+            f"(both endpoints, deleted paths included); refused")
+    if not excluded:
+        return diff, [], warnings
+    return "".join(kept), excluded, warnings
+
+
+def self_exclusion_target(scope_tag: str, log_path: Path, repo_root: Path,
+                          overridden: bool):
+    """(log_rel, warnings) for apply_self_exclusion. Only the DEFAULT slot,
+    docs/reviews/code-review-<scope-tag>.md, is trusted to be this review's
+    own log, and only LEXICALLY: an override merely has to be an in-repo .md
+    file, and a default slot reached through a symlink (the file or any
+    parent) can point anywhere in the repo — either would let a production
+    markdown path, even one the diff deletes, be dropped as "pass-log".
+    So the excluded path is always the literal slot, and it is used only
+    when the resolved log (`log_path`, already realpath'd by the caller) is
+    that very slot. Anything else excludes nothing."""
+    if overridden:
+        return None, [
+            "pass-log self-exclusion is off for a --log-path override (only "
+            "the default docs/reviews/code-review-<scope-tag>.md is trusted "
+            "as this review's own log); the pass log's own sections stay "
+            "in review"]
+    slot = f"{Path(PASS_LOG_DIRNAME).as_posix()}/code-review-{scope_tag}.md"
+    real_slot = os.path.join(os.path.realpath(str(repo_root)), *slot.split("/"))
+    if os.path.realpath(str(log_path)) != real_slot:
+        return None, [
+            f"pass-log self-exclusion is off: the default log slot {slot} "
+            f"resolves through a symlink to {log_path}; only the slot itself "
+            f"is trusted as this review's own log, so the pass log's own "
+            f"sections stay in review"]
+    return slot, []
+
+
+def disclosure(entry: dict) -> str:
+    """One `excluded` entry as the human reads it — the pass header's Scope
+    suffix (SKILL.md step 12) and the all-excluded stderr alike: `<class>
+    `<path>` <N> lines[ — <audit>]`, the path in backticks (a code span, so
+    markdown in a filename renders literally), a rename/copy as
+    `` `old` → `new` ``, and a two-endpoint `generated` entry with each
+    endpoint's own audit, each in a code span too. apply_exclusions()
+    admits only plain paths and plain audit text, so no code span can be
+    broken out of."""
+    old, new = entry["old_path"], entry["new_path"]
+    where = (f"`{old}` → `{new}`" if old and new and old != new
+             else f"`{new or old}`")
+    text = f"{entry['class']} {where} {entry['lines']} lines"
+    audit = entry.get("audit") or {}
+    if len(audit) == 1:
+        text += f" — `{next(iter(audit.values()))}`"
+    elif audit:
+        text += " — " + " / ".join(f"`{p}`: `{v}`" for p, v in audit.items())
+    return text
+
+
+def excluded_stderr(prog: str, excluded: list) -> str:
+    """The disclosure for a diff that exclusions emptied entirely (plan §4):
+    no pass is created, so stderr is where it lives."""
+    lines = [f"{prog}: nothing left to review after exclusions — removed:"]
+    for e in excluded:
+        lines.append(f"{prog}:   {disclosure(e)}")
+    return "\n".join(lines) + "\n"
 
 
 # --------------------------------------------------------------------------

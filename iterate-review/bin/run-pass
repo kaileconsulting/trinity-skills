@@ -68,6 +68,12 @@ def build_parser():
                    help="pass-log override; default is <repo-root>/docs/reviews/code-review-<scope-tag>.md")
     p.add_argument("--lenses", default=None,
                    help="comma-separated lens ids to force, overriding deterministic selection")
+    p.add_argument("--exclude", action="append", default=[],
+                   metavar="CLASS:PATH-OR-GLOB",
+                   help="leave a path out of the reviewed diff, by class "
+                        "(governing-plan | generated); repeatable. "
+                        "Refused, before any Codex call, unless the class's "
+                        "rule holds — see SKILL.md step 9")
     return p
 
 
@@ -137,6 +143,31 @@ def main(argv=None):
     shash = rr.scope_hash(args.scope_tag, log_path)
     state_dir = rr.STATE_ROOT / shash
 
+    # Two diffs from here on (plan §3): the ORIGINAL feeds lens selection,
+    # the REVIEWED one (original minus runner-applied exclusions) feeds
+    # composition only — an exclusion can never trim a lens.
+    log_rel, target_warnings = rr.self_exclusion_target(
+        args.scope_tag, log_path, repo_root,
+        overridden=args.log_path is not None)
+    try:
+        reviewed_text, excluded, excl_warnings = rr.apply_exclusions(
+            diff_text, log_rel, rr.parse_exclude_specs(args.exclude),
+            intent_text)
+    except rr.ExclusionError as exc:
+        sys.stderr.write(f"run-pass: {exc}\n")
+        return EXIT_ERROR
+    warnings = warnings + target_warnings + excl_warnings
+    if not reviewed_text.strip():
+        # The empty-diff contract: no summary, no pass number consumed —
+        # the disclosure lives on stderr for the editor to relay.
+        sys.stderr.write(rr.excluded_stderr("run-pass", excluded))
+        return EXIT_ERROR
+    exclusion_fields = {
+        "excluded": excluded,
+        "diff_lines": {"original": rr.count_lines(diff_text),
+                       "reviewed": rr.count_lines(reviewed_text)},
+    }
+
     try:
         lens_ids, reasons = select_lenses(diff_text, args.lenses)
         prior = rr.read_prior_passes(log_path, args.scope_tag,
@@ -168,7 +199,7 @@ def main(argv=None):
         def one(lens_id):
             input_path = state_dir / f"pass-{pass_num}.{lens_id}.input.txt"
             response_path = state_dir / f"pass-{pass_num}.{lens_id}.response.json"
-            return rr.run_one_lens(lens_id, intent_text, diff_text, prior,
+            return rr.run_one_lens(lens_id, intent_text, reviewed_text, prior,
                                    input_path, response_path, lock=lock)
 
         # All lens futures are awaited; one lens failing never cancels its
@@ -207,7 +238,7 @@ def main(argv=None):
         # errors immediately afterwards.
         _summary_file, summary_text = shared.publish_summary(
             lock, state_dir, pass_num, shash, log_path, warnings, entries,
-            prior_passes=prior_passes)
+            prior_passes=prior_passes, extra=exclusion_fields)
     except shared.LockError as exc:
         sys.stderr.write(f"run-pass: {exc}\n")
         return EXIT_ERROR

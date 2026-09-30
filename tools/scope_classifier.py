@@ -5,10 +5,11 @@ Classification is **editor-side, deliberate loop-control judgment** — the
 runner never decides it, and nothing in `bin/` calls this module at
 runtime. It exists purely so the written path heuristic has an
 executable, fixture-pinned form instead of living only in prose; see
-`check-scope-classification.py`. If you change the heuristic here,
-update `iterate-review/SKILL.md`'s Setup step 3 in the same commit (and
-vice versa) — this module is a mirror of that prose, not its source of
-truth.
+`check-scope-classification.py`, which also checks that SKILL.md step 3
+names exactly the segments and root doc names below. If you change the
+heuristic here, update `iterate-review/SKILL.md`'s Setup step 3 in the
+same commit (and vice versa) — this module is a mirror of that prose, not
+its source of truth.
 """
 
 from __future__ import annotations
@@ -39,9 +40,16 @@ _ROOT_DOC_BASENAMES = {
 }
 
 
-def _path_is_non_production(path: str) -> bool:
-    parts = path.replace("\\", "/").split("/")
-    segments, filename = parts[:-1], parts[-1] if parts else ""
+def _split(path: str):
+    """Git's separator is `/` and only `/`: a backslash in a diff path is a
+    literal filename character (git C-quotes it), never a directory break,
+    so `src\\docs\\billing.py` is one root-level file with no `docs` segment."""
+    parts = path.split("/")
+    return parts[:-1], parts[-1] if parts else ""
+
+
+def is_non_production(path: str) -> bool:
+    segments, filename = _split(path)
     if any(seg.lower() in NON_PRODUCTION_SEGMENTS for seg in segments):
         return True
     if any(p.match(filename) for p in _TEST_FILENAME_PATTERNS):
@@ -67,6 +75,6 @@ def classify(paths) -> str:
     paths = list(paths)
     if not paths:
         return "production"
-    if all(_path_is_non_production(p) for p in paths):
+    if all(is_non_production(p) for p in paths):
         return "non-production"
     return "production"

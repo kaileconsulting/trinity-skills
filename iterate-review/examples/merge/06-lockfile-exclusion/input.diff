@@ -1,0 +1,67 @@
+diff --git a/composer.lock b/composer.lock
+index 7c94d91..a9492b3 100644
+--- a/composer.lock
++++ b/composer.lock
+@@ -2,10 +2,10 @@
+     "packages": [
+         {
+             "name": "guzzlehttp/guzzle",
+-            "version": "7.9.2",
++            "version": "7.10.0",
+             "dist": {
+                 "type": "zip",
+-                "url": "https://api.github.com/repos/guzzle/guzzle/zipball/d281ed313b989f213357e3be1a179f02196ac99b"
++                "url": "https://api.github.com/repos/guzzle/guzzle/zipball/b4c8a1e0f0d3c2a9e7f6b5d4c3b2a1f0e9d8c7b6"
+             }
+         }
+     ]
+diff --git a/docs/development-history.md b/docs/development-history.md
+index 3352a8d..5d01416 100644
+--- a/docs/development-history.md
++++ b/docs/development-history.md
+@@ -3,3 +3,7 @@
+ ## 2026-09-01
+ 
+ Initial dependency set.
++
++## 2026-09-10
++
++Dependabot cleanup: @tiptap/core 3.20.4 → 3.31.3; @tailwindcss/postcss 4.3.1 → 4.3.3; guzzlehttp/guzzle 7.9.2 → 7.10.0.
+diff --git a/frontend/package-lock.json b/frontend/package-lock.json
+index 6c589a3..c280ec4 100644
+--- a/frontend/package-lock.json
++++ b/frontend/package-lock.json
+@@ -3,14 +3,14 @@
+   "lockfileVersion": 3,
+   "packages": {
+     "node_modules/@tiptap/core": {
+-      "version": "3.20.4",
+-      "resolved": "https://registry.npmjs.org/@tiptap/core/-/core-3.20.4.tgz",
+-      "integrity": "sha512-AAAA"
++      "version": "3.31.3",
++      "resolved": "https://registry.npmjs.org/@tiptap/core/-/core-3.31.3.tgz",
++      "integrity": "sha512-CCCC"
+     },
+     "node_modules/@tailwindcss/postcss": {
+-      "version": "4.3.1",
+-      "resolved": "https://registry.npmjs.org/@tailwindcss/postcss/-/postcss-4.3.1.tgz",
+-      "integrity": "sha512-BBBB"
++      "version": "4.3.3",
++      "resolved": "https://registry.npmjs.org/@tailwindcss/postcss/-/postcss-4.3.3.tgz",
++      "integrity": "sha512-DDDD"
+     }
+   }
+ }
+diff --git a/frontend/package.json b/frontend/package.json
+index 02da06e..373cba5 100644
+--- a/frontend/package.json
++++ b/frontend/package.json
+@@ -2,7 +2,7 @@
+   "name": "frontend",
+   "private": true,
+   "dependencies": {
+-    "@tiptap/core": "^3.20.4",
++    "@tiptap/core": "^3.31.3",
+     "@tailwindcss/postcss": "^4.1.3"
+   }
+ }

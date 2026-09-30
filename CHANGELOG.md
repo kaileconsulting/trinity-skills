@@ -1,5 +1,143 @@
 # Changelog
 
+## 2.6.0 — 2026-09-30 — review-diff exclusions
+
+Plan: `docs/archive/review-diff-exclusions-2026-09-29.md` (design converged after 2
+`iterate-plan` passes, 5 → 0 HIGH+MEDIUM, 5 findings, none fold-caused;
+code review converged at pass 3 for Phase 0 and pass 8 for Phase 1, log
+`docs/archive/code-review-branch-kyle-review-diff-exclusions.md`).
+**Closes [issue #10](https://github.com/kaileconsulting/trinity-skills/issues/10).**
+
+**The problem.** Every lens got the whole diff, "unchanged", and on long
+branches that diff carried content the reviewer didn't need: the review's
+own pass log (which it already receives as `=== PRIOR PASSES ===`), a
+converged governing plan, and lockfiles no line-by-line reviewer can read.
+Review practice was already excluding these by hand and noting it in the
+pass header, with nothing written about what was safe to drop and nothing
+stopping a production file from going with them. Excluding code from review
+is a way of suppressing findings, so the point of this release is less the
+savings than making every exclusion mechanical, bounded and visible.
+
+**On the savings, honestly.** The cost figures that motivated issue #10
+(25–50% of a 5-hour window per three-lens pass) were measured on
+`gpt-6-astra`, before 2.5.1 pinned the reviewer to `gpt-5.6-sol`; most of
+that cost was the model. What this release removes is the duplicated and
+settled content, roughly 10–20% of per-lens input on plan-driven branches
+(this branch's own passes excluded ~550 lines by hand out of 2,000–2,400).
+`diff_lines` in each pass summary shows the removed volume; Codex's per-call
+`used_percent` is the check on what it saved.
+
+### Added (Phase 0 — the runner drops the pass log)
+
+- **A strict `git diff` sectioner** in `iterate-review/bin/review_runner.py`
+  (plan §0). Sections are split on `\n` only and kept or removed as raw
+  text. Every source of a section's identity (the `diff --git` line,
+  rename/copy lines, `---`/`+++`, `Binary files` markers) must agree, hunk
+  line counts must match their headers, binary patches and no-newline
+  markers are grammar-checked, and C-quoted paths decode strictly. If any
+  section can't be identified exactly, nothing is excluded. It round-trips
+  every non-merge commit in this repo's history byte for byte (465 diffs:
+  plain, with rename/copy detection, and with binary patches).
+- **Pass-log self-exclusion** on every `run-pass` / `run-lens`: a section is
+  dropped only when every endpoint that exists is the log, and only the
+  literal default slot `docs/reviews/code-review-<scope-tag>.md` is
+  trusted (a `--log-path` override or a symlinked slot excludes nothing).
+  A rename or copy crossing the log's boundary stays reviewed, whole.
+- **Original vs reviewed diff** (§3): lens selection reads the original, so
+  an exclusion never trims a lens; only composition reads the reviewed one.
+- **Disclosure** (§4): `pass-N.summary.json` gains `excluded` and
+  `diff_lines {original, reviewed}`, merged before the atomic write through
+  a new optional `extra` argument to the shared `publish_summary()`
+  (byte-identical in both skills; iterate-plan never passes it, and its
+  summary is pinned to the core fields). A diff that exclusions empty
+  creates no pass and lists what was removed on stderr. SKILL.md step 9's
+  "unchanged" rule now reads "unchanged except for runner-applied
+  exclusions", step 12's `Scope:` line carries them, and a Hard rule says
+  no path leaves the reviewed diff except through the runner.
+
+### Hardened (Phase 0's 3-pass review — APPROVE×3 at pass 3)
+
+HIGH+MEDIUM 4 → 1 → 0, five HIGH findings, all incorporated, none
+fold-caused; no card fired. The first review on the 2.5.1 pin: ~30% of one
+5-hour window and ~5% weekly for all three passes.
+- **The parser trusted what it should have checked**: a `Binary files`
+  line naming other paths, a rename mixed with a new-file mode, content
+  hidden in a binary patch or a stray `\` line, a blank line before the
+  first section. Each now fails closed.
+- **`--log-path` was an exclusion primitive** (pass 1), and then **a
+  symlinked default slot** was one too (pass 2): identity is now the
+  lexical slot, used only when it resolves to itself.
+
+### Added (Phase 1 — classed exclusions, by the editor)
+
+- **`--exclude <class>:<path-or-glob>`** (repeatable) on `run-pass` and
+  `run-lens`, applied by `apply_exclusions()`. Two classes:
+  `governing-plan` (exactly the path on the intent's single
+  `Governing-plan:` line, and a regular non-executable `.md` file, git mode
+  100644) and `generated` (production allowed, but every path needs a
+  non-empty plain-text `- <path>: <audited property>` entry in the intent's
+  single `=== EXCLUDED SUMMARY ===` block, copied into `excluded[].audit`
+  and the pass header). The checks are presence checks: whether the audit
+  happened is the editor's responsibility, made visible.
+- **Refusal is fail-closed and happens before any Codex call**: an unknown
+  class, a spec matching nothing, a failed class rule, or a diff that can't
+  be sectioned exactly exits non-zero and creates no pass. The first
+  matching spec decides a section; a rename/copy with only one endpoint in
+  a class is kept with a warning, never refused.
+- **Plain paths and plain audit text only**: printable ASCII without
+  backtick (paths also without backslash, double quote or `: `); anything
+  else stays in review.
+- **`review_runner.disclosure()`** renders each exclusion one way for the
+  pass header and stderr: path and audit as code spans (so nothing renders
+  as markdown or HTML), renames as `` `old` → `new` ``, and each
+  `generated` endpoint's own audit.
+- **The parser records git object modes** per endpoint (from `index`,
+  `new file mode`, `old mode`/`new mode` lines), so a symlink, gitlink or
+  executable file can't pass as a governing plan.
+- **`tools/check-scope-classification.py` now pins SKILL.md step 3's
+  prose** (segments and root doc names) to `tools/scope_classifier.py` in
+  both directions, and the heuristic splits on git's `/` only.
+- **Worked example** `examples/merge/06-lockfile-exclusion/`, from a real
+  ResearchLogix Dependabot review, run and byte-compared by
+  `tools/check-runners.py`. It also pins the §3 rule concretely: selecting
+  on the reviewed diff would drop the `security` lens.
+
+### Hardened (Phase 1's 5-pass review — APPROVE×3 at pass 8)
+
+HIGH+MEDIUM 6 → 3 → 6 → 5 → 0 (passes 4–8 of one branch review; passes 1–3
+were Phase 0). 21 findings, all incorporated, 3 of them by simplification;
+6 fold-caused. The gate fired twice, and the review ended smaller than it
+started: the fold after pass 6 removed more lines than it added.
+- **Filename tricks kept coming** (passes 4–5): a backslash read as a
+  separator, non-UTF-8 bytes collapsing two files into one, `: ` letting
+  one audit entry cover two paths, control and bidi characters forging the
+  disclosure. At the pass-5 checkpoint, with three components one pass
+  short of a simplification card, Kyle chose to **narrow**: classed
+  exclusion takes plain paths only. Path decoding is strict regardless.
+- **The simplification card fired twice at pass 6.** A `docs` class had
+  drawn HIGH findings on passes 4, 5 and 6, as "is this file
+  documentation?" admitted tests, then `SECURITY.py`, then executable
+  `.mdx` and symlinks (2 of 4 caused by earlier folds). Kyle chose
+  **remove**: the class is gone, the governing plan is the one
+  documentation file that can leave by name, and the path heuristic moved
+  back to `tools/` since the runner no longer needs it. Audit text in the
+  header had drawn HIGHs on the same three passes, most recently markdown
+  forging a fake verdict; Kyle chose **narrow**: plain-text audits shown as
+  code spans.
+- Smaller folds: renames disclose both endpoints and both audits; a
+  non-plain *unmatched* rename endpoint keeps the section instead of
+  aborting; scope tags and paths end at `\Z`, not `$`; a governing plan
+  named with `[brackets]` is exact, not a glob.
+- Pass 7, on the simplified surface: the governing plan's mode is checked
+  on each side of an in-place change (executable → 100644 no longer
+  passes), and every mode source must agree; only git's canonical C
+  escapes are accepted (`\544` would have aliased `d`); a path component
+  padded with spaces is not plain; a two-endpoint `generated` change with
+  a missing audit is refused rather than kept as a "crossing".
+- Pass 8: APPROVE ×3 with one LOW (a crossing warning printed the rename
+  endpoints in sorted order), folded without a confirming pass: it changes
+  warning text only.
+
 ## 2.5.1 — 2026-09-30 — reviewer model pinned
 
 Both runners now pass `-m gpt-5.6-sol` to every Codex call (`CODEX_MODEL`

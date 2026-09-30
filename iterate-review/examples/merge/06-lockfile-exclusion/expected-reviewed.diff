@@ -1,0 +1,25 @@
+diff --git a/docs/development-history.md b/docs/development-history.md
+index 3352a8d..5d01416 100644
+--- a/docs/development-history.md
++++ b/docs/development-history.md
+@@ -3,3 +3,7 @@
+ ## 2026-09-01
+ 
+ Initial dependency set.
++
++## 2026-09-10
++
++Dependabot cleanup: @tiptap/core 3.20.4 → 3.31.3; @tailwindcss/postcss 4.3.1 → 4.3.3; guzzlehttp/guzzle 7.9.2 → 7.10.0.
+diff --git a/frontend/package.json b/frontend/package.json
+index 02da06e..373cba5 100644
+--- a/frontend/package.json
++++ b/frontend/package.json
+@@ -2,7 +2,7 @@
+   "name": "frontend",
+   "private": true,
+   "dependencies": {
+-    "@tiptap/core": "^3.20.4",
++    "@tiptap/core": "^3.31.3",
+     "@tailwindcss/postcss": "^4.1.3"
+   }
+ }

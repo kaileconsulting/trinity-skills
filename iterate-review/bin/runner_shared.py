@@ -686,7 +686,8 @@ def summary_path(state_dir, pass_num: int) -> Path:
 
 def publish_summary(lock: ScopeLock, state_dir: Path, pass_num: int,
                     scope_hash: str, log_path: Path, warnings: list,
-                    lenses: dict, prior_passes: "dict | None" = None) -> "tuple[Path, str]":
+                    lenses: dict, prior_passes: "dict | None" = None,
+                    extra: "dict | None" = None) -> "tuple[Path, str]":
     """Publish pass-N.summary.json — the pass's single commit point. A pass
     exists iff its summary exists; readers discover passes only through
     summaries. Published atomically, last, inside the token-fenced critical
@@ -697,7 +698,13 @@ def publish_summary(lock: ScopeLock, state_dir: Path, pass_num: int,
     defense-in-depth signal: how many HISTORICAL pass sections the resolved
     log already held before this pass, and the oldest one's header. Callers
     that don't pass it (e.g. a direct test call) get the "nothing prior"
-    shape, same as a genuinely first pass."""
+    shape, same as a genuinely first pass.
+
+    `extra` is an optional mapping of skill-specific fields (iterate-review's
+    `excluded` / `diff_lines`), merged into the payload BEFORE the atomic
+    write so they are part of the single commit point, never a later
+    amendment. It may add fields but never replace a core one. Callers that
+    omit it (iterate-plan always does) publish exactly the core payload."""
     payload = {
         "pass": pass_num,
         "scope_hash": scope_hash,
@@ -707,6 +714,13 @@ def publish_summary(lock: ScopeLock, state_dir: Path, pass_num: int,
         "prior_passes": prior_passes if prior_passes is not None else {"count": 0, "first_pass_header": None},
         "complete": True,
     }
+    if extra:
+        clash = sorted(set(extra) & set(payload))
+        if clash:
+            raise ValueError(
+                f"publish_summary: extra fields may not replace core fields: "
+                f"{', '.join(clash)}")
+        payload.update(extra)
     path = summary_path(state_dir, pass_num)
     text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
     lock.verify_and(lambda: atomic_publish(path, text))

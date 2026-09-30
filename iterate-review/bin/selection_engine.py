@@ -298,18 +298,23 @@ _C_ESCAPES = {"\\": "\\", '"': '"', "t": "\t", "n": "\n", "r": "\r",
               "a": "\a", "b": "\b", "f": "\f", "v": "\v"}
 
 
-def _unquote_c(body: str) -> str:
+def _unquote_c(body: str, errors: str = "replace") -> str:
     """Decode git's C-style path quoting (the text inside the double quotes).
 
     Git quotes a diff path when it contains a space, a quote, a backslash or a
     non-printable byte. Octal escapes carry raw UTF-8 bytes, so consecutive ones
-    are buffered and decoded together rather than one byte at a time."""
+    are buffered and decoded together rather than one byte at a time.
+
+    `errors` is the UTF-8 decode policy for those bytes. Selection keeps the
+    forgiving "replace" (a wrong guess only changes which lenses run);
+    exclusion identity passes "strict" (review_runner), where two distinct
+    invalid names must never collapse to one."""
     out: list[str] = []
     raw = bytearray()
 
     def flush() -> None:
         if raw:
-            out.append(raw.decode("utf-8", "replace"))
+            out.append(raw.decode("utf-8", errors))
             raw.clear()
 
     i = 0

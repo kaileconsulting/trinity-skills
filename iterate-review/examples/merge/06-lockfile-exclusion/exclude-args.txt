@@ -1,0 +1,2 @@
+--exclude generated:**/*.lock
+--exclude generated:frontend/package-lock.json

@@ -610,6 +610,13 @@ def test_contracts(env: Env) -> None:
                    for v in lenses.values()))
     record("run-pass: log_path echoes the plan path",
            summary.get("log_path") == os.path.realpath(env.plan))
+    # publish_summary() gained an optional `extra` argument (shared file,
+    # docs/archive/review-diff-exclusions-2026-09-29.md §4) that iterate-plan never
+    # passes: its summary keeps exactly the core fields.
+    record("run-pass: summary carries exactly the core fields (no exclusion fields)",
+           sorted(summary) == ["complete", "lenses", "log_path", "pass",
+                               "prior_passes", "scope_hash", "warnings"],
+           str(sorted(summary)))
     record("run-pass: scope hash is sha1 of the plan's real path",
            summary.get("scope_hash") == env.scope_hash())
     state_dir = env.state_dir()
