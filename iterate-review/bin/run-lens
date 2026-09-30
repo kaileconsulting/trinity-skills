@@ -108,9 +108,11 @@ def main(argv=None):
 
     # Same exclusion as run-pass, from the same resolved log path, so a
     # retry reproduces the pass's reviewed diff exactly (plan §3).
+    log_rel, target_warnings = rr.self_exclusion_target(
+        log_path, repo_root, overridden=args.log_path is not None)
     reviewed_text, excluded, excl_warnings = rr.apply_self_exclusion(
-        diff_text, rr.log_path_in_diff(log_path, repo_root))
-    warnings = warnings + excl_warnings
+        diff_text, log_rel)
+    warnings = warnings + target_warnings + excl_warnings
     if not reviewed_text.strip():
         sys.stderr.write(rr.excluded_stderr("run-lens", excluded))
         return EXIT_ERROR

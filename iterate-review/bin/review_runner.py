@@ -347,6 +347,58 @@ def _header_path(payload: str, side: str):
 
 
 _UNSET = object()
+_NO_NEWLINE = "\\ No newline at end of file"
+# git's base85 alphabet; a payload line is <length char><5 chars per 4 bytes>.
+_B85_LINE = re.compile(r"^[A-Za-z][0-9A-Za-z!#$%&()*+\-;<=>?@^_`{|}~]+$")
+_BINARY_BLOCK = re.compile(r"^(?:literal|delta) \d+$")
+
+
+def _check_binary_patch(lines: list, i: int, head: str) -> None:
+    """`GIT binary patch` payload: one or two blocks, each `literal N` or
+    `delta N`, base85 lines whose length character matches their width,
+    then a blank line — and nothing else up to the next section."""
+    n = len(lines)
+    blocks = 0
+    while i < n:
+        if not _BINARY_BLOCK.match(lines[i].rstrip("\n")):
+            raise DiffParseError(
+                f"malformed binary patch block header {lines[i].rstrip()[:80]!r}")
+        i += 1
+        payload = 0
+        while i < n and lines[i] != "\n":
+            ln = lines[i].rstrip("\n")
+            if not _B85_LINE.match(ln):
+                raise DiffParseError(f"malformed binary patch line in {head.rstrip()!r}")
+            c = ln[0]
+            nbytes = ord(c) - 64 if c <= "Z" else ord(c) - 96 + 26
+            if len(ln) - 1 != (nbytes + 3) // 4 * 5:
+                raise DiffParseError(f"binary patch line width mismatch in {head.rstrip()!r}")
+            payload += 1
+            i += 1
+        if payload == 0 or i >= n:
+            raise DiffParseError(f"unterminated binary patch block in {head.rstrip()!r}")
+        i += 1
+        blocks += 1
+    if blocks not in (1, 2):
+        raise DiffParseError(f"binary patch has {blocks} blocks in {head.rstrip()!r}")
+
+
+def _binary_marker_confirms(line: str, old, new) -> bool:
+    """`Binary files <a> and <b> differ` names exactly the resolved
+    endpoints. Paths may themselves contain " and ", so every split is
+    tried and exactly one must match."""
+    body = line.rstrip("\n")
+    if not (body.startswith("Binary files ") and body.endswith(" differ")):
+        return False
+    mid = body[len("Binary files "):-len(" differ")]
+    want = ("/dev/null" if old is None else f"a/{old}",
+            "/dev/null" if new is None else f"b/{new}")
+    hits, k = 0, mid.find(" and ")
+    while k >= 0:
+        if (_decode_path(mid[:k]), _decode_path(mid[k + 5:])) == want:
+            hits += 1
+        k = mid.find(" and ", k + 1)
+    return hits == 1
 
 
 def _agree(current, value, what: str):
@@ -387,6 +439,7 @@ def _parse_section(lines: list) -> dict:
         i += 1
     # Body: ---/+++ then hunks, or a binary marker, or nothing.
     body_kind = "none"
+    binary_marker = None
     if i < n and lines[i].startswith("--- "):
         if i + 1 >= n or not lines[i + 1].startswith("+++ "):
             raise DiffParseError(f"'---' without '+++' in section {head.rstrip()!r}")
@@ -398,10 +451,12 @@ def _parse_section(lines: list) -> dict:
         if i + 1 != n:
             raise DiffParseError(
                 f"unexpected content after 'Binary files' in {head.rstrip()!r}")
+        binary_marker = lines[i]
         i = n
         body_kind = "binary"
     elif i < n and lines[i].rstrip("\n") == "GIT binary patch":
-        i = n  # base85 payload runs to the next section
+        _check_binary_patch(lines, i + 1, head)
+        i = n
         body_kind = "binary"
     if body_kind == "hunks":
         if i >= n:
@@ -414,10 +469,19 @@ def _parse_section(lines: list) -> dict:
             old_left = int(m.group(1)) if m.group(1) is not None else 1
             new_left = int(m.group(2)) if m.group(2) is not None else 1
             i += 1
+            after_content = False  # a no-newline marker may follow one content line
             while old_left > 0 or new_left > 0:
                 if i >= n:
                     raise DiffParseError(f"truncated hunk in {head.rstrip()!r}")
                 c = lines[i][:1]
+                if c == "\\":
+                    if not after_content or lines[i].rstrip("\n") != _NO_NEWLINE:
+                        raise DiffParseError(
+                            f"malformed or misplaced '\\' line in {head.rstrip()!r}")
+                    after_content = False
+                    i += 1
+                    continue
+                after_content = True
                 if c == " ":
                     old_left -= 1
                     new_left -= 1
@@ -425,14 +489,14 @@ def _parse_section(lines: list) -> dict:
                     old_left -= 1
                 elif c == "+":
                     new_left -= 1
-                elif c != "\\":
+                else:
                     raise DiffParseError(
                         f"malformed hunk line {lines[i].rstrip()[:80]!r}")
                 if old_left < 0 or new_left < 0:
                     raise DiffParseError(f"hunk overruns its header in {head.rstrip()!r}")
                 i += 1
-            while i < n and lines[i].startswith("\\"):
-                i += 1  # "\ No newline at end of file" after the last line
+            if i < n and after_content and lines[i].rstrip("\n") == _NO_NEWLINE:
+                i += 1  # the hunk's last line had no trailing newline
     elif body_kind == "none" and i < n:
         raise DiffParseError(
             f"unrecognized line {lines[i].rstrip()[:80]!r} in {head.rstrip()!r}")
@@ -454,6 +518,11 @@ def _parse_section(lines: list) -> dict:
         raise DiffParseError(f"ambiguous section paths in {head.rstrip()!r}")
     if created and deleted:
         raise DiffParseError(f"section both creates and deletes: {head.rstrip()!r}")
+    if (created or deleted) and (moved_old is not _UNSET or old != new):
+        # An add or delete has ONE real path; nulling a side of a rename or
+        # copy would silently erase its other endpoint.
+        raise DiffParseError(
+            f"file created/deleted and moved in one section: {head.rstrip()!r}")
     if minus is not _UNSET and ((minus is None) != created
                                 or (plus is None) != deleted):
         raise DiffParseError(
@@ -462,6 +531,10 @@ def _parse_section(lines: list) -> dict:
         old = None
     if deleted:
         new = None
+    if binary_marker is not None and not _binary_marker_confirms(
+            binary_marker, old, new):
+        raise DiffParseError(
+            f"'Binary files' paths disagree with the section in {head.rstrip()!r}")
     return {"old_path": old, "new_path": new,
             "text": "".join(lines), "lines": len(lines)}
 
@@ -475,7 +548,8 @@ def parse_diff_sections(diff: str) -> list:
     starts = [i for i, ln in enumerate(lines) if ln.startswith("diff --git ")]
     if not starts:
         raise DiffParseError("no 'diff --git' sections (not git diff output)")
-    if "".join(lines[:starts[0]]).strip():
+    if starts[0] != 0:
+        # Not even whitespace: it would be dropped on rejoin (raw text, §0).
         raise DiffParseError("content before the first 'diff --git' line")
     bounds = starts + [len(lines)]
     return [_parse_section(lines[a:b]) for a, b in zip(bounds, bounds[1:])]
@@ -532,6 +606,21 @@ def log_path_in_diff(log_path: Path, repo_root: Path):
     except ValueError:
         return None
     return rel.as_posix()
+
+
+def self_exclusion_target(log_path: Path, repo_root: Path, overridden: bool):
+    """(log_rel, warnings) for apply_self_exclusion. Only the DEFAULT slot,
+    docs/reviews/code-review-<scope-tag>.md, is trusted to be this review's
+    own log: an override merely has to be an in-repo .md file, so honoring
+    it here would let --log-path name any markdown path — including one
+    the diff deletes, which no header check can see — and drop its section
+    as "pass-log". An override therefore excludes nothing."""
+    if overridden:
+        return None, [
+            "pass-log self-exclusion is off for a --log-path override (only "
+            "the default docs/reviews/code-review-<scope-tag>.md is trusted "
+            "as this review's own log); the diff is reviewed unchanged"]
+    return log_path_in_diff(log_path, repo_root), []
 
 
 def excluded_stderr(prog: str, excluded: list) -> str:

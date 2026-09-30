@@ -398,6 +398,81 @@ def test_sectioning(rr) -> None:
         record(f"fail-closed: {label} -> nothing excluded, warning",
                reviewed == diff and excl == [] and len(warns) == 1
                and "self-exclusion skipped" in warns[0], f"{excl} {warns}")
+    # Pass-1 review folds (docs/reviews/code-review-branch-kyle-review-
+    # diff-exclusions.md): each malformed form below dressed up as the log
+    # must fail closed — nothing excluded, one warning.
+    b64 = "literal 3\nKcmZQzU|;|M00aO5\n\n"
+    folds = {
+        "binary marker naming a production file":
+            f"diff --git a/{LOG} b/{LOG}\nindex 1..2 100644\n"
+            "Binary files a/lib/prod.bin and b/lib/prod.bin differ\n",
+        "binary marker with a mismatched /dev/null side":
+            f"diff --git a/{LOG} b/{LOG}\nindex 1..2 100644\n"
+            f"Binary files /dev/null and b/{LOG} differ\n",
+        "rename from production + new file mode":
+            f"diff --git a/lib/prod.py b/{LOG}\nnew file mode 100644\n"
+            f"rename from lib/prod.py\nrename to {LOG}\n",
+        "copy to production + deleted file mode":
+            f"diff --git a/{LOG} b/lib/prod.py\ndeleted file mode 100644\n"
+            f"copy from {LOG}\ncopy to lib/prod.py\n",
+        "content hidden after a binary patch":
+            f"diff --git a/{LOG} b/{LOG}\nindex 1..2 100644\nGIT binary patch\n"
+            + b64 + "+import os; os.system('x')\n",
+        "binary patch line with the wrong width":
+            f"diff --git a/{LOG} b/{LOG}\nindex 1..2 100644\nGIT binary patch\n"
+            "literal 3\nKcmZQzU|;|M00aO\n\n",
+        "arbitrary backslash line inside a hunk":
+            _mod(LOG).replace("-a\n", "-a\n\\ hidden reviewable text\n"),
+        "no-newline marker at the start of a hunk":
+            _mod(LOG).replace("@@ -1 +1 @@\n", "@@ -1 +1 @@\n\\ No newline at end of file\n"),
+        "repeated no-newline markers":
+            _mod(LOG).replace("+b\n", "+b\n\\ No newline at end of file\n"
+                              "\\ No newline at end of file\n"),
+        "a blank line before the first section": "\n" + _mod(LOG),
+    }
+    for label, diff in folds.items():
+        reviewed, excl, warns = run(diff)
+        record(f"fail-closed: {label} -> nothing excluded, warning",
+               reviewed == diff and excl == [] and len(warns) == 1
+               and "self-exclusion skipped" in warns[0], f"{excl} {warns}")
+    valid_bin = (f"diff --git a/{LOG} b/{LOG}\nindex 1..2 100644\nGIT binary patch\n"
+                 + b64 + "literal 0\nHcmV?d00001\n\n")
+    reviewed, excl, _w = run(other + valid_bin)
+    record("parser: a well-formed two-block binary patch still parses",
+           reviewed == other and len(excl) == 1)
+
+    # Real `Binary files … differ` markers, as git writes them — including
+    # a name containing " and ", and the /dev/null side of an add/delete.
+    tmp = tempfile.mkdtemp()
+    try:
+        def g(*a):
+            return subprocess.run(["git", "-c", "user.email=t@t", "-c",
+                                   "user.name=t", "-c", "core.quotepath=true", *a],
+                                  cwd=tmp, check=True, capture_output=True,
+                                  text=True).stdout
+        g("init", "-q")
+        names = ["cats and dogs.bin", "gone.bin"]
+        for nm in names:
+            with open(os.path.join(tmp, nm), "wb") as fh:
+                fh.write(b"\x00\x01old")
+        g("add", "-A"); g("commit", "-qm", "a")
+        with open(os.path.join(tmp, names[0]), "wb") as fh:
+            fh.write(b"\x00\x02new")
+        os.remove(os.path.join(tmp, names[1]))
+        with open(os.path.join(tmp, "fresh.bin"), "wb") as fh:
+            fh.write(b"\x00\x03")
+        g("add", "-A")
+        real = g("diff", "--cached")
+        secs = rr.parse_diff_sections(real)
+        got = sorted(((x["old_path"], x["new_path"]) for x in secs), key=repr)
+        record("parser: real git 'Binary files' markers confirm identity "
+               "(' and ' in a name, /dev/null sides)",
+               "Binary files" in real and got == sorted([
+                   ("cats and dogs.bin", "cats and dogs.bin"),
+                   ("gone.bin", None), (None, "fresh.bin")], key=repr), str(got))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
     reviewed, excl, warns = rr.apply_self_exclusion(_mod(LOG), None)
     record("self-exclusion: log outside the repo root -> no-op",
            reviewed == _mod(LOG) and excl == [] and warns == [])
@@ -509,6 +584,27 @@ def test_self_exclusion_cli(env: Env) -> None:
     record("run-lens: pass-log-only diff -> exit 1 with the disclosure",
            proc.returncode == 1
            and "nothing left to review after exclusions" in proc.stderr)
+
+    # A --log-path override is never trusted as the log (pass-1 fold): an
+    # override naming a markdown path the diff deletes keeps it reviewed.
+    victim = os.path.join(env.handoff, "selfx-override.txt")
+    with open(victim, "w") as fh:
+        fh.write("diff --git a/docs/SECURITY.md b/docs/SECURITY.md\n"
+                 "deleted file mode 100644\nindex 1111111..0000000\n"
+                 "--- a/docs/SECURITY.md\n+++ /dev/null\n@@ -1 +0,0 @@\n"
+                 "-Report vulnerabilities to security@example.com\n"
+                 + _mod("lib/plain.py"))
+    proc = env.run("run-pass", "--diff", victim, "--intent", env.intent,
+                   "--scope-tag", tag, "--log-path",
+                   os.path.join(repo, "docs", "SECURITY.md"))
+    summary = json.loads(proc.stdout or "{}") if proc.returncode == 0 else {}
+    composed = [read(v["response_path"].replace(".response.json", ".input.txt"))
+                for v in summary.get("lenses", {}).values()]
+    record("run-pass: --log-path override excludes nothing (deleted target stays reviewed)",
+           proc.returncode == 0 and summary.get("excluded") == []
+           and any("override" in w for w in summary.get("warnings", []))
+           and composed and all("security@example.com" in c for c in composed),
+           proc.stderr.strip()[-200:] + str(summary.get("warnings")))
 
     # Unparseable diff: reviewed unchanged, warning in the summary.
     plain = os.path.join(env.handoff, "selfx-plain.txt")

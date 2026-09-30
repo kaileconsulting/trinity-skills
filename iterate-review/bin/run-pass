@@ -140,9 +140,11 @@ def main(argv=None):
     # Two diffs from here on (plan §3): the ORIGINAL feeds lens selection,
     # the REVIEWED one (original minus runner-applied exclusions) feeds
     # composition only — an exclusion can never trim a lens.
+    log_rel, target_warnings = rr.self_exclusion_target(
+        log_path, repo_root, overridden=args.log_path is not None)
     reviewed_text, excluded, excl_warnings = rr.apply_self_exclusion(
-        diff_text, rr.log_path_in_diff(log_path, repo_root))
-    warnings = warnings + excl_warnings
+        diff_text, log_rel)
+    warnings = warnings + target_warnings + excl_warnings
     if not reviewed_text.strip():
         # The empty-diff contract: no summary, no pass number consumed —
         # the disclosure lives on stderr for the editor to relay.
