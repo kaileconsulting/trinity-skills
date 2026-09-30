@@ -65,3 +65,33 @@ Diff captured at 2026-09-30 10:18; head SHA `1ddbbfaadc1267f7e61163e3a13c6a0655a
 ### Checkpoint
 
 Continue, one pass (Kyle, 2026-09-30). HIGH+MEDIUM 4 → 1. Streaks: pass-log-identity 2 (one below the cluster threshold), diff-section-parser 0. Cost: 5-hour window 0% → 20%, weekly 0% → 3% (~1.6M input tokens; all three lenses read deeply).
+
+## Pass 3 — 2026-09-30 10:39 [HISTORICAL]
+
+**Scope:** branch (excluded by hand, pre-feature: governing-plan docs/review-diff-exclusions-2026-09-29.md 373 lines; docs docs/review-diff-exclusions-2026-09-29.md.handoff-prompt.md 33 lines; pass-log docs/reviews/code-review-branch-kyle-review-diff-exclusions.md 67 lines) · **Diff size:** 1157 lines · **Scope class:** production · **Verdict:** APPROVE (worst-of; no FAILED lenses) · **Posture:** used docs/review-diff-exclusions-2026-09-29.md · **Lenses:** senior-dev, security, qa
+
+Cost: 5-hour window 22% → 25%, weekly 3% → 4% (~417k input tokens; one lens read deeply).
+
+### Findings
+
+- (none)
+
+### Code corrections applied
+
+- (none)
+
+### New questions Codex raised
+
+- (none)
+
+### Lens run summary
+
+- senior-dev: APPROVE · security: APPROVE · qa: APPROVE
+
+### Diff snapshot reference
+
+Diff captured at 2026-09-30 10:33; head SHA `1c1a6d7e97acb7c6db40496de261fc14d7dad19a`.
+
+### Checkpoint
+
+**Converge** (Kyle, 2026-09-30). Three passes, HIGH+MEDIUM 4 → 1 → 0; five merged findings (all HIGH), all incorporated, none fold-caused, 0 disputed / accepted-risk / register-match; one correction. No decision card fired: pass-log-identity peaked at streak 2, diff-section-parser at 1, both 0 after pass 3. Total reviewer cost on gpt-5.6-sol: ~30% of one 5-hour window, ~5% weekly.

@@ -132,7 +132,7 @@ Modified: `iterate-review/bin/review_runner.py` (diff sectioning + exclusion), `
 - Replaying the simplification-gate branch's pass-4 diff through the new runner drops exactly the 130-line log section.
 
 **Iterate-review:** YES (rationale: changes the runner's input composition, whose byte-determinism is golden-pinned; a bug here drops or duplicates reviewed content)
-**Status:** built 2026-09-30, iterate-review pending. `tools/check-all.sh` green (check-runners 163/163, 37 new: exclusion cases plus the summary-clash guard; check-plan-runners adds an exact-summary-fields case; a mutation pass confirmed the fail-closed, rename-kept, newline-only-split and original/reviewed-split cases each catch their mutant). The strict parser round-trips all 456 non-merge commit diffs in this repo's history byte for byte and refuses the one `diff --cc`. Replay: the simplification-gate branch diff at `8952a56` (the 130-line log) drops exactly one section, the log's 136 lines (130 content + 6 header), and the reviewed diff is byte-identical to `git diff … -- . ':!<log>'`; same at `8bdb0ae` (111-line log, 117-line section). The old pass-4 state was pruned, so the replay is from git history rather than a committed fixture. `lines` in `excluded` is the removed section's length, so `diff_lines.original − reviewed = Σ lines`.
+**Status:** reviewed 2026-09-30 — iterate-review converged at pass 3 (APPROVE ×3; HIGH+MEDIUM 4 → 1 → 0, five HIGH findings all incorporated, none fold-caused, no decision card; log `docs/reviews/code-review-branch-kyle-review-diff-exclusions.md`). The folds hardened the §0 parser (binary markers confirm identity, binary payloads and no-newline markers validated, nothing before the first section, no create/delete mixed with a move) and narrowed §1 to the lexical default log slot (no override, no symlink). First review on the gpt-5.6-sol pin (2.5.1): ~30% of one 5-hour window, ~5% weekly, for three passes. Built `tools/check-all.sh` green (check-runners 163/163, 37 new: exclusion cases plus the summary-clash guard; check-plan-runners adds an exact-summary-fields case; a mutation pass confirmed the fail-closed, rename-kept, newline-only-split and original/reviewed-split cases each catch their mutant). The strict parser round-trips all 456 non-merge commit diffs in this repo's history byte for byte and refuses the one `diff --cc`. Replay: the simplification-gate branch diff at `8952a56` (the 130-line log) drops exactly one section, the log's 136 lines (130 content + 6 header), and the reviewed diff is byte-identical to `git diff … -- . ':!<log>'`; same at `8bdb0ae` (111-line log, 117-line section). The old pass-4 state was pruned, so the replay is from git history rather than a committed fixture. `lines` in `excluded` is the removed section's length, so `diff_lines.original − reviewed = Σ lines`.
 
 ### Phase 1 — Editor-side excludable classes, disclosed (~4h)
 **Deliverables:**
@@ -246,12 +246,13 @@ the tooling will populate them.
 Updated automatically on each iterate-review pass. Single-page view of
 where each phase stands in the review lifecycle.
 
+-->
+
 | Phase | Iterate-review | Status | Last pass | Pass log |
 |-------|----------------|--------|-----------|----------|
-| Phase 0 | NO  | n/a | n/a | n/a |
+| Phase 0 | YES | converged (APPROVE ×3) | 3 — 2026-09-30 | `docs/reviews/code-review-branch-kyle-review-diff-exclusions.md` |
 | Phase 1 | YES | not started | — | — |
-| Phase 2 | CONDITIONAL | not started | — | — |
--->
+| Phase 2 | NO | not started | — | — |
 
 ## Pre-flight review pass (the editor, YYYY-MM-DD) [HISTORICAL]
 
