@@ -92,7 +92,7 @@ The rule came from a downstream repo's playbook, where it ended two long loops i
 
 Every lens gets the whole diff, and Codex re-sends it across its file-reading turns, so input volume is what a review spends against your ChatGPT usage limit. Reasoning effort barely registers (under 1% of tokens). Two things keep that cost down.
 
-**The reviewer model is pinned** (2.5.1). Both runners pass `-m gpt-5.6-sol` to every call instead of taking Codex's default, which a Codex release can change. When Codex 0.157.0 silently moved its default to `gpt-6-astra`, reviews started draining the shared 5-hour window at roughly 9× the rate. If quota behavior ever shifts suddenly, check which model your recent sessions ran: `grep -o '"model":"[^"]*"'` in the newest file under `~/.codex/sessions/`. The pin itself is one constant, `CODEX_MODEL` in `bin/runner_shared.py`.
+**The reviewer model is pinned** (2.5.1; moved to `gpt-6.1-sol` in 2.6.1, which needs Codex 0.167.0 or later). Both runners pass `-m gpt-6.1-sol` to every call instead of taking Codex's default, which a Codex release can change. When Codex 0.157.0 silently moved its default to `gpt-6-astra`, reviews started draining the shared 5-hour window at roughly 9× the rate. If quota behavior ever shifts suddenly, check which model your recent sessions ran: `grep -o '"model":"[^"]*"'` in the newest file under `~/.codex/sessions/`. The pin itself is one constant, `CODEX_MODEL` in `bin/runner_shared.py`.
 
 **Content the reviewer doesn't need leaves the diff, through the runner, and is always disclosed** (2.6.0). Review practice was already excluding it by hand, silently, with nothing to stop a production file going with it. Now:
 
@@ -298,7 +298,7 @@ To roll back entirely instead: `git checkout v1.0 && ./install.sh`. Details and 
 
 Each iterate-* skill invokes Codex as one subprocess **per selected lens**, each with three structural guarantees:
 
-1. **Sandbox** — `codex -a never exec -m gpt-5.6-sol -s read-only --skip-git-repo-check` makes file writes structurally impossible from Codex's side. The reviewer model is pinned in `bin/runner_shared.py` (`CODEX_MODEL`) rather than inherited from Codex's default, which can change with any Codex release; reasoning effort still comes from `~/.codex/config.toml`.
+1. **Sandbox** — `codex -a never exec -m gpt-6.1-sol -s read-only --skip-git-repo-check` makes file writes structurally impossible from Codex's side. The reviewer model is pinned in `bin/runner_shared.py` (`CODEX_MODEL`) rather than inherited from Codex's default, which can change with any Codex release; reasoning effort still comes from `~/.codex/config.toml`.
 2. **Output schema** — `--output-schema <reviewer-output.schema.json>` forces Codex's response into a strict JSON shape (verdict + findings + corrections + answers). Free-form prose is rejected by Codex's runtime before it reaches the editor.
 3. **Patch-marker rejection** — the editor scans each response for `*** Begin Patch`, unified-diff markers, and merge-conflict markers before folding. Defense in depth against a Codex response that smuggles a patch into a description field.
 4. **Reviewer text is data, never control.** Findings are model-authored strings written into a pass log that also carries the review's own progress markers. They're sanitized to single logical lines with marker sequences escaped, and progress is only ever read from editor-written structural positions — so a crafted source comment can't induce a lens to emit a line that makes a resuming session think an unfixed HIGH was already handled.

@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.6.1 — 2026-11-10 — reviewer model moved to gpt-6.1-sol
+
+Both runners now pass `-m gpt-6.1-sol` (`CODEX_MODEL` in
+`bin/runner_shared.py`); every trinity review from 2.5.1 until now ran on
+`gpt-5.6-sol`. **Requires Codex 0.167.0 or later**: 0.157.0 does not list
+`gpt-6.1-sol`. Reasoning effort still comes from `~/.codex/config.toml`.
+
+**Why: a same-diff A/B, not a release note.** One pass of each model over
+the same 5,497-line diff (a real branch's first review pass, whose findings
+were later fixed or disputed, so the right answers were known), the same
+intent, three lenses forced, effort `high`, same ChatGPT account, run
+2 minutes apart:
+
+| | gpt-5.6-sol | gpt-6.1-sol |
+|---|---|---|
+| Known real findings caught | 4 of 7 | the same 4 of 7 |
+| Known false positive raised | no | no |
+| Further real defect found | none | 1 (fixed in that branch's pass 2) |
+| Wall time | 155 s | 176 s |
+| 5-hour window used | 18% | 7% |
+| Weekly window used | 3% | 1% |
+| Tokens (three lenses) | ~1.94 M | ~0.58 M |
+
+Per token `gpt-6.1-sol` cost about 30% more of the window; it was cheaper
+per pass because it read far less (one `gpt-5.6-sol` lens alone took
+1.72 M tokens). That makes the saving a property of how much each model
+explores, so it will vary by diff: one run per model, and `used_percent`
+is reported in whole points. Re-check the cost on the next real passes
+(`rate_limits` in `~/.codex/sessions`) before treating it as settled.
+
 ## 2.6.0 — 2026-09-30 — review-diff exclusions
 
 Plan: `docs/archive/review-diff-exclusions-2026-09-29.md` (design converged after 2

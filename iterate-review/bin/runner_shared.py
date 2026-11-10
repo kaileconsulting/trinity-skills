@@ -63,7 +63,9 @@ SKILL_NAME = Path(__file__).resolve().parent.parent.name
 # on the shared ChatGPT usage window at roughly 9x gpt-5.6-sol's rate per
 # input token. A pin also keeps "which model reviewed this" a property of
 # the skill version. Reasoning effort still comes from ~/.codex/config.toml.
-CODEX_MODEL = "gpt-5.6-sol"
+# 2.6.1 moved the pin to gpt-6.1-sol after a same-diff A/B (CHANGELOG 2.6.1);
+# it needs codex >= 0.167.0, the first release that lists the model.
+CODEX_MODEL = "gpt-6.1-sol"
 
 CODEX_BASE_ARGS = (
     "-a", "never", "exec",
