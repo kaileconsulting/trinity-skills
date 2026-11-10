@@ -762,8 +762,8 @@ def test_codex_invocation_contract(env: Env) -> None:
 
     def m_ok(rec):
         argv = rec["argv"]
-        return "-m" in argv and argv[argv.index("-m") + 1] == "gpt-5.6-sol"
-    record("codex argv: model pinned to gpt-5.6-sol (-m), not codex's default",
+        return "-m" in argv and argv[argv.index("-m") + 1] == "gpt-6.1-sol"
+    record("codex argv: model pinned to gpt-6.1-sol (-m), not codex's default",
            len(recs) == 2 and all(m_ok(r) for r in recs), str(recs[:1]))
     env.clear_argv_records()
 
